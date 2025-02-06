@@ -17,3 +17,7 @@
 - `T|U` => Union type - Something that is either `T` _or_ `U`
 - `T&U` => Intersection type - Something that is `T` _and_ `U`. Usually traits. 
 
+## Generics 
+
+- `T[U]` => Type `T` with generic `U`. 
+- `T[U;V]` => Type `T` with multiple branches. At this stage, only for functions.
