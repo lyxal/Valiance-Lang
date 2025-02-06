@@ -20,3 +20,6 @@ divide, reduce / / =>
   Number, Number => float divide
   T+, ∫[(T|T+)...; U] => reduce iterable by function (type switchable)
 
+while =>
+  ∫[T|@;Number;U]: Starting with top of stack, execute branch 2 while branch 1 is truthy, passing the result of branch 2 as the new state each time
+
