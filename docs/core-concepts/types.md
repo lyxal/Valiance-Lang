@@ -21,3 +21,8 @@
 
 - `T[U]` => Type `T` with generic `U`. 
 - `T[U;V]` => Type `T` with multiple branches. At this stage, only for functions.
+- `∫[T]` => A function taking a single argument of type  `T`
+- `∫[T;U]` => A function taking a single argument of type `T` and returning an item of type `U`
+- `∫[T;U;V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
+- `∫[T...]` => This type matches any function that takes one or more arguments of type `T`. This does not mean varargs, but rather allows for specification of a family of function types. 
+- `T<U>[U]` => A type `T` with its own defined generic type. The `U` belongs to `T`
