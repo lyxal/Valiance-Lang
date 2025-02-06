@@ -26,3 +26,4 @@
 - `∫[T;U;V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
 - `∫[T...]` => This type matches any function that takes one or more arguments of type `T`. This does not mean varargs, but rather allows for specification of a family of function types. 
 - `T<U>[U]` => A type `T` with its own defined generic type. The `U` belongs to `T`
+- `T<U[V]>[U]` = A type `T` with a generic called `U` implementing trait `V`.
