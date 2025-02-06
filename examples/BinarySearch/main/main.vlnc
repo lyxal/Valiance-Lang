@@ -1,3 +1,5 @@
+#import std.Traits.Comparable
+
 { <T[Comparable]>(haystack: T+, needle: T, $: Number?) =>
   ## Performs a binary search on a list of items of a type that implements `Comparable`
   ## Returns the index of the needle if present, `None` otherwise
