@@ -1,0 +1,8 @@
+[meta]
+version = 1.0.0
+name = "Binary Search Example"
+author = "@lyxal"
+description = "An example of a binary search implemented using a while loop"
+
+[default]
+main = "main/main.vlnc"
