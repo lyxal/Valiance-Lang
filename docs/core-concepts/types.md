@@ -9,6 +9,7 @@
 - `Function` / `∫` => Function type, can have generics to specify argument type(s)
 - `None` / `∅` => None Type
 - `Any` / `⧆` => Any
+- `Fusion` / `@` => Fusion type. Generally won't be specified as just `@`.
 
 ## Type Operations
 
