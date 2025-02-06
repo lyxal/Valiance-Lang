@@ -1,0 +1,22 @@
+Format:
+
+keyword / symbol =>
+  Overload signature: what it does
+
+add, plus / + =>
+  Number, Number: Addition
+  String, String: Concatenation
+
+subtract, minus / - =>
+  Number, Number: Subtraction
+  String, String: Remove rhs from lhs
+
+times, multiply, map / * =>
+  Number, Number: Multiplication
+  String, Number: String Repetition (type switchable) 
+  T+, ∫[(T|T+);U]: Map function to iterable (type switchable)
+
+divide, reduce / / =>
+  Number, Number => float divide
+  T+, ∫[(T|T+)...; U] => reduce iterable by function (type switchable)
+
