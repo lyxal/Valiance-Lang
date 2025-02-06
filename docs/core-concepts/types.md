@@ -10,7 +10,10 @@
 - `None` / `∅` => None Type
 - `Any` / `⧆` => Any
 
-## Type Sigils
+## Type Operations
 
 - `T+` => Array of `T`, can be arbitrarily nested
 - `T?` => `T` or `None`
+- `T|U` => Union type - Something that is either `T` _or_ `U`
+- `T&U` => Intersection type - Something that is `T` _and_ `U`. Usually traits. 
+
