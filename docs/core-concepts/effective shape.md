@@ -36,3 +36,6 @@ Applying this to the rugged examples from before gives:
 [1, [2,3]] -> [2]
 [[1], [[2,3]]] -> [2, 1]
 ```
+
+Undoubtedly this will cause ruckus among array language enthusiasts - applying a well defined concept to non-well defined inputs will inevitably break properties of the well defined concept. However that's okay. That's why it's an extension, not a replacement, of the shape system. 
+
