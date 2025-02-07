@@ -5,4 +5,4 @@ author = "@lyxal"
 description = "An example of a binary search implemented using a while loop"
 
 [default]
-main = "main/main.vlnc"
+main = "main/binsearch.vlnc"

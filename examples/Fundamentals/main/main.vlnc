@@ -1,0 +1,124 @@
+#/
+
+This file demonstrates some basic features and
+concepts of the Valiance programming language.
+
+You'll notice that there is no project file here. This is because
+in the absence of a project file, `main/main.vlnc` is used as
+the main entry point for the program.
+
+/#
+
+## This is a comment
+
+## Fundamental stuff
+
+1 1 + println ## "2"
+"Hello, World!" println ## "Hello, World!"
+
+## Lists
+
+[1, 2, 3, 4] println ## "[1, 2, 3, 4]"
+[[1,2], [3,4]] println ## "[[1, 2], [3, 4]]"
+[1, [2, 3], [[4,5,6]]] println ## "[1, [2, 3], [[4, 5, 6]]]"
+
+## Functions!
+
+## Note that without any arguments, the function takes a single value from
+## the stack and returns the result of the function.
+
+## Functions also always return only 1 value.
+
+5 { 2 * } call println ## "10"
+5 { 2 * }() println ## "10"
+
+## Variables
+
+"Joe" = name
+"Sussy"          =      amongUs ## Any amount of whitespace is allowed
+"Gyatt" =brainrot ## No spaces is valid too
+
+$name println ## "Joe"
+$amongUs println ## "Sussy"
+$brainrot println ## "Gyatt"
+
+## Functions with explicit arguments
+
+{(1) => 2 *} ## A function that takes a single argument and puts it on the stack
+{(x) => $x 2 *} ## Store argument in variable x
+{(x, y) => $x $y +} ## Add two arguments
+{(`Number`) => 2 *} ## Attempt to pop a value of type Number from the stack, error if not Number.
+{(x: Number) => $x 2 *} ## Type annotations!
+{(x: Number, 1) => $x 2 *} ## Mix and match!
+{(x: Number, y: Number) => $x $y +} ## Add two arguments
+
+## To get an idea of what types are available, go to docs/types.md
+
+## Fusions
+
+3 5 fuse println ## "@(3, 5)"
+3 5 fuse #typeOf println ## "@(Number, Number)"
+@(3, 5) println ## "@(3, 5)"
+@(3, 5) #typeOf println ## "@(Number, Number)"
+
+@(3, 5) {(@(x: Number, y: Number)) => $x $y +} call println ## "8"
+## The above shows destructuring (defusing) of a fusion
+## While a fusion seems strange, it is a very powerful concept...
+
+## While Loops
+@(10, 2)
+while: { (@(count: Number, res: Number)) =>
+    $count 0 > |
+    @(count 1 -, res 2 *)
+}
+last println ## "1024"
+
+#/
+
+The fusion here acts as a way to get around the fact that a while loop 
+requires state to be a single value.
+
+/#
+
+## If statements
+## I lied. There are no if statements. Instead, 
+
+## Match statements
+
+## Imagine there's a value on the top of the stack
+
+#match: {
+    `Type` => "Match against a certain type" |
+    34 => "Match against a specific value" |
+    @(x: Number, y: Number) => "Match against a fusion" |
+    [1, 2, 3] => "Match against a list" |
+    =name: Type => "Match into a variable" |
+    "Default case"
+}
+
+## An if statement is simply a match on a number:
+
+#match: {
+    1 => "True" |
+    "False"
+}
+
+## Functional programming
+
+[1, 2, 3] {2 *} map println ## "[2, 4, 6]"
+10 indices {2 divides?} filter println ## "[2, 4, 6, 8, 10]"
+[1, 2, 3] {+} fold println ## "6"
+
+## Modifiers
+
+#/
+
+Unlike other array languages, Valiance does not have dedicated
+modifiers. Instead, `:` acts as a modifier that takes the last
+element and allows for its function arguments to be hardcoded.
+
+#/
+
+[1, 2, 3] map: {2 *} println ## "[2, 4, 6]"
+10 indices: {2 divides?} filter: println ## "[2, 4, 6, 8, 10]"
+[1, 2, 3] fold: + println ## "6"
