@@ -59,4 +59,10 @@ The concept of effective shape handles deriving shape of all types of finite rug
 2. `exact-shape` (glyph also tbd, most likely a triangle with a line through it if such a symbol exists) - this returns the shape if exact, else None. Basically `Number+?`.
 3. `shape-meta` (name open to change, symbol yet undecided) - returns the shape with a 0 appended if exact, else a 1 if approximate. 
 
-These 3 shape elements should provide tools generalised enough to handle all shape checking related cases. 
+These 3 shape elements should provide tools generalised enough to handle all shape checking related cases.
+
+---
+
+As mentioned above, the shape of an infinite list is a unique problem. The effective shape algorithm doesn't work because it'd never terminate. So then what of the shape of an infinite list? My current idea is that it'd be a list of a single `Infinity` (perhaps one imported from a math library). This is the simplest solution and probably the only sensible solution. 
+
+However, an infinite list can still have minimum known depth attached to it. For example, an infinite list can easily fit `Number++` if created using a well typed generation method - the return type of the generation step would be `Number+` and as it's a list, it is naturally `Number++`. 
