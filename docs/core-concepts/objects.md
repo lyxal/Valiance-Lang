@@ -9,7 +9,7 @@
 ## Object Creation
 
 ```
-#object Name<Traits>[Generics] (
+#object Name(Traits)[Generics] (
     readableMember: Type,
     $privateMember: Type
 ): {
@@ -39,7 +39,7 @@ $Name.member
 ## Extension Methods
 
 Methods defined in the object require `$.` to access. However, extension
-methods can be defined that allow for keyword access.
+methods can be defined that allow for keyword access. 
 
 ```
 #extension Name: {
@@ -52,6 +52,8 @@ methods can be defined that allow for keyword access.
     (args) => %%%
 }
 ```
+
+Extension methods that are object-specific leave the object on the stack.
 
 ### Using Extension Methods
 
@@ -79,11 +81,48 @@ An object with a trait must have the required members, plus any extensions.
 ## Example
 
 ```
-#object Node[T](
-    $prev: Node[T],
-    $next: Node[T],
-    data: T
+#trait Drivable (
+    speed: Number,
+    seats: Number,
+): {}
+
+#extension Drivable.drive: {($: _) => %%%}
+#extension Drivable.stop: {() => 0 = speed}
+
+#object Car(Drivable)(
+    speed: Number,
+    seats: Number,
 ): {
-    (val: T)
+    () => 
+    0 = speed
+    4 = seats
 }
+
+#extension Car.drive: { () => 
+  "Car goes vroom nyoom" println 
+  100 = speed
+}
+
+#object Bus(Drivable)(
+    speed: Number,
+    seats: Number,
+): {
+    () => 
+    0 = speed
+    20 = seats
+}
+
+#extension Bus.drive: { () => 
+  "Bus goes b" println
+  50 = speed
+}
+
+`Car` .drive    ## Prints "Car goes vroom nyoom", 
+                ## Leaves the object on the stack
+$.speed println ## Prints 100
+
+`Bus` .drive          ## Prints "Bus goes b", 
+                      ## Leaves the object on the stack
+dup $.speed println   ## Prints 50
+.stop $.speed println ## Prints 0
 ```
