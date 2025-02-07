@@ -39,3 +39,10 @@ Applying this to the rugged examples from before gives:
 
 Undoubtedly this will cause ruckus among array language enthusiasts - applying a well defined concept to non-well defined inputs will inevitably break properties of the well defined concept. However that's okay. That's why it's an extension, not a replacement, of the shape system. 
 
+---
+
+One might notice that the effective shape will return an array size larger than some of the items in a dimension. This is because the current design choice is to prefer internally empty slots over losing information - minimum shape at minimum depth would cut off the longer lists. And while returning a simpler shape (e.g minimum depth where all lists are the same size else top level) would be logically sound, I think it possible to do better than that. 
+
+So then what happens with shorter lists? The `[[1,2],[3,4,5]] -> [2, 3]` example is a good demonstration of this problem. 
+
+My current theoretical solution is to have an "empty" type in the interpreter. 
