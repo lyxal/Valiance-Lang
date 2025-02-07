@@ -12,7 +12,7 @@ For example, the shape of the following lists would be undefined:
 [[1], [[2,3]]]
 ```
 
-In the array world, these lists don't have shape. Even lists that look rectangular technically don't have shape, because the list model only has depth and item count. 
+In the Iversonian array world, these lists don't have shape. Even lists that look rectangular technically don't have shape, because the list model only has depth and item count. 
 
 But just because something doesn't make sense under traditional array rules, that doesn't mean a different set of rules can be invented. 
 
@@ -50,3 +50,13 @@ My current theoretical solution is to have an "empty" type in the interpreter. T
 This has some problems of its own that I haven't solved yet. For example, what should happen if an operation is passed more than one empty and there's no default value? Should it just return an empty leading to mysteriously disappearing values? 
 
 This can be slightly mitigated with elements like `ensure exact shape`, but still needs some extra thought. 
+
+---
+
+The concept of effective shape handles deriving shape of all types of finite rugged lists (the shape of infinite lists is a whole different problem). However there is a lingering issue that needs to be resolved - how can one tell whether an effective shape is a natural fit, or an approximation? To this end, there will be three shape elements:
+
+1. `shape` (glyph tbd, most likely a triangle) - this returns effective shape regardless of precision. 
+2. `exact-shape` (glyph also tbd, most likely a triangle with a line through it if such a symbol exists) - this returns the shape if exact, else None. Basically `Number+?`.
+3. `shape-meta` (name open to change, symbol yet undecided) - returns the shape with a 0 appended if exact, else a 1 if approximate. 
+
+These 3 shape elements should provide tools generalised enough to handle all shape checking related cases. 
