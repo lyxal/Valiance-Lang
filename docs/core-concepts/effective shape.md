@@ -45,4 +45,8 @@ One might notice that the effective shape will return an array size larger than 
 
 So then what happens with shorter lists? The `[[1,2],[3,4,5]] -> [2, 3]` example is a good demonstration of this problem. 
 
-My current theoretical solution is to have an "empty" type in the interpreter. 
+My current theoretical solution is to have an "empty" type in the interpreter. This empty type would be replaced with the default value for the array if it exists, otherwise operations with empty would return another empty. This would be different to None, which is its own type and not a default value. Empty would effectively be an adaptive type. 
+
+This has some problems of its own that I haven't solved yet. For example, what should happen if an operation is passed more than one empty and there's no default value? Should it just return an empty leading to mysteriously disappearing values? 
+
+This can be slightly mitigated with elements like `ensure exact shape`, but still needs some extra thought. 
