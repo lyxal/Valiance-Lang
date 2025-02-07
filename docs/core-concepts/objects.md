@@ -126,3 +126,7 @@ $.speed println ## Prints 100
 dup $.speed println   ## Prints 50
 .stop $.speed println ## Prints 0
 ```
+
+## Notes
+
+- Object semantics are still being worked on, and may change in the future.
