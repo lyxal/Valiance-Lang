@@ -1,7 +1,7 @@
 # The Valiance Programming Language
 
 Array languages are cool, but horribly unoptimised for mainstream usage.
-Valiance rectifies this by providing a stack-based array language (not Uiua)
+Valiance rectifies this by providing a stack array language
 that has been designed with mainstream appeal in mind.
 
 It is boring compared to other array languages, but that's the point. We don't
