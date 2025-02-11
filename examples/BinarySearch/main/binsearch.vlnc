@@ -1,6 +1,6 @@
 #import std.Traits.Comparable
 
-{ <T[Comparable]>(haystack: T+, needle: T, $: Number?) =>
+{ <T[Comparable]>(haystack: T~, needle: T, $: Number?) =>
   ## Performs a binary search on a list of items of a type that implements `Comparable`
   ## Returns the index of the needle if present, `None` otherwise
 
@@ -16,7 +16,7 @@
   } ## Will return the aforementioned Fusion[Number, Number, Number?]
   ## However, the `Number?` needs to be extracted
   last
-} :=binarySearch ## Has type Function<T[Comparable]>[T+, T; Number?]
+} :=binarySearch ## Has type Function<T[Comparable]>[T~, T; Number?]
 
 10 indices =haystack ## Range [0, 9]
 
