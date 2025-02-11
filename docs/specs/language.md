@@ -183,17 +183,18 @@ One might notice the lack of a dedicated `List` type, which is intentional. Afte
 
 ```
 T   = Object with type T
-T+  = List of T, potentially nested at any depth
+T+  = List of T, rank >= 1
 T*  = T | T+
-T!  = Absolutely T, not a list. This will become important later
+T!  = Absolutely T, not a list.
+T~  = Rank 1 list of T.
 T?  = Optional T (T | None)
 T|U = Type T or Type U
 T&U = Type T and Type U (i.e traits)
 ```
 
-The concept of `T+` can be extended to "enforce" minimum depth as a type. While shape is impossible to determine at compile time, the minimum depth of a list can sometimes be inferred. E.g. Mapping a `∫[T+; T+]` (a function taking `T+` and returning `T+`) over `T+` will return a list of at least depth 2. 
+The concept of `T+` can be extended to "enforce" minimum rank as a type. While shape is impossible to determine at compile time, the minimum depth of a list can sometimes be inferred. E.g. Mapping a `∫[T+; T+]` (a function taking `T+` and returning `T+`) over `T+` will return a list of at least rank 2. 
 
-This can be realised with more `+`s. The number of `+`s in a type indicate that it will be at least that depth.
+This can be realised with more `+`s. The number of `+`s in a type indicate that it will be at least that rank.
 
 E.g.
 
@@ -206,10 +207,16 @@ T+3 -> Shorthand for T+++
 
 and so forth. 
 
-`T+n` is considered to be `T+m` if `n > m`. This means you can safely pass `T++` where `T+` is expected, because `T++` "satisfies" `T+`. `T+` _can_ be used where `T++` is expected, but this will cause a compiler warning. The rationale being that a `T+` _might_ be a `T++`, so it _could_ satisfy `T++`, but it can't be checked until runtime. 
+A similar pattern exists with `~`.
 
-Type casting/shape casting can help with this.
+#### Static Checking of Shape Operations 
 
+- `T+n` is considered to be `T+m` if `n > m`. This means you can safely pass `T++` where `T+` is expected, because `T++` "satisfies" `T+`. `T+` _can_ be used where `T++` is expected, but this will cause a compiler warning. The rationale being that a `T+` _might_ be a `T++`, so it _could_ satisfy `T++`, but it can't be checked until runtime. 
+- `T~n` satisfies `T+m` if `n >= m`
+- `T+n` does not satisfy `T#m`, but can be cast to be checked at runtime. E.g `#as[T~~]` or `reshape`.
+- Where possible, operations should mark return types of lists with `~`, leaving `+` for when rank can't be determined.
+- `+` takes priority over `~` if not followed by another `~`. In other words, if a guaranteed rank is "deguaranteed", the only assumption that can be made is a minimum rank of the previously guaranteed rank. 
+- However, a unguaranteed rank list can have `~` applied to ensure every item in the list is in fact a list. 
 ### Generics
 
 Valiance allows for types to use generics. The generic type is kept when type checking (i.e. no type erasure). 
@@ -305,3 +312,5 @@ Essentially:
 > If all arguments match the function overload, apply the function. Otherwise, zip all arguments that do _not_ match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
 
 _An aside: It may be possible that this algorithm fails if it reaches a level where all arguments are atomic and is unable to zip any further. This would most likely result from `Any`s being present, unable to be caught at compile time. This may not be the case, but further analysis/thought would be required._
+
+
