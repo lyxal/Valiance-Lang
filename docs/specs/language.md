@@ -88,10 +88,24 @@ Lists are created with square brackets:
 The grammar for lists is
 
 ```
-LIST_LITERAL = @[ (LITERAL (@, LITERAL)*)? @]
+LIST_LITERAL = @[ (LIST_ITEM (@, LIST_ITEM)*)? @]
+LIST_ITEM = (PROGRAM - VARIABLE_ASSIGN) ("=" PROGRAM - VARIABLE_ASSIGN)?
 ```
 
 Where `LITERAL` encompasses numbers, strings, lists, functions and any other applicable literal. 
+
+### Dictionaries
+
+Dictionaries are what you might call a hash map, dictionary, or json in other languages. In Valiance, the syntax for declaring a dictionary is just list syntax but with a colon to separate keys and values. Keys can be any data type, as can values. Here are some examples of dictionaries:
+
+```
+["name" = "Joe", "age" = 20]
+[1 = 2, 3 = 4]
+[[1,2,3] = 4]
+```
+
+A dictionary has type `Dictionary[key;value]` which can also be written as `§[K;V]`.
+
 
 ## Functions
 
@@ -129,9 +143,9 @@ Some examples of function arguments include:
 The grammar for functions is:
 
 ```
-FUNCTION = "{" (GENERICS_DECL? FUNCTION_ARGS "=>")? PROGRAM "}"
-GENERICS_DECL = "<" NAME ("," NAME)* ">"
-FUNCTION_ARGS = ("`" TYPE "`" | NAME (COLON: TYPE)| NUMBER | FUSION)* ("$:" (NAME | "_"))?
+FUNCTION = "{" ( "(" GENERICS_DECL? FUNCTION_ARGS ")" "=>")? PROGRAM "}"
+GENERICS_DECL = "[" NAME ("," NAME)* "]"
+FUNCTION_ARGS = (COLON TYPE | NAME (COLON: TYPE)| NUMBER | FUSION)* ("," "$" ":" (NAME | "_"))?
 ```
 
 ## Types
@@ -147,6 +161,7 @@ Number ℕ
 Number.Whole 𝕎
 Number.Decimal 𝔻
 String 𝕊
+Dictionary §
 Function ∫
 UnitFunction ⨚
 None ∅
@@ -170,7 +185,7 @@ One might notice the lack of a dedicated `List` type, which is intentional. Afte
 T   = Object with type T
 T+  = List of T, potentially nested at any depth
 T*  = T | T+
-T!  = A list of exactly T. No nesting.
+T!  = Absolutely T, not a list. This will become important later
 T?  = Optional T (T | None)
 T|U = Type T or Type U
 T&U = Type T and Type U (i.e traits)
@@ -204,27 +219,12 @@ Valiance allows for types to use generics. The generic type is kept when type ch
 - `T[U;V]` => Type `T` with multiple branches. At this stage, only for functions.
 - `∫[T]` => A function taking a single argument of type  `T`
 - `∫[T;U]` => A function taking a single argument of type `T` and returning an item of type `U`
-- `∫[T;U|V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
+- `∫[T;U;V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
 - `∫[T...]` => This type matches any function that takes one or more arguments of type `T`. This does not mean varargs, but rather allows for specification of a family of function types. 
 - `T<U>[U]` => A type `T` with its own defined generic type. The `U` belongs to `T`
-- `T<U[V]>[U]` => Type `T` with a generic `U`. `U` implements traits V
 ```
 
 ### Type Interaction
-
-Generally, a type matches another type if:
-1. The types are the same OR
-2. The required type is a trait and the dependent type implements the trait
-
-Specifically:
-
-- `T[%%%]` is considered `T`.
-- `T` is _not_ considered `T[%%%]`
-- `T[%%%1]` is only considered `U[%%%2]` if `T == U` AND `%%%1` is considered `%%%2`.
-- `T+n` is considered `T+m`, but a compiler warning is given if `n < m`.
-- `T` is always considered `⌒`.
-
-### Overload Matching Rules
 
 Say a function has the following overloads, where uppercase letters are types and lowercase letters are traits:
 
@@ -272,3 +272,36 @@ M
 | `T[V]` | `11` | Exact match, takes precedence over `10` and `1` |
 | `T[U]` | `10` | Would have matched `1` if there wasn't the generic catch-all. |
 | `M[V]` | `12` | `M[V]`, in the abscence of other more specific `M`s with generics, matches `M`. |
+
+## Vectorisation / Auto-Broadcasting
+
+Within any array language, the ability for operations to automatically apply to atomic levels of an array is paramount. Certainly, while not the only defining feature of an array language, vectorisation is crucial.
+
+Valiance has automatic vectorisation of some elements (where it makes sense). However, the method for determining when and how something should vectorise is slightly different to traditional array languages - rather than relying only upon shape to determine behaviour, Valiance also makes use of static typing.
+
+The general algorithm for vectorisation is:
+
+```scala
+function = function.chooseBestOverload(arguments)
+
+def vectorise(function, arguments):
+	if function.definedAt(arguments) then
+		return function(...arguments)
+	else
+		zipped = zipAllArgs(function, arguments)
+		zipped.map(x => vectorise(function, x))
+
+def zipAllArgs(function, arguments):
+    shouldZip = enumerate(arguments).map((arg, ind) => [arg.matches(function.args[ind]), ind])
+    zipped = zip(...shouldZip.filter(_[0])).map(
+		(lists) => 
+	       allArgs = lists + shouldZip.filter(!_[0])
+		   allArgs.sortBy(_[1]).map(_[0])
+	)
+```
+
+Essentially:
+
+> If all arguments match the function overload, apply the function. Otherwise, zip all arguments that do _not_ match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
+
+_An aside: It may be possible that this algorithm fails if it reaches a level where all arguments are atomic and is unable to zip any further. This would most likely result from `Any`s being present, unable to be caught at compile time. This may not be the case, but further analysis/thought would be required._
