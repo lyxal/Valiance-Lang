@@ -21,6 +21,11 @@ _ `pop` ⨚[Any] => Pop x from the stack
   `print` ⨚[Any] => Print x to stdout
 ' `peek` ∫[∫<U>[^Any...; U]; U] => Call function without popping arguments
 ! `factorial` ∫[Number; Number] => x!
+< `lt` (`less-than`) ∫[Number, Number; Number] => x < y
+                     ∫[String, String; Number] => x < y (lexicographically, unicode order)
+> `gt` (`greater-than`) ∫[Number, Number; Number] => x > y
+                        ∫[String, String; Number] => x > y (lexicographically, unicode order)
+`==` `eq` (`equal`)  ∫<T>[T!, T!; Number] => x == y (non lists)
 () `call` ∫[∫[Any...]; Any] => Call function
           ∫[@(∫[Any...]...); Any] => Call function with appropriate arguments. All overloads must have the same arity
 ‡ `fuse` ∫<T, U>[T, U; @(T, U)] => Create a fusion of x and y. Roughly equivalent to `~ x y`, but dynamic
@@ -34,3 +39,11 @@ _ `pop` ⨚[Any] => Pop x from the stack
 ↳ `yoink` ∫[; Any] => Push the top of the stack outside of the current context
 ⦒ `headless` ∫<T>[T~; T~] => Remove the first element of x
 ⦑ `tailless` ∫<T>[T~; T~] => Remove the last element of x
+≡ `===` `proper-equal` (`strict-equal`) ∫[Any, Any; Number] => x === y
+⊏ `enlist` ∫[Any|Any~; Any+] => Enlist x if it is not a list
+⟗ `merge` ∫<T, U>[T~, U~; (T|U)~] => Append all elements of y to x
+⋉ `append` ∫<T, U>[T~, U; (T|U)~] => Append y to x
+⋊ `prepend` ∫<T, U>[T~, U; (T|U)~] => Prepend y to x
+æ `bifuricate` ∫<T>[T~; T~, T~] => Push x, x reversed
+`ι` `iota` `one` ∫[Number; Number+] => Range [1, x]
+`ζ` `zeta` `zero` ∫[Number; Number+] => Range [0, x)
