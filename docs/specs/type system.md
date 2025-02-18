@@ -21,8 +21,9 @@ Valiance has the following fundamental types:
 | `String` | `𝕊` | A string | `"hello"`, `"world"`, `""` |
 | `None` | `∅` | A null value | `∅` |
 | `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
-| `Function` | `∫` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
+| `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
 | `UnitFunction` | `⨚` | A function that returns nothing | `{($:_) => 1}` |
+| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `{(𝔽, 𝔽, Any{_^_}, $: {_+_}) => %%%}
 | `Any` | `⊤` | A value of any type | `1`, `"hello"`, `∅` |
 | `Fusion` | `@` | A fusion of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
@@ -42,9 +43,9 @@ or even optional. The following table lists the type constraint operators
 |----------|-------------|
 | `+` | A rank 1 list of the type. |
 | `~` | A list of at least rank 1 of the type. |
-| `\|` | A union of types. |
+| `/` | A union of types. |
 | `&` | An intersection of types. |
-| `?` | An optional type. Same as `T \| None`|
+| `?` | An optional type. Same as `T / None`|
 | `!` | Exactly an atomic type, never a list. |
 
 Any type that is not a list is termed "atomic".
@@ -73,5 +74,3 @@ reshape it into a list of any other rank. No amount of strong guarantees
 can be made about the output of `reshape`. However, a weak guarantee can
 be made: the output will be a list of some rank with the same type as the
 input.
-
-## Generic Types

@@ -111,7 +111,7 @@ A dictionary has type `Dictionary[key;value]` which can also be written as `§[K
 
 Functions are also objects in Valiance. This is in contrast to some array languages, but not a completely foreign concept to array programming. 
 
-Functions can take any number of arguments, but always return a single value (unless it is a unit function). 
+Functions can take any number of arguments (arity), and can return any number of values (multiplicity).
 
 Function arguments can be any combination of:
 
@@ -148,6 +148,32 @@ GENERICS_DECL = "[" NAME ("," NAME)* "]"
 FUNCTION_ARGS = (COLON TYPE | NAME (COLON: TYPE)| NUMBER | FUSION)* ("," "$" ":" (NAME | "_"))?
 ```
 
+### Arity Dependent Functions
+
+Sometimes, one may want to define a function that takes a variable number of arguments. For
+example, "parallel apply" is an element that takes two functions and applies them to a set
+of arguments "in parallel" (i.e. as if the two functions were applied to the same arguments).
+
+An initial attempt at defining the element might look like:
+
+```
+{(f: Function, g: Function, $: Any, Any) => $f() =temp $g() $temp ;}
+```
+
+But the problem here is that the two functions are not able to get any values from the outer
+stack - functions repeat arguments upon stack underflow.
+
+Allowing access to the outer stack would be an obvious solution, but would make static
+analysis of stack values difficult, if not impossible for 100% of functions; if a function
+were called in a conditional statement, the number of arguments popped varies based on
+runtime values. 
+
+So then how to have a function that requires a dynamic number of outer stack arguments while
+still allowing for static analysis? The solution is to allow functions to determine arity and/or
+multiplicity based on any function arguments given.
+
+
+
 ## Types
 
 As Valiance is a statically typed language, it makes sense to mention the types that exist within the language, as well as how they interact. 
@@ -162,7 +188,7 @@ Number.Whole 𝕎
 Number.Decimal 𝔻
 String 𝕊
 Dictionary §
-Function ∫
+Function 𝔽
 UnitFunction ⨚
 None ∅
 Any ⌒
@@ -183,40 +209,40 @@ One might notice the lack of a dedicated `List` type, which is intentional. Afte
 
 ```
 T   = Object with type T
-T+  = List of T, rank >= 1
+T~  = List of T, rank >= 1
 T*  = T | T+
 T!  = Absolutely T, not a list.
-T~  = Rank 1 list of T.
+T+  = Rank 1 list of T.
 T?  = Optional T (T | None)
 T|U = Type T or Type U
 T&U = Type T and Type U (i.e traits)
 ```
 
-The concept of `T+` can be extended to "enforce" minimum rank as a type. While shape is impossible to determine at compile time, the minimum depth of a list can sometimes be inferred. E.g. Mapping a `∫[T+; T+]` (a function taking `T+` and returning `T+`) over `T+` will return a list of at least rank 2. 
+The concept of `T~` can be extended to "enforce" minimum rank as a type. While shape is impossible to determine at compile time, the minimum depth of a list can sometimes be inferred. E.g. Mapping a `𝔽[T~; T~]` (a function taking `T~` and returning `T~`) over `T~` will return a list of at least rank 2. 
 
-This can be realised with more `+`s. The number of `+`s in a type indicate that it will be at least that rank.
+This can be realised with more `~`s. The number of `~`s in a type indicate that it will be at least that rank.
 
 E.g.
 
 ```
-T+ -> List, no clue on depth.
-T++ -> At least a list of lists.
-T+++ -> At least a list of lists of lists.
-T+3 -> Shorthand for T+++
+T~ -> List, no clue on rank.
+T~~ -> At least a list of lists.
+T~~~ -> At least a list of lists of lists.
+T~3 -> Shorthand for T~~~
 ```
 
 and so forth. 
 
-A similar pattern exists with `~`.
+A similar pattern exists with `+`.
 
 #### Static Checking of Shape Operations 
 
-- `T+n` is considered to be `T+m` if `n > m`. This means you can safely pass `T++` where `T+` is expected, because `T++` "satisfies" `T+`. `T+` _can_ be used where `T++` is expected, but this will cause a compiler warning. The rationale being that a `T+` _might_ be a `T++`, so it _could_ satisfy `T++`, but it can't be checked until runtime. 
-- `T~n` satisfies `T+m` if `n >= m`
-- `T+n` does not satisfy `T#m`, but can be cast to be checked at runtime. E.g `#as[T~~]` or `reshape`.
-- Where possible, operations should mark return types of lists with `~`, leaving `+` for when rank can't be determined.
-- `+` takes priority over `~` if not followed by another `~`. In other words, if a guaranteed rank is "deguaranteed", the only assumption that can be made is a minimum rank of the previously guaranteed rank. 
-- However, a unguaranteed rank list can have `~` applied to ensure every item in the list is in fact a list. 
+- `T~n` is considered to be `T~m` if `n > m`. This means you can safely pass `T~~` where `T~` is expected, because `T~~` "satisfies" `T~`. `T~` _can_ be used where `T~~` is expected, but this will cause a compiler warning. The rationale being that a `T~` _might_ be a `T~~`, so it _could_ satisfy `T++`, but it can't be checked until runtime. 
+- `T+n` satisfies `T~m` if `n >= m`
+- `T~n` does not satisfy `T+m`, but can be cast to be checked at runtime. E.g `#as[T++]` or `reshape`.
+- Where possible, operations should mark return types of lists with `+`, leaving `~` for when rank can't be determined.
+- `~` takes priority over `+` if not followed by another `+`. In other words, if a guaranteed rank is "deguaranteed", the only assumption that can be made is a minimum rank of the previously guaranteed rank. 
+- However, a unguaranteed rank list can have `+` applied to ensure every item in the list is in fact a list. 
 ### Generics
 
 Valiance allows for types to use generics. The generic type is kept when type checking (i.e. no type erasure). 
@@ -224,10 +250,10 @@ Valiance allows for types to use generics. The generic type is kept when type ch
 ```
 - `T[U]` => Type `T` with generic `U`. 
 - `T[U;V]` => Type `T` with multiple branches. At this stage, only for functions.
-- `∫[T]` => A function taking a single argument of type  `T`
-- `∫[T;U]` => A function taking a single argument of type `T` and returning an item of type `U`
-- `∫[T;U;V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
-- `∫[T...]` => This type matches any function that takes one or more arguments of type `T`. This does not mean varargs, but rather allows for specification of a family of function types. 
+- `𝔽[T]` => A function taking a single argument of type  `T`
+- `𝔽[T;U]` => A function taking a single argument of type `T` and returning an item of type `U`
+- `𝔽[T;U;V]` => Function taking type `T` with a branch that returns `U` and a branch that returns `V`. 
+- `𝔽[T...]` => This type matches any function that takes one or more arguments of type `T`. This does not mean varargs, but rather allows for specification of a family of function types. 
 - `T<U>[U]` => A type `T` with its own defined generic type. The `U` belongs to `T`
 ```
 
@@ -236,19 +262,19 @@ Valiance allows for types to use generics. The generic type is kept when type ch
 Say a function has the following overloads, where uppercase letters are types and lowercase letters are traits:
 
 ```
-1. ∫[T]
-2. ∫[T|U]
-3. ∫[t&c]
-4. ∫[t]
-5. ∫[Any]
-6. ∫[U+]
-7. ∫[U++]
-8. ∫[T!]
-9. ∫[V*]
-10. ∫<H>[T[H]]
-11. ∫[T[V]]
-12. ∫[M]
-13. ∫<H>[U[H]]
+1. 𝔽[T]
+2. 𝔽[T|U]
+3. 𝔽[t&c]
+4. 𝔽[t]
+5. 𝔽[Any]
+6. 𝔽[U+]
+7. 𝔽[U++]
+8. 𝔽[T!]
+9. 𝔽[V*]
+10. 𝔽<H>[T[H]]
+11. 𝔽[T[V]]
+12. 𝔽[M]
+13. 𝔽<H>[U[H]]
 ```
 
 And imagine the following types:
