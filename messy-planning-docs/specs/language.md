@@ -335,7 +335,7 @@ def zipAllArgs(function, arguments):
 
 Essentially:
 
-> If all arguments match the function overload, apply the function. Otherwise, zip all arguments that do _not_ match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
+> If all arguments match the function overload, apply the function. Otherwise, zip, at the maximum shared depth, all arguments that do _not_ match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
 
 _An aside: It may be possible that this algorithm fails if it reaches a level where all arguments are atomic and is unable to zip any further. This would most likely result from `Any`s being present, unable to be caught at compile time. This may not be the case, but further analysis/thought would be required._
 
