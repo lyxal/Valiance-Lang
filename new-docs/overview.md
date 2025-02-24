@@ -162,7 +162,121 @@ Or:
 _Maximum lengths at maximum shared depths._
 
 This gives lists like `[[1,2,3],[4,5,6]]` the rectangular shape they'd
-otherwise have as arrays. A consequence is that ragged lists will have
-a shape that may result in some hypothetically "empty" items. E.g.
-`[[1,2],[3,4,5]]` also has shape `[2,3]`, despite the fact `[1,2]` only
-has 2 items.
+otherwise have as arrays. For ragged lists, the shape will be, effectively,
+the largest bounding box that can be drawn around the list.
+
+As expected:
+
+```shape.basicSuite
+[1, 2, 3] shape
+#> [3]
+[[1, 2], [3, 4]] shape
+#> [2, 2]
+[[1, 2, 3], [4, 5, 6]] shape
+#> [2, 3]
+[] shape
+#> [0]
+```
+
+However:
+
+```shape.holUpWaitAMinute
+[1, [2, 3], 4] shape
+#> [3]
+[[1, 2, 3], [4, 5, 6], [7, 8, 9, 10]] shape
+#> [3, 4]
+[[1], [2, 3], [4, 5, 6]] shape
+#> [3, 3]
+[[1, 2], [3, 4], 5]
+#> [3]
+```
+
+## Functions
+
+Functions are objects. There are no named functions, per se, only variables
+that happen to hold functions. Functions can take any number of
+arguments (arity), and return any number of values (multiplicity). By default,
+functions have an arity of 1 and a multiplicity of 1.
+
+Functions are wrapped in `{}`. To include an argument list, use `() =>`.
+The argument list can also define generics for the function. More on
+generics later.
+
+Arguments can be:
+
+- A number. This pops n values from the call stack and pushes them onto the function stack
+- A name. This pops a single value from the call stack and sets a variable with the name to that value
+- A colon followed by a name. This attempts to pop a value matching the type specified by the name. If the value does not match, an error is thrown.
+- A name with a type. Combines the above two.
+- A fusion. If the top of the stack is a fusion, it will unpack its contents into the variables defined. More on fusions later.
+
+These can be mixed and matched as needed.
+
+Functions can have multiple branches. It is not guaranteed that all branches
+will be called, as it is up to elements to determine what to do with
+multiple branches. Branches are separated by `|`.
+
+The type of a function is `Function[Args; Branch1; Branch2; ...]`, where
+`BranchN` is the return type of the Nth branch. The return type of a function
+can also be specified with `$:` in the argument list. If both `$:` and multiple
+branches are present, the return type will apply to all branches.
+
+Functions are called with `!()`
+
+```functions.simpleFunctions
+5 {2+} !() ## 1 value in, 1 value out
+#> 7
+5 {(1, $: 1) => 2+} !() ## Same thing
+#> 7
+5 {(:Number, $: Number) => 2+} !() ## Same thing
+#> 7
+5 {(:Number) => 2+} !() ## Return type inferred to be Number
+#> 7
+5 {(in) => $in 2 +} !() ## Store arugment in variable "in"
+#> 7
+5 {(in: Number) => $in 2 +} !() ## Store argument in variable "in" and type-check
+#> 7
+```
+
+```functions.multipleArguments
+5 6 {(:Number, :Number) => +} !() ## 2 values in, 1 value out
+#> 11
+```
+
+```functions.multipleBranches
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] filter: {2 divides? | 5 >=}
+#> [6, 8, 10]
+```
+
+## Types
+
+Values have associated types, and all types are known at compile time.
+
+There are some built-in types:
+
+| Type | Unicode Alias | Description | Examples |
+|------|---------------|-------------|----------|
+| `Number` | `ℕ` | A real number | `1`, `3.14`, `0.0` |
+| `Number.Whole` | `ℤ` | An integer | `1`, `0`, `-1` |
+| `Number.Rational` | `ℚ` | A rational number | `1/2`, `3/4`, `0/1` |
+| `Number.Complex` | `ℂ` | A complex number | `1+2i`, `3.14-1.0i`, `0.0+0.0i` |
+| `String` | `𝕊` | A string | `"hello"`, `"world"`, `""` |
+| `None` | `∅` | A null value | `∅` |
+| `EmptyList` | `⧆` | An empty list | `[]` |
+| `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
+| `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
+| `UnitFunction` | `⨚` | A function that returns nothing | `{($:_) => 1}` |
+| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `{(𝔽, 𝔽, Any{_^_}, $: {_+_}) => ⋯}
+| `Fusion` | `@` | A fusion of multiple values | `@(12, "Hello")` |
+| `Constructor` | `⨂` | A constructor for a type | NA |
+
+Notably there is no dedicated list type. List types are instead "extensions"
+of their base type. A flat list of a type `T` is denoted as `T+`. A possibly
+arbitrarily nested list of a type `T` is denoted as `T~`.
+
+`T+` can always be considered `T~`. However, `T~` cannot be considered `T+`.
+
+There is also support for union and intersection types. Union types are
+specified as `T/U`, and intersection types are specified as `T&U`.
+
+A type can also be optional, denoted as `T?`. This is equivalent to `T/∅`.
