@@ -221,25 +221,25 @@ The type of a function is `Function[Args; Branch1; Branch2; ...]`, where
 can also be specified with `$:` in the argument list. If both `$:` and multiple
 branches are present, the return type will apply to all branches.
 
-Functions are called with `!()`
+Functions are called with `()`
 
 ```functions.simpleFunctions
-5 {2+} !() ## 1 value in, 1 value out
+5 {2+} () ## 1 value in, 1 value out
 #> 7
-5 {(1, $: 1) => 2+} !() ## Same thing
+5 {(1, $: 1) => 2+} () ## Same thing
 #> 7
-5 {(:Number, $: Number) => 2+} !() ## Same thing
+5 {(:Number, $: Number) => 2+} () ## Same thing
 #> 7
-5 {(:Number) => 2+} !() ## Return type inferred to be Number
+5 {(:Number) => 2+} () ## Return type inferred to be Number
 #> 7
-5 {(in) => $in 2 +} !() ## Store arugment in variable "in"
+5 {(in) => $in 2 +} () ## Store arugment in variable "in"
 #> 7
-5 {(in: Number) => $in 2 +} !() ## Store argument in variable "in" and type-check
+5 {(in: Number) => $in 2 +} () ## Store argument in variable "in" and type-check
 #> 7
 ```
 
 ```functions.multipleArguments
-5 6 {(:Number, :Number) => +} !() ## 2 values in, 1 value out
+5 6 {(:Number, :Number) => +} () ## 2 values in, 1 value out
 #> 11
 ```
 
@@ -267,7 +267,7 @@ There are some built-in types:
 | `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
 | `UnitFunction` | `⨚` | A function that returns nothing | `{($:_) => 1}` |
 | `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `{(𝔽, 𝔽, Any{_^_}, $: {_+_}) => ⋯}
-| `Fusion` | `@` | A fusion of multiple values | `@(12, "Hello")` |
+| `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
 
 Notably there is no dedicated list type. List types are instead "extensions"
