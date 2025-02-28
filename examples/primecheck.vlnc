@@ -1,0 +1,15 @@
+{
+    factors [1, arg] ===
+} = isPrime1
+
+{
+    range [] tuple2
+    while: { @(candidates, primes) => $candidates non-empty? |
+        fork: headless head 
+          . =temp 
+        'divides? bind filter
+        $primes $temp append
+        tuple2
+    } 
+    tail arg contains
+} = isPrimeSieve
