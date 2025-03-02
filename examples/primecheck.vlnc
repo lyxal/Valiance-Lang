@@ -13,3 +13,15 @@
     } 
     tail arg contains
 } = isPrimeSieve
+
+{
+    range [] tuple2
+    while: { @(candidates, primes) => $candidates non-empty? |
+        fork: 
+          headless 
+          head =temp 
+        filter: {$temp divides? not}
+        
+    } 
+    tail arg contains
+} = isPrimeSieveClearer

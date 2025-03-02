@@ -4,25 +4,13 @@ iota product
 ## OR
 iota fold: *
 ## OR
-1;range product
+1 swap range product
 
 ## Approach 2 - Recursion
 
-{
-    #match: {
-        0 => 1 |
-        => thisFN(arg--) *
-    }
-}
-
-## Approach 3 - Iteration
-
-{
-    @(1, arg)
-    while: {
-        @(acc: Number, n: Number) =>
-        $n non-zero? |
-        @(acc * n, n - 1)
-    }
-    head
+{(n: Number) -> Number =>
+  thisFN = factorial
+  switch: {$n 0 ==} { 1 } {
+    $n 1 - $factorial() $n *
+  }
 }
