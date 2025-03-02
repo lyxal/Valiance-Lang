@@ -266,7 +266,7 @@ There are some built-in types:
 | `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
 | `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
 | `UnitFunction` | `⨚` | A function that returns nothing | `{($:_) => 1}` |
-| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `{(𝔽, 𝔽, Any{_^_}, $: {_+_}) => ⋯}
+| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `{(𝔽, 𝔽, {_^_}, $: {_+_}) => ⋯}
 | `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
 
