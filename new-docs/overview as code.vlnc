@@ -18,6 +18,22 @@ $"Hello {$name}" println
 
 $"Double your number is {2*}" println
 
+[1, 2, 3] #typeOf ## Number+
+[[1,2,3],[4,5,6],[7,8,9]] #typeOf ## Number++
+[1, [2,3,4], 5] #typeOf ## Number~
+[[1,2,3],[4,5,[6]]] #typeOf ## Number~~
+
+[1,2,3] #assert: #matchesType[Number+]   ## Satifies Number+
+[1,2,3] #assert: #matchesType[Number~]   ## Satifies Number~
+[1,2,3] #assert: #matchesType[Number<3>] ## Exactly 3 items
+[1,2,3] #assert: #matchesType[Number(3)] ## At least 3 items
+[[1,2],[3,4]] #assert: #matchesType[Number++]
+[[1,2],[3,4]] #assert: #matchesType[Number<2,2>]
+[[1,2],[3,4]] #assert: #matchesType[Number(2)]
+[[1,2],[3,4]] #assert: #matchesType[Number(2,1)]
+[[1,2],[3,4]] #assert: #matchesType[Number<_,_>] ## Same as Number++
+[[1,2],[3,4]] #assert: #matchesType[Number<2,_>] ## 2 by whatever
+
 1 100 range filter: isPrime NEWLINE join-on println
 [1, 2, 3, 4, 5] map: {range sum} println
 
