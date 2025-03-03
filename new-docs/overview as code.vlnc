@@ -1,0 +1,72 @@
+#import inputPrompt from stdin
+#import isPrime from math
+#import NEWLINE, PI from constants
+
+"What is your name?" println
+stdin ::= name
+
+"Hello, " name + println
+$"Hello {$name}" println
+
+{(:String) -> (Number?) =>
+    all: {isDigit?} ?: {parseInt} {#None}
+} ::= parseNumber
+
+#None while: {(arg: Number?) -> (Number?) => $arg isNone? |
+    "Please enter a number" inputPrompt $parseNumber()
+}
+
+$"Double your number is {2*}" println
+
+1 100 range filter: isPrime NEWLINE join-on println
+[1, 2, 3, 4, 5] map: {range sum} println
+
+[[1,2,3],[4,5,6],[7,8,9]] shape println ## [3, 3]
+[1, 2, 3, 4, 5, 6, 7, 8,9] shape println ## [9]
+[1, [2, 3, 4], 5] shape println ## [3]
+[[1,2,3],[4,5,[6]]] shape println ## [2,3]
+[[1,2,3],[4,5]] shape println ## [2,3]
+
+#object Point: {(Number, Number) =>
+    ::= x
+    ::= y
+}
+
+#extension toString: {(point: Point) -> (String) => $"({$point.x}, {$point.y})"}
+
+#trait Shape: {
+    #::= points: Point+
+    0 ::= sides
+    #extension .getArea: 𝔽[; Number]
+    #extension .getPoints: {() -> (Point+) => $points}
+}
+
+#object Square: {(Point<2>) =>
+    ::= points
+    4 ::= sides
+
+    #extension .getArea: {() -> (Number) =>
+        $points map: {$.x} reduce: absDiff square
+    }
+}
+
+#object Circle: {(Point, Number) =>
+    ::= radius
+    ::= center
+    1 ::= sides ## Loosely speaking
+
+    #extension .getArea: {() -> (Number) =>
+        $radius PI * square
+    }
+}
+
+## Arity-dependent function
+#extension fork: {(f: 𝔽, g: 𝔽, {f ^ g}) -> ({f + g}) =>
+    peek: $f!() $g!() ## !() pushes the result(s) of the function to the return stack
+}
+
+3 4 fork: + * pair println ## [7, 12]
+## OR
+3 4 {(Number, Number) -> (Number) => +} {(Number, Number) -> (Number) => *} fork println ## [7, 12]
+
+
