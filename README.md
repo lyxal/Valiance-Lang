@@ -12,9 +12,11 @@ be something that is an "adventure". It just needs to work. Valiance does that.
 
 Okay so at this stage, I don't have any actual implementation. Only specs and
 planning documents. And I don't think I'll be able to work on implementation
-for a while because University is about to go back for the year, and it's
+for a while because University is back for the year, and it's
 going to get rather busy. Therefore, I figured it'd be best to share
 the design plans I've come up with so far.
+
+[This overview file contains the best known plans and features at this stage](https://github.com/lyxal/Valiance-Lang/blob/main/new-docs/overview%20as%20code.vlnc)
 
 ## Can I Implement This?
 
