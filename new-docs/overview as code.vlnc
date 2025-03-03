@@ -69,4 +69,49 @@ $"Double your number is {2*}" println
 ## OR
 3 4 {(Number, Number) -> (Number) => +} {(Number, Number) -> (Number) => *} fork println ## [7, 12]
 
+{<T>(T~) -> (T+) => flatten} ::= flatten
+{<T, U>(T+, U+) -> ((T|U)<2>) => both: head} ::= firsts
 
+[[1,2],[3,4],[5,6]] flatten println ## [1, 2, 3, 4, 5, 6]
+[1,2,3] ["a", "b", "c"] firsts println ## [1, "a"]
+
+## Fibonacci as a while loop
+{(nth :Number) -> (Number) =>
+    @(0, 1, 0)
+    while: {@(a: Number, b: Number, counter: Number) => $counter $nth < |
+        @($b, $a $b +, $counter ++)
+    }
+    tail
+} ::= fib
+
+## The above utilises a tuple to maintain state in the while loop
+## Rather than normal arguments, the tuple is destructured each iteration
+
+@(1, 2, 3) ## Tuple of 3 numbers
+1 2 3 tuple3 ## Same tuple, but formed from stack values
+
+20 2 % #match: {
+    0 => "Even",
+    _ => "Odd"
+}
+
+20 #match: {
+    2 % 0 == => "Even",
+    _ => Odd
+}
+
+[1, 2, 3] #match: {
+    [1, 2, 3] => "Matched",
+    _ => "Not matched"
+}
+
+[1, 2, 3] #match: {
+    (1, _, 3) => "Matched",
+    (_, 2, _) => "Sort of matched",
+    _ => "Not matched"
+}
+
+[1, 2, 3, 4] #match: {
+    (_, 4) => "Matched",
+    _ => "Not matched"
+} ## Prints "Matched", because the `_` matches the [1, 2, 3]
