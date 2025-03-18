@@ -8,8 +8,8 @@ iota fold: *
 
 ## Approach 2 - Recursion
 
-{(n: Number) -> Number =>
-  thisFN = factorial
+{(n: Number) -> (Number) =>
+  thisFN ::= factorial
   switch: {$n 0 ==} { 1 } {
     $n 1 - $factorial() $n *
   }

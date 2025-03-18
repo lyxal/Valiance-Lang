@@ -1,7 +1,7 @@
 ## Approach 1: Recursive
 
-{(:Number) -> Number => 
-  thisFN = f
+{(:Number) -> (Number) => 
+  thisFN ::= f
   #match: {
     0 => 0 |
     1 => 1 |
@@ -11,7 +11,7 @@
 
 ## Approach 2: While Loop
 
-{(:Number) -> Number =>
+{(:Number) -> (Number) =>
   @(0, 1, arg)
   while: {@(first: Number, second: Number, acc: Number) =>
     $acc non-zero? |
