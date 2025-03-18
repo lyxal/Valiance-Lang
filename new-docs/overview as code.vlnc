@@ -48,20 +48,20 @@ $"Double your number is {2*}" println
     ::= y
 }
 
-#extension toString: {(point: Point) -> (String) => $"({$point.x}, {$point.y})"}
+#define toString: {(point: Point) -> (String) => $"({$point.x}, {$point.y})"}
 
 #trait Shape: {
     #::= points: Point+
     0 ::= sides
-    #extension .getArea: 𝔽[; Number]
-    #extension .getPoints: {() -> (Point+) => $points}
+    #define .getArea: 𝔽[; Number]
+    #define .getPoints: {() -> (Point+) => $points}
 }
 
 #object Square: {(Point<2>) =>
     ::= points
     4 ::= sides
 
-    #extension .getArea: {() -> (Number) =>
+    #define .getArea: {() -> (Number) =>
         $points map: {$.x} reduce: absDiff square
     }
 }
@@ -71,13 +71,13 @@ $"Double your number is {2*}" println
     ::= center
     1 ::= sides ## Loosely speaking
 
-    #extension .getArea: {() -> (Number) =>
+    #define .getArea: {() -> (Number) =>
         $radius PI * square
     }
 }
 
 ## Arity-dependent function
-#extension fork: {(f: 𝔽, g: 𝔽, {f ^ g}) -> ({f + g}) =>
+#define fork: {(f: 𝔽, g: 𝔽, {f ^ g}) -> ({f + g}) =>
     peek: $f!() $g!() ## !() pushes the result(s) of the function to the return stack
 }
 
