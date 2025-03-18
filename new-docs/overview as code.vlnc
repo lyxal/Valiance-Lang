@@ -86,7 +86,7 @@ $"Double your number is {2*}" println
 3 4 {(Number, Number) -> (Number) => +} {(Number, Number) -> (Number) => *} fork println ## [7, 12]
 
 {<T>(T~) -> (T+) => flatten} ::= flatten
-{<T, U>(T+, U+) -> ((T|U)<2>) => both: head} ::= firsts
+{<T, U>(T+, U+) -> ((T|U)+<2>) => both: head} ::= firsts
 
 [[1,2],[3,4],[5,6]] flatten println ## [1, 2, 3, 4, 5, 6]
 [1,2,3] ["a", "b", "c"] firsts println ## [1, "a"]
