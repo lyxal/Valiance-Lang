@@ -59,6 +59,7 @@ Some candidates for hard-coded syntax include:
 - `#bind` - To potentially disallow user-defined extensions. Seems excessive
   to require `#` every time you want to bind, but maybe that's a good thing
   given it's non-standard behaviour.
+- `#thisFN` - Allow for specification of how many layers up to call as "this"
 
 
 ## Might Seem Like Good Fits, But Aren't
