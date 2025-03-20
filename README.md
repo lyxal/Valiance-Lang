@@ -16,8 +16,6 @@ for a while because University is back for the year, and it's
 going to get rather busy. Therefore, I figured it'd be best to share
 the design plans I've come up with so far.
 
-[This overview file contains the best known plans and features at this stage](https://github.com/lyxal/Valiance-Lang/blob/main/new-docs/overview%20as%20code.vlnc)
-
 ## Can I Implement This?
 
 Well, technically I can't stop you from doing so. But I'd strongly recommend
