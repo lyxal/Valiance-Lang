@@ -8,112 +8,86 @@ de-emphasising the need for cryptic symbols, opting instead for a dash of
 verbosity. Ideally, the meaning of programs should be somewhat obvious to
 programmers coming from other languages.
 
-## Syntax
+## The Stack
 
-As Valiance is a stack-based programming language, syntax is, for the most part,
-reminiscent of "Reverse Polish Notation". This means that function calls come
-after their arguments. For example, to add two numbers, one would write:
+As Valiance is a stack-based language, values are pushed onto and popped
+from a central stack when performing operations. The stack can hold as
+many values as needed, and can store any type of value.
+
+## Literals
+
+### Numbers
+
+- Numbers can be integers, rational numbers, or complex numbers.
+- There is no bound on the size of numbers.
 
 ```valiance
-1 2 +
+50
+34.3
+-5.3
+4i3
+2.4i-4
 ```
 
-This also demonstrates that data is pushed onto a central "stack", and popped
-from the same stack when needed for a function call.
+### Strings
 
-### Comments
+- Strings are enclosed in double quotes.
+- UTF-8 encoded.
+- Double quotes can be escaped with a backslash.
+- `#s"` starts a interpolated string.
+- Can be multiline by default.
 
-Comments start with `##` and continue until the end of the line. Multi-line
-comments start with `#/` and end with `/#`.
-
-### Whitespace
-
-Whitespace is not significant in Valiance, separation of tokens excepted.
-
-### Numeric Literals
-
-The syntax for numeric literals is:
-
-```ebnf
-NUMERIC_LITERAL ::= DECIMAL ("i" DECIMAL)?
-DECIMAL ::= NUMBER ("." NUMBER)?
-NUMBER ::= 0 | ([1-9] [0-9]*)
+```valiance
+"Hello, world!"
+"Hello, \"world\"!"
+#s"Hello, #{$name}!"
+"Multi
+line
+string"
 ```
 
-### String Literals
+### Lists
 
-String literals are enclosed in double quotes. The syntax for string
-literals is:
+- Lists are enclosed in square brackets.
+- Need not be rectangular.
+- Can be nested.
+- Supports mixed types, but will be represented as a union type.
 
-```ebnf
-STRING_LITERAL ::= '"' ([^"\\] | "\\" .)* '"'
+```valiance
+[1, 2, 3]
+[1, 2, [3, 4]]
+[1, "Hello", 3.4]
 ```
-
-### List Literals
-
-List literals are enclosed in square brackets. The syntax for list
-literals is:
-
-```ebnf
-LIST_LITERAL ::= "[" (EXPRESSION ("," EXPRESSION)*)? "]"
-```
-
-`EXPRESSION` refers to any valid expression, including literals, variable retrieval, 
-tuples, elements, etc.
-
-There is more to be said about lists, but that will be for the section of the specs
-that talks about array models (forewarned: it's not your typical array model).
 
 ### Tuples
 
-Tuples start with `@(` and end with `)`. They allow for multiple values to be
-grouped together without allowing for vectorisation. The syntax for tuples
-is:
+- Tuples start with `@(` and end with `)`.
+- Allow for grouping of values into a single stack value.
+- Different from lists in that they are fixed size and type.
+- Tuples are immutable, can't be vectorised upon.
 
-```ebnf
-TUPLE ::= "@(" (EXPRESSION ("," EXPRESSION)*)? ")"
+```valiance
+@("Hello", 1, 3.4)
+@("Hello", 1, 3.4, [1, 2, 3])
 ```
 
-### Variables
+## The List Model
 
-Variables are set with `::=` and retrieved with `$`. Variable names can
-be any string matching `[a-zA-Z_][0-9a-zA-Z_]*`, and are case-sensitive.
+Unlike other array languages, Valiance does not enforce homogenous rectilinear
+arrays. Instead, it utilises a list model that allows for sublists to be
+of different lengths.
 
-When setting a variable, the type of the variable can be specified
-with a colon followed by the type name. If no type is specified,
-the type is inferred from the value assigned to the variable.
+The shape of a list is defined as the greatest rectangle that a list could
+effectively be considered. If it looks like a rectangle, and can act like a
+rectangle, then it is a rectangle. This is known as effective shape.
 
-```ebnf
-VARIABLE_SET ::= "::=" NAME (":" TYPE)?
-VARIABLE_GET ::= "$" NAME
-NAME ::= [a-zA-Z_][0-9a-zA-Z_]*
+The effective shape of a list is defined as the maximum length of lists
+at each depth up to the maximum shared depth.
+
+For example, the effective shape of the following lists would be:
+
+```valiance
+[[1,2],[3,4,5]] -> [2, 3]
+[1, [2,3]] -> [2]
+[[1], [[2,3]]] -> [2, 1]
 ```
-
-### Types
-
-The syntax for types is:
-
-```ebnf
-TYPE ::= UNION_TYPE
-UNION_TYPE ::= INTERSECTION_TYPE ("|" INTERSECTION_TYPE)*
-INTERSECTION_TYPE ::= ATOMIC_TYPE ("&" ATOMIC_TYPE)*
-ATOMIC_TYPE ::= (NAME | TUPLE | LIST | FUNCTION) TYPE_OPERATION?
-TYPE_OPERATION ::= ("!" | "?" | "+" | "~")+
-```
-
-### Functions
-
-Functions start with `{` and end wit `}`. They can specify arguments and return
-types, and have multiple branches. They can also omit arguments altogether to
-assume a single-argument function. The syntax for functions is:
-
-```ebnf
-FUNCTION_LITERAL ::= "{" ( 
-            "(" FUNCTION_PARAMETERS? ")" 
-            ("->" TYPE ("," TYPE)*)? 
-            "=>"
-    )?
-    PROGRAM
-"}"
-```
-
