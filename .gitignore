@@ -1,0 +1,10 @@
+# Hey wait I've seen these ones somewhere before
+.bloop/
+.bsp/
+.metals/
+.vscode/
+null/
+out/
+project/project/
+target/
+metals.sbt
