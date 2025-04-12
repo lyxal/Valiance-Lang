@@ -262,3 +262,48 @@ seem a bit odd, but it is the best approximation of the shape of the list.
     [[1,2],[3,4,5]] -> [2, 3]
     [1, [2,3]] -> [2]
     [[1], [[2,3]]] -> [2, 1]
+
+## Types
+
+Given Valiance is a statically typed language, there is a type system ensuring data is passed only where it's supposed to go. 
+
+Every object in Valiance has a type. Some built-in types are pre-provided:
+
+| Type | Unicode Alias | Description | Examples |
+|------|---------------|-------------|----------|
+| `Number` | `ℕ` | A real number | `1`, `3.14`, `0.0` |
+| `Number.Whole` | `ℤ` | An integer | `1`, `0`, `-1` |
+| `Number.Rational` | `ℚ` | A rational number | `1/2`, `3/4`, `0/1` |
+| `Number.Complex` | `ℂ` | A complex number | `1+2i`, `3.14-1.0i`, `0.0+0.0i` |
+| `String` | `𝕊` | A string | `"hello"`, `"world"`, `""` |
+| `None` | `∅` | A null value | `∅` |
+| `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
+| `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
+| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `TODO`|
+| `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
+| `Constructor` | `⨂` | A constructor for a type | NA |
+
+There is no dedicated list type in Valiance. Rather, lists are expressed as "type operations" upon a base type. 
+
+The `+` type operation indicates a rank 1 list of a type. For example, `ℕ+` is a list of numbers. Multiple `+`s increase the rank of the list: `ℕ+++` is a 3d list of Numbers (list of lists of lists of numbers). To save characters, a number can be specified after the `+` to indicate rank. `ℕ+8` is a horribly nested 8 dimensional list of numbers. 
+
+However, it is impossible to always know the exact rank of a list: elements like `reshape` can turn a list into any shape, even dynamically generated shapes. Luckily, it is possible to tell the _minimum_ rank of a list - at the very least, a list will be a flat list, regardless of shape. Therefore, the `~` type operation is used to indicate minimum rank. For example, `ℕ~` is at least a flat list of numbers, although it could also be `ℕ++`, or even a mix of numbers and other number lists. Like `+`, `~`s can be stacked to indicate a higher minimum rank. `ℕ~~` is at least a list of lists of numbers, and each item in the list is at least `ℕ~`. Arbitrary ranks can be specified with a number like with `+`. 
+
+`+`s and `~`s can't be mixed in a type, but a `+` list can be used where a `~` list is expected if the rank of the `+` list is >= the rank of the `~` list. In other words, `T+n` is considered `T~m` if `n >= m`. 
+
+For example, `T++` can be safely considered as `T~`. On the other hand, `T+` cannot be safely considered as `T~~`. 
+
+There are other type operations that can be used in types:
+
+| Operator | Description |
+|----------|-------------|
+| `+` | A rank 1 list of the type. |
+| `~` | A list of at least rank 1 of the type. |
+| `/` | A union of types. |
+| `&` | An intersection of types. |
+| `?` | An optional type. Same as `T / None`|
+| `!` | Exactly an atomic type, never a list. Useful for controlling vectorisation. |
+
+Any type that is not a list is termed "atomic".
+
+ 
