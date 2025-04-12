@@ -306,4 +306,20 @@ There are other type operations that can be used in types:
 
 Any type that is not a list is termed "atomic".
 
- 
+## Vectorisation
+
+One of the most important aspects of the array programming paradigm is pervasiveness - applying functions across all atomic items in a list. For example, `[1,2,3] + 4` gives `[5,6,7]` as a result. In Valiance, this is referred to as "vectorisation", and the act of doing is called "vectorising". Some elements do vectorise, others don't. 
+
+Generally speaking, an element vectorises when it expects an argument of a certain rank, but is given an argument with a higher rank. Atomic values can be considered to have rank 0.
+
+Elements will "dig down" the higher-rank argument until the expected type is reached. For example, `+` is defined for the inputs `Number, Number`. If given `Number+, Number` as input, it will add the second number to each number in the first list.
+
+Vectorisation behaviour changes slightly when multiple higher-ranked lists are given as inputs to an element. Instead of digging down a single list, the element will dig down *multiple* lists at once until a point is reached where all arguments are the expected rank. More specifically:
+
+> If all arguments match the function overload, apply the function. Otherwise, zip, at the maximum shared depth, all arguments that do not match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
+
+Zipping simply means to group corresponding items across multiple lists. For example, zipping `[1,2,3]` and `[4,5,6]` together gives `[[1, 4], [2, 5], [3, 6]]`. 
+
+Therefore, adding `[1,2,3]` and `[4,5,6]` would give `[5, 7, 9]`, as corresponding items are added together (`[1 + 4, 2 + 5, 3 + 6]`). 
+
+There is an exception to the vectorisation rule. An element will not vectorise if a higher-ranked argument is given where a `!` type is expected. For example, if addition was instead defined on `Number!, Number!`, calling addition with `Number+, Number` would result in a type error. This allows elements to explicitly _not_ vectorise if it wouldn't make sense to do so. Given the importance of vectorisation in array programming, it is recommended to use the `!` type operation sparingly. 
