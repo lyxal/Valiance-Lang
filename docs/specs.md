@@ -59,12 +59,13 @@ so by:
 7. Functions
    1. Arity-Dependent Functions
    2. Function Overloading
-8. Modifiers
+8. Modifiers
 9. Variables
 10. Extension Methods
 11. Objects
-12. Traits
-13. Modules
+12. Generics
+13. Traits
+14. Modules
 
 ## The Stack
 
@@ -326,16 +327,74 @@ There is an exception to the vectorisation rule. An element will not vectorise i
 
 ## Functions
 
-Functions are user-definable objects that take input values and transform them into other values. In this way, functions can be seen as a sort of element. Unlike elements, functions are not automatically applied to stack items, but instead reside on the stack until needed. (User-defined elements will be explained later on in this document). 
+Functions are user-definable objects that take input values and transform them into other values. In this way, functions can be seen as a sort of element. Unlike elements, functions are not automatically applied to stack items, but instead reside on the stack until needed. (User-defined elements will be explained later on in this document).
 
-A function has inputs and outputs. The number of inputs to a function is called the "arity" of a function. The number of outputs from a function is called the "multiplicity" of a function. 
+A function has inputs and outputs. The number of inputs to a function is called the "arity" of a function. The number of outputs from a function is called the "multiplicity" of a function.
 
-As Valiance is stack based, all functions must have a fixed arity and multiplicity - varargs are not allowed (they create too many problems when trying to do static analysis). 
+As Valiance is stack based, all functions must have a fixed arity and multiplicity - varargs are not allowed (they create too many problems when trying to do static analysis).
 
-Functions are opened with a `{` and are closed with a `}`. The inputs and outputs of a function are specified in the format `(inputs) -> (outputs)`, and is followed by a `=>`. Both inputs and outputs can be empty, and the outputs can be omitted. If outputs are omitted, Valiance will infer the return type from the top of the stack. If inputs or outputs are empty, then the function is considered to take no arguments or return no results respectively. 
+Functions are opened with a `{` and are closed with a `}`. The inputs and outputs of a function are specified in the format `(inputs) -> (outputs)`, and is followed by a `=>`. Both inputs and outputs can be empty, and the outputs can be omitted. If outputs are omitted, Valiance will infer the return type from the top of the stack. If inputs or outputs are empty, then the function is considered to take no arguments or return no results respectively.
 
-Functions can span multiple lines as needed. 
+The inputs part of the function can be a mixed list of:
 
-### Function Arguments
+- A number, indicating to pop that many items from the stack,
+- A colon followed by a type, indicating to pop an item of that type from the stack,
+- A variable name, indicating to pop an item from the stack and assign it to that variable.
+- A variable name followed by a colon and a type, indicating to pop an item from the stack, assign it to that variable, and check that it is of that type.
 
- 
+Similarly, the outputs part of the function can be a mixed list of:
+
+- A number, indicating to push that many items onto the stack,
+- A colon followed by a type, indicating to push an item of that type onto the stack,
+
+The type of a function is `𝔽[<inputs>;<outputs>]`
+
+Some examples of functions are:
+
+    {(:Number, :Number) => +} ## 𝔽[Number, Number; Number] (Output inferred)
+    {(:Number{2}) => +} ## Same deal
+    {(x: Number, y: Number) -> (:Number) => $x $y +} ## Same deal
+    {() -> () => } ## 𝔽[]
+    {() -> (:Number) => 1} ## 𝔽[;Number];
+    {(2) -> (1) =>
+        2tuple #match: {
+         @(x: Number, y: Number) => $x $y +,
+        }
+    } ## 𝔽[^1, ^2; Number/^2] (implicit generics)
+
+As seen above, if a function has a number in its argument list, it will have
+implicitly created generics. These generics act as if they were normal generics,
+but can't be accessed directly in a function body. More will be said about this in the
+section on generics.
+
+Here are some key things to note about functions:
+
+- Functions operate on their own stack. What's passed to a function is the only
+  external data available to the function.
+- Variables outside of a function can only be accessed, not modified.
+- However, a variable outside a function will be bound to any returned functions. This
+  allows for closures.
+
+### Arity-Dependent Functions
+
+Some functions may need to take a variable number of arguments depending on any
+function arguments passed. For example, consider a function named `both`. `both`
+takes a function F, and applies F to two sets of (F.arity) arguments. The code
+
+    1 2 3 4 {(:Number, :Number) => +} both
+
+Would return `3` and `7`.
+
+Because functions require a fixed arity, `both` is not possible with normal
+functions - while one may think function overloads would work, they aren't
+generalised to functions of any arity.
+
+The solution is to use a special type of function called an "arity-dependent
+function" (ADF). An ADF is able to refer to the arity of its function type
+arguments to effectively simulate varargs. To make the usage of ADFs easier,
+only functions with a known arity can be used as arguments to ADFs. This restriction
+allows the ADF system to operate within a static type system.
+
+There are some extra limitations to how ADFs can be defined/used, and there's
+also some extra semantics to how they work. These will be discussed in the
+section about extension methods.
