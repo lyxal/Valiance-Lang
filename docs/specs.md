@@ -55,15 +55,16 @@ so by:
 3. Literals
 4. The List Model
 5. Types
-6. Functions
+6. Vectorisation
+7. Functions
    1. Arity-Dependent Functions
    2. Function Overloading
-7. Modifiers
-8. Variables
-9. Extension Methods
-10. Objects
-11. Traits
-12. Modules
+8. Modifiers
+9. Variables
+10. Extension Methods
+11. Objects
+12. Traits
+13. Modules
 
 ## The Stack
 
