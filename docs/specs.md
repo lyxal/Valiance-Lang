@@ -54,11 +54,11 @@ so by:
 2. Elements
 3. Literals
 4. The List Model
-5. Functions
+5. Types
+6. Functions
    1. Arity-Dependent Functions
    2. Function Overloading
-6. Modifiers
-7. Types
+7. Modifiers
 8. Variables
 9. Extension Methods
 10. Objects
