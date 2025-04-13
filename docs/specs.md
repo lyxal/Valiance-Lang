@@ -376,6 +376,7 @@ Here are some key things to note about functions:
 - Variables outside of a function can only be accessed, not modified.
 - However, a variable outside a function will be bound to any returned functions. This
   allows for closures.
+- Functions can be called using the `!()` element. 
 
 ### Arity-Dependent Functions
 
