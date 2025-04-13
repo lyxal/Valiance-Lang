@@ -283,6 +283,7 @@ Every object in Valiance has a type. Some built-in types are pre-provided:
 | `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
 | `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
 | `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `TODO`|
+| `OverloadedFunction` | `ℽ` | A function with multiple overloads | `TODO` |
 | `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
 
