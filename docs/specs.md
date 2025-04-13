@@ -377,6 +377,7 @@ Here are some key things to note about functions:
 - However, a variable outside a function will be bound to any returned functions. This
   allows for closures.
 - Functions can be called using the `!()` element. 
+- If a function is stored in a variable, it can be called by wrapping the function name in backticks. 
 
 ### Arity-Dependent Functions
 
