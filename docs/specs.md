@@ -403,3 +403,25 @@ allows the ADF system to operate within a static type system.
 There are some extra limitations to how ADFs can be defined/used, and there's
 also some extra semantics to how they work. These will be discussed in the
 section about extension methods.
+
+### Function Overloading
+
+Much like elements, and other programming languages, functions can be overloaded to perform different behaviours depending on the types of its input arguments. 
+
+Function overloading is accomplished by using the addition element:
+
+    {(:Number!) => "Got a number!"}
+	{(:String!) => "String input"}
+	+ ::=overloaded
+	5 `overloaded` ## "Got a number!"
+	"yes" `overloaded` ## "String input"
+
+A function overload's arguments are not allowed to be a prefix of another function overload's arguments. For example, a function `𝔽[Number; Number]` can't be overloaded with another function `𝔽[Number, Number; Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
+
+_As a consequence, unit functions cannot appear as a function overload_
+
+An overloaded function has type:
+
+    ℽ[𝔽1, 𝔽2, ..., 𝔽n] 
+
+Where `𝔽n` is the type of each function.  
