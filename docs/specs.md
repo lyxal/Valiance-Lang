@@ -95,7 +95,9 @@ Some examples of elements are:
 - `length`: Returns the length of a list.
 - `map`: Applies a function to each element of a list.
 
-Eventually, there will be a reference for all pre-defined elements.
+_Eventually, there will be a reference for all pre-defined elements._
+
+Some elements may be defined for multiple sets of inputs. Each definition is called an overload. For example, addition also performs concatenation of two strings.
 
 ## Literals
 
