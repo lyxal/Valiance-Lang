@@ -424,4 +424,51 @@ An overloaded function has type:
 
     ℽ[𝔽1, 𝔽2, ..., 𝔽n] 
 
-Where `𝔽n` is the type of each function.  
+Where `𝔽n` is the type of each function.
+
+## Modifiers
+
+A common pattern in functional programming is to pass functions as arguments to other functions.
+For example, consider the `map` element, which takes a function and a list, and applies the function to each element of the list. To map the function `{(:Number) => 2 *}` over the list `[2, 4, 5]`, you would write:
+
+    [2, 4, 5] {(:Number) => 2 *} map
+
+Notice how the element always appears after the function. For long functions, this means that
+the element will be far away from the start of the function, distancing the element from the
+data it operates on. This is not ideal, and can make code harder to read.
+
+In Valiance, an element can be followed by a `:` to "modify" the element to read its function
+arguments from the next tokens. This is slightly different to other array languages where
+modifiers (or whatever the language calls them) are dedicated keywords/symbols.
+
+To turn the `map` element into a modifier, you would write:
+
+    [2, 4, 5] map: {(:Number) => 2 *}
+
+The `map` element no longer takes a function from the stack, but instead takes the function
+directly next to it. The code now reads more naturally, and readers do not need to scan
+to the end of the function to see how the function is used.
+
+An element can only be modified if it takes at least one function as an argument.
+
+### Design Rationale
+
+One of the main reasons for treating modifiers as syntactic sugar is to avoid potential duplication of elements. Traditionally, modifiers, by design, require a fixed function to operate on. This creates a fundamental limitation: when only a modifier exists for a functional programming construct, that construct cannot dynamically reference or apply first-class functions from the stack.
+
+To overcome this limitation, it's desirable to introduce a corresponding keyword—one that can access function arguments dynamically from the stack. However, this leads to an overlap in functionality: now both a modifier and a keyword exist for the same purpose. This redundancy leads to one form inevitably being preferred over the other, making the lesser-used form useless.
+
+There is a very simple solution to this problem: realise that modifiers are really just wrappers
+around elements. Then, only a single element is required, and the benefits of modifier syntax is
+retained.
+
+Notably, this is not a problem in other array languages where functions are not first-class. In fact,
+modifiers acting upon fixed functions is the _only_ way to do functional programming in those languages.
+The duplication problem is unique to Valiance resulting from its design goals.
+
+As an aside, the `:` was chosen as the modifier symbol because:
+
+1. Originally, modifiers _were_ separate keywords. To help indicate that a keyword was
+   a modifier, modifier keywords were suffixed with a `:`. Upon attempting to solve the
+   redundancy problem, it was realised that only the `:` needed to be special syntax.
+2. `:` already acts as a modifier-esque construct in Valiance. For example, arguments in
+   functions can have a type specified after a `:`. The metaphor translates nicely to modifiers.
