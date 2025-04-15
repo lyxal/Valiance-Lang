@@ -1,19 +1,5 @@
 # The Valiance Programming Language
 
-<!--
-
-Come with me,
-and you'll be,
-in a world of array language indignation.
-
-Take a look,
-and you'll see,
-non-rectangular arrays.
-
-And a whole bunch of other stuff that will make array language regulars
-cry.
--->
-
 ## Introduction
 
 Valiance is an array-oriented programming language designed to make the
@@ -120,13 +106,13 @@ There is no limitation on number size nor precision.
 
 Examples:
 
-- `69`
-- `420.69`
-- `-69`
-- `-420.69`
-- `69i420.69`
-- `-69i420.69`
-- `-69i-420.69`
+- `8`
+- `53.87`
+- `-8`
+- `-53.87`
+- `8i2`
+- `-8i2.3`
+- `-8i-2.3`
 
 ### Strings
 
@@ -169,8 +155,8 @@ Examples:
 
 - `[]`
 - `[1, 2, 3]`
-- `[1, 2, 3, "Hello, world!"]` (sacrilege, allegedly)
-- `[1, 2, [3, 4, 5], 6]` (look away uiuaboos, APLers and other array language users)
+- `[1, 2, 3, "Hello, world!"]`
+- `[1, 2, [3, 4, 5], 6]`
 - `[[1], [2, 3], [4, 5, 6]]`
 
 ### Tuples
@@ -235,8 +221,7 @@ opts for a more flexible list model. This is because:
 - Sometimes you want to have a list of lists of different lengths, without
   having to resort to approaches like boxing or padding.
 - The list model is more familiar to most programmers, and is easier to understand.
-- List models tend to allow for shorter code than rectangular arrays. (As evidenced
-  by the fact that in the realm of code golf, the top ~23 languages all use a list model).
+- List models tend to allow for shorter code than rectangular arrays.
 
 However, unlike list models in languages like K, lists in Valiance will be
 considered rectangular if it is possible to do so. If a list looks like it's
@@ -268,7 +253,7 @@ seem a bit odd, but it is the best approximation of the shape of the list.
 
 ## Types
 
-Given Valiance is a statically typed language, there is a type system ensuring data is passed only where it's supposed to go. 
+Given Valiance is a statically typed language, there is a type system ensuring data is passed only where it's supposed to go.
 
 Every object in Valiance has a type. Some built-in types are pre-provided:
 
@@ -287,15 +272,15 @@ Every object in Valiance has a type. Some built-in types are pre-provided:
 | `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
 
-There is no dedicated list type in Valiance. Rather, lists are expressed as "type operations" upon a base type. 
+There is no dedicated list type in Valiance. Rather, lists are expressed as "type operations" upon a base type.
 
-The `+` type operation indicates a rank 1 list of a type. For example, `ℕ+` is a list of numbers. Multiple `+`s increase the rank of the list: `ℕ+++` is a 3d list of Numbers (list of lists of lists of numbers). To save characters, a number can be specified after the `+` to indicate rank. `ℕ+8` is a horribly nested 8 dimensional list of numbers. 
+The `+` type operation indicates a rank 1 list of a type. For example, `ℕ+` is a list of numbers. Multiple `+`s increase the rank of the list: `ℕ+++` is a 3d list of Numbers (list of lists of lists of numbers). To save characters, a number can be specified after the `+` to indicate rank. `ℕ+8` is a horribly nested 8 dimensional list of numbers.
 
-However, it is impossible to always know the exact rank of a list: elements like `reshape` can turn a list into any shape, even dynamically generated shapes. Luckily, it is possible to tell the _minimum_ rank of a list - at the very least, a list will be a flat list, regardless of shape. Therefore, the `~` type operation is used to indicate minimum rank. For example, `ℕ~` is at least a flat list of numbers, although it could also be `ℕ++`, or even a mix of numbers and other number lists. Like `+`, `~`s can be stacked to indicate a higher minimum rank. `ℕ~~` is at least a list of lists of numbers, and each item in the list is at least `ℕ~`. Arbitrary ranks can be specified with a number like with `+`. 
+However, it is impossible to always know the exact rank of a list: elements like `reshape` can turn a list into any shape, even dynamically generated shapes. Luckily, it is possible to tell the _minimum_ rank of a list - at the very least, a list will be a flat list, regardless of shape. Therefore, the `~` type operation is used to indicate minimum rank. For example, `ℕ~` is at least a flat list of numbers, although it could also be `ℕ++`, or even a mix of numbers and other number lists. Like `+`, `~`s can be stacked to indicate a higher minimum rank. `ℕ~~` is at least a list of lists of numbers, and each item in the list is at least `ℕ~`. Arbitrary ranks can be specified with a number like with `+`.
 
-`+`s and `~`s can't be mixed in a type, but a `+` list can be used where a `~` list is expected if the rank of the `+` list is >= the rank of the `~` list. In other words, `T+n` is considered `T~m` if `n >= m`. 
+`+`s and `~`s can't be mixed in a type, but a `+` list can be used where a `~` list is expected if the rank of the `+` list is >= the rank of the `~` list. In other words, `T+n` is considered `T~m` if `n >= m`.
 
-For example, `T++` can be safely considered as `T~`. On the other hand, `T+` cannot be safely considered as `T~~`. 
+For example, `T++` can be safely considered as `T~`. On the other hand, `T+` cannot be safely considered as `T~~`.
 
 There are other type operations that can be used in types:
 
@@ -312,7 +297,7 @@ Any type that is not a list is termed "atomic".
 
 ## Vectorisation
 
-One of the most important aspects of the array programming paradigm is pervasiveness - applying functions across all atomic items in a list. For example, `[1,2,3] + 4` gives `[5,6,7]` as a result. In Valiance, this is referred to as "vectorisation", and the act of doing is called "vectorising". Some elements do vectorise, others don't. 
+One of the most important aspects of the array programming paradigm is pervasiveness - applying functions across all atomic items in a list. For example, `[1,2,3] + 4` gives `[5,6,7]` as a result. In Valiance, this is referred to as "vectorisation", and the act of doing is called "vectorising". Some elements do vectorise, others do not.
 
 Generally speaking, an element vectorises when it expects an argument of a certain rank, but is given an argument with a higher rank. Atomic values can be considered to have rank 0.
 
@@ -322,15 +307,15 @@ Vectorisation behaviour changes slightly when multiple higher-ranked lists are g
 
 > If all arguments match the function overload, apply the function. Otherwise, zip, at the maximum shared depth, all arguments that do not match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
 
-Zipping simply means to group corresponding items across multiple lists. For example, zipping `[1,2,3]` and `[4,5,6]` together gives `[[1, 4], [2, 5], [3, 6]]`. 
+Zipping simply means to group corresponding items across multiple lists. For example, zipping `[1,2,3]` and `[4,5,6]` together gives `[[1, 4], [2, 5], [3, 6]]`.
 
-Therefore, adding `[1,2,3]` and `[4,5,6]` would give `[5, 7, 9]`, as corresponding items are added together (`[1 + 4, 2 + 5, 3 + 6]`). 
+Therefore, adding `[1,2,3]` and `[4,5,6]` would give `[5, 7, 9]`, as corresponding items are added together (`[1 + 4, 2 + 5, 3 + 6]`).
 
 There is an exception to the vectorisation rule. An element will not vectorise if a higher-ranked argument is given where a `!` type is expected. For example, if addition was instead defined on `Number!, Number!`, calling addition with `Number+, Number` would result in a type error. This allows elements to explicitly _not_ vectorise if it wouldn't make sense to do so. Given the importance of vectorisation in array programming, it is recommended to use the `!` type operation sparingly.
 
 ## Functions
 
-Functions are user-definable objects that take input values and transform them into other values. In this way, functions can be seen as a sort of element. Unlike elements, functions are not automatically applied to stack items, but instead reside on the stack until needed. (User-defined elements will be explained later on in this document).
+Functions are user-definable objects that take input values and transform them into other values. In this way, functions can be seen as a sort of element. Unlike elements, functions are not automatically applied to stack items, but instead reside on the stack until needed.
 
 A function has inputs and outputs. The number of inputs to a function is called the "arity" of a function. The number of outputs from a function is called the "multiplicity" of a function.
 
