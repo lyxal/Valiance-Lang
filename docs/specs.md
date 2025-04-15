@@ -22,7 +22,7 @@ so by:
    and makes sense". Ideally, features will "just work" without requiring extra
    consideration, structuring, or handling.
 3. **Intentional OOP**: If you've ever used an array language with OO features, you'll
-   notice that they feel like a sort of afterthought. (Most times, that's because they are.)
+   notice that they feel like a sort of afterthought.
    Valiance integrates object-oriented programming from the start, treating it not as an add-on but as a native and natural feature of the array programming paradigm.
 4. **Statically Typed**: Static typing has become a highly desirable feature in modern
    programming languages. And for good reason: it catches more bugs at compile time,
