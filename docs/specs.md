@@ -457,3 +457,29 @@ As an aside, the `:` was chosen as the modifier symbol because:
    redundancy problem, it was realised that only the `:` needed to be special syntax.
 2. `:` already acts as a modifier-esque construct in Valiance. For example, arguments in
    functions can have a type specified after a `:`. The metaphor translates nicely to modifiers.
+
+## Variables 
+
+Variables are stores of data that exist outside of the stack. Each variable has a name, a designated type it can store, and can be retrieved or overwritten ("getting"/"setting" respectively). 
+
+Variables are set by prefixing a valid name with a `::=`. Valid names must start with a letter, and can contain `A-Za-z0-9_`. Whatever is on the top of the stack is placed into the variable. 
+
+The first time a variable is set, the type can be specified with a colon followed by the type name. However, in most cases, the type of the variable can be omitted, as it can be inferred from the top of the stack. 
+
+Once a variable has a type, attempting to store a value of an incompatible type will result in a compiler error. 
+
+Some examples include:
+
+    10 ::=myNumber
+	20 ::=yourNumber: Number? ## Useful for specifying a type that wouldn't be inferred. 
+	"Jam" ::=condiment: String ## Redundant, as it would otherwise be inferred as string.
+
+The value of a variable can be retrieved by prefixing the name of the variable with a `$`. This will push the value to the stack. Note that the variable will still contain a copy of the value (i.e retrieving a variable does not empty it). To continue the examples from earlier:
+
+    $myNumber $yourNumber #or: 5 ==
+	$condiment " is put on toast" +
+
+All variables are local. This means that modifying a variable in a function will not change a variable with the same name outside of the function. This is called "scoping" in other languages. When a variable is set inside a function, it is added to that function's scope. When a function returns a value, all values inside that function's scope are deleted. 
+
+There is one exception to this. A function returned from another function will retain the values of any variables from outer scopes. This is referred to as "closures" in other programming languages. It can be seen as the returned function taking a snapshot of its environment at the time it was returned. This concept is useful for functional programming constructs.
+ 
