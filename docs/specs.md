@@ -133,6 +133,41 @@ Examples:
     "Hello
     World!"
 
+#### String Formatting
+
+A common pattern in programming is concatenating strings to other values. For example, personalising a greeting by adding in a person's name. This often leads to a rather unpleasant chain of `+`s, and obscures the intention of inserting data into a string. 
+
+Valiance has two workarounds for this. The first is *string formatting*, which allows for a string to declare placeholder points able to be filled in later. Placeholders are designated with `{}`, and are filled in when the format overload of `%` is used. 
+
+For example:
+
+    "Hello, {}" 
+
+Allows for any value to be inserted in the place of the `{}`:
+
+    "Hello, {}" "Joe" %
+	## "Hello, Joe" 
+
+Any operations can be performed on the data in the `{}`:
+
+    "Your string in lowercase is: {lower}" "PiZZa" %
+	## "Your string in lowercase is: pizza" 
+
+Placeholders can only include expressionable code, code which is not:
+
+- variable assignment
+- extension definition
+- object definition
+- trait definition
+
+The second workaround is template strings. It can be described as immediate string formatting. Rather than waiting until `%` is used, a template string will pop from the stack to fill its placeholders. A template string starts with `#s"`:
+
+    "Joe" #s"Hello, {}" 
+	## "Hello, Joe"
+
+Placeholders can have the same values as strings used in formatting.
+ 
+
 ### Lists
 
 Lists are opened and closed with square brackets. List items can be any
