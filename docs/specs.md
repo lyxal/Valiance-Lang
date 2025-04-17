@@ -43,8 +43,6 @@ so by:
 5. Types
 6. Vectorisation
 7. Functions
-   1. Arity-Dependent Functions
-   2. Function Overloading
 8. Modifiers
 9. Variables
 10. Extension Methods
@@ -517,4 +515,30 @@ The value of a variable can be retrieved by prefixing the name of the variable w
 All variables are local. This means that modifying a variable in a function will not change a variable with the same name outside of the function. This is called "scoping" in other languages. When a variable is set inside a function, it is added to that function's scope. When a function returns a value, all values inside that function's scope are deleted. 
 
 There is one exception to this. A function returned from another function will retain the values of any variables from outer scopes. This is referred to as "closures" in other programming languages. It can be seen as the returned function taking a snapshot of its environment at the time it was returned. This concept is useful for functional programming constructs.
- 
+
+## Extension Methods
+
+At this stage, Valiance has enough defined features to solve every programming problem solvable with a programming language. However, this is different to suitability for use in an actual production environment. It can get things done, but it can't do so in a very organised manner. A few more features are needed to boost Valiance from being a fun little toy to workplace ready. 
+
+The first of these features is extension methods. So far, all elements have been pre-defined, and functions have been the main way to bundle user-defined code into a single reusable unit. Extension methods allow for elements to have new overloads added, and for functions to be turned into user-defined keywords. 
+
+Fundamentally, an extension method is more of a compiler directive than a runtime directive. It either adds functionality to an existing element, or creates a new element. 
+
+An extension method requires two things:
+
+1. An element to extend (or create)
+2. A new function to perform
+
+Extensions are defined with the `#define` keyword, followed by the name of the element, a colon, and the function to add:
+
+    #define name: {
+	  %%%
+	}
+
+This adds the function as an overload of the element. Extension methods must follow the same prefix rules as normal function overloads. 
+
+Existing overloads can be overwritten. For example, to make addition actually perform subtraction:
+
+    #define +: {(:Number, :Number) => -}
+
+This will replace the existing definition of `+` when given two numbers. To retrieve the original definition of a built-in element, prefix it with `#@`. 
