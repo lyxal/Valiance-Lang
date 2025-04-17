@@ -398,29 +398,6 @@ Here are some key things to note about functions:
 - Functions can be called using the `!()` element. 
 - If a function is stored in a variable, it can be called by wrapping the function name in backticks. 
 
-### Arity-Dependent Functions
-
-Some functions may need to take a variable number of arguments depending on any
-function arguments passed. For example, consider a function named `both`. `both`
-takes a function F, and applies F to two sets of (F.arity) arguments. The code
-
-    1 2 3 4 {(:Number, :Number) => +} both
-
-Would return `3` and `7`.
-
-Because functions require a fixed arity, `both` is not possible with normal
-functions - while one may think function overloads would work, they aren't
-generalised to functions of any arity.
-
-The solution is to use a special type of function called an "arity-dependent
-function" (ADF). An ADF is able to refer to the arity of its function type
-arguments to effectively simulate varargs. To make the usage of ADFs easier,
-only functions with a known arity can be used as arguments to ADFs. This restriction
-allows the ADF system to operate within a static type system.
-
-There are some extra limitations to how ADFs can be defined/used, and there's
-also some extra semantics to how they work. These will be discussed in the
-section about extension methods.
 
 ### Function Overloading
 
