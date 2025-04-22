@@ -181,7 +181,7 @@ clarity.
 
 Lists can contain any number of items, can be empty, and can even
 be arbitrarily nested. Additionally, list items do not need to be of
-the same type. More will be said about this in the section on the list model,
+the same type (well, at least in list literals). More will be said about this in the section on the list model,
 because this list model breaks the traditional array model of array languages.
 
 Examples:
