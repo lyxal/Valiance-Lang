@@ -247,42 +247,44 @@ Examples:
 
 ## The List Model
 
-Whereas the typical array language uses rectilinear arrays, Valiance instead
-opts for a more flexible list model. This is because:
+Where most array programming languages use a rectangular array model, Valiance opts instead for a list-like model. However unlike array languages, like K, that use a standard list model, Valiance has a slightly different perspective on lists.
 
-- The rigidity of rectangular arrays can be hard to reason about.
-- Sometimes you want to have a list of lists of different lengths, without
-  having to resort to approaches like boxing or padding.
-- The list model is more familiar to most programmers, and is easier to understand.
-- List models tend to allow for shorter code than rectangular arrays.
+Lists:
 
-However, unlike list models in languages like K, lists in Valiance will be
-considered rectangular if it is possible to do so. If a list looks like it's
-rectangular, and can act like it's rectangular, it will be treated as a rectangular array.
+- Can contain any number of items.
+- Can be arbitrarily nested.
+- Must have all items be the same type.
+- Need not have the same number of items in sublists. 
 
-This "duck shaping" ideology extends to the algorithm used to determine the shape
-of a list. Although a rectangular shape is not guaranteed for lists, the shape
-of a list can be thought of as the biggest bounding box that can be drawn around the list. This shape is called the "effective shape" of a list.
+This differs to normal lists which can have a wide mix of types. For example:
 
-The effective shape of a list can be found using the following algorithm:
+```
+[1, "2", [3, 4, "5"]]
+```
 
-    1. Determine the maximum shared depth (D) across all elements.
-    2. For each level `i` from 0 to D-1:
-       a. At that depth, compute the maximum length of any list.
-       b. Append that length to the shape list.
-    3. Return the shape list.
+Is completely fine in a language using a normal list model. 
 
-And summarised as:
+However, these restrictions are merely formalisations for static typing. In practice the list from earlier is completely fine in Valiance. It has the type `Number/String/((Number/String)+)+`. Verbose, but rugged. This lines up with how lists would be represented in a language like Scala. 
 
-_Maximum lengths at maximum shared depths._
+### The Rank of Lists 
 
-This gives lists like `[[1,2,3],[4,5,6]]` the rectangular shape they'd
-otherwise have as arrays. For non-rectangular lists, the result may
-seem a bit odd, but it is the best approximation of the shape of the list.
+In array programming, the "rank" of an array is a very important concept. It represents the number of dimensions present in an array. A 2d matrix has a rank of 2. A 3d cube has a rank of 3. This is crucial for determining how to apply operations, especially when it comes to vectorisation (more on that later).
 
-    [[1,2],[3,4,5]] -> [2, 3]
-    [1, [2,3]] -> [2]
-    [[1], [[2,3]]] -> [2, 1]
+Usually, rank is a difficult concept to apply to a list model; the lack of regularity in dimensions would require a slight change to how rank is defined. However, because Valiance lists are required to have the same type, rank is easily translated from array programming. 
+
+For example, the list from before:
+
+```
+[1, "2", [3, 4, "5"]]
+```
+
+Is considered to be a rank 1 list of `Number/String/((Number/String)+)`s. 
+
+```
+[[1, 2, 3], [4, 5, 6, 7]]
+```
+
+Is considered to be a rank 2 list of `Number`s, even though the sublists are of different lengths. 
 
 ## Types
 
