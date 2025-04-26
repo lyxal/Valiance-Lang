@@ -476,6 +476,8 @@ Variables are stores of data that exist outside of the stack. Each variable has 
 
 Variables are set by prefixing a valid name with a `~>`. Valid names must start with a letter, and can contain `A-Za-z0-9_`. Whatever is on the top of the stack is placed into the variable. 
 
+Adding a `!` after the `~>` will make the variable a constant, meaning it cannot be written to any more. For example, `3.14 ~>!PI` will set `PI` to `3.14`, and attempting to use `3.15 ~>PI` will cause a compile error.
+
 The first time a variable is set, the type can be specified with a colon followed by the type name. However, in most cases, the type of the variable can be omitted, as it can be inferred from the top of the stack. 
 
 Once a variable has a type, attempting to store a value of an incompatible type will result in a compiler error. 
@@ -521,3 +523,75 @@ Existing overloads can be overwritten. For example, to make addition actually pe
     #define +: {(:Number, :Number) => -}
 
 This will replace the existing definition of `+` when given two numbers. To retrieve the original definition of a built-in element, prefix it with `#@`. 
+
+## Object Oriented Programming
+
+Object oriented programming is integrated into Valiance through the usage of record-like objects and multiple dispatch.
+
+Objects can have any number of "members" - attributes specific to that object. Each member has a visibility, which is either readable or private. 
+
+A readable member can be publicly read (ie in any context), but can only be privately written. A private member can only be read and written in a private context (ie inside an extension defined inside the object). 
+
+Objects are defined with the `#object` keyword, and follow this syntax:
+
+    #object Name[Generics] implements [Traits]: {constructor}
+
+(More about generics and traits will be explained in later sections). 
+
+The constructor is just a function with a few key differences:
+
+- Variables set in the constructor are considered members of the object.
+  - Normal variables are considered readable
+  - Constant variables are considered private
+- Function named arguments can be prefixed with `$` to automatically make it a readable member, or `!` to automatically make it a private member.
+- No return type can be given to the constructor
+
+Additional constructors can be specified with the `#init` keyword. However, these constructors can only set members defined in the original constructor, and failing to set any non-optional member will result in a compiler error.
+
+For a concrete example, consider a Dog object:
+
+    #object Dog: {($name: String, !ownerName: String, age: Number) =>
+	  $age 7 * ~>!age
+	  "unknown" ~> breed
+	}
+	
+	#init Dog: {($name: String, !ownerName: String, @(age: Number, breed: String) =>
+	  $age 7 * ~>!age
+      $breed ~> breed
+	}
+
+This creates two constructors for the `Dog` object. One that takes `String, String, Number` and one that takes `String, String, @(Number, String)`. Constructor overloads must follow the same rules as function overloads.
+
+Creating an instance of an object uses the same syntax as calling a function:
+
+    "Fido" "Joe" 5 `Dog`
+	"Barker" "Human" 3 $Dog !()
+	"Dog" "Non-dog" 1 $Dog call
+	
+Members can be retrieved by:
+
+- `$variableName.member` or
+- `$.member` if the object is on the stack
+
+So far, objects can be created and have multiple constructors, but there hasn't yet been a way to define methods for objects. In Valiance, objects do not own their methods. Rather, elements own extension methods which may be "friendly" (having full read/write access) to objects. To make an extension method friendly to an object, simply include it inside the object definition. For example, consider a rectangle object with private side size attributes:
+
+    #object Rectangle: {(.sides: Number+<4>) =>
+	  #define getPerimeter: {() -> (:Number) =>
+	    $sides sum
+	  }
+	}
+	#define errorPerimeter: {(:Rectangle) -> (:Number) =>
+	  ## $.sides ## Error: Can't access sides
+	  sum
+	}
+
+The `getPerimeter` extension method is able to read the `sides` list, even though `errorPerimeter` cannot.
+
+Note that inside a friendly extension method, members do not need to be accessed with `$.`.
+
+Friendly extension methods are called just like any other extension method:
+
+    [1, 5, 6, 2] `Rectangle` ~> rectangle
+	$rectangle getPerimeter ## 14
+
+If an extension method needs to mutate an object, it needs to make sure it returns the updated object along with any other needed information.
