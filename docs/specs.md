@@ -662,4 +662,67 @@ In the parameter list of a function, numbers can be used to specify taking a cer
 ### Other Notes
 
 - There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
-- For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date. 
+- For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
+
+## Traits
+
+Valiance has no object inheritance, meaning that subtyping is mostly impossible (lists can be considered a subtype of a base type, but that's more vectorising than subtyping).
+
+However, allowing one type to be accepted where another is expected is a desirable feature of OOP. Therefore, Valiance includes a "trait" system, allowing objects to declare that they implement a specific set of methods. This enables any object that implements a trait to be passed where that trait is expected, granting access to all trait-defined methods and members.
+
+A trait is defined with the `#trait` keyword. The syntax is otherwise (mostly) the same as an object definition:
+
+```
+#trait Name[Generics] implements [OtherTraits]: {
+  ## Members and required extensions go here
+}
+```
+
+Notably, the trait body does _not_ have a constructor. 
+
+Only extensions and members defined within the body of the trait need to be implemented by objects implenting the trait. Extensions outside of the trait body will be considered to apply to any object implementing the trait.
+
+Within the trait body, extensions may have a non-empty function body to provide a default implementation. However, all extensions must declare a set of function parameters and return types.
+
+When an object implements multiple traits, and there are extensions/members with the same name, the object must provide an explicit overload. For example:
+
+```
+#trait A: {
+  #define foo: {() -> (:Number) => 10}
+}
+
+#trait B: {
+  #define foo: {() -> (:Number) => 20}
+}
+
+#object First implements [A]: {() =>
+  ## Does not need to define "foo"
+  ## Uses the definition from A
+}
+
+#object Second implements [B]: {() =>
+  ## Ditto, but with the definition from B
+}
+
+#object Third implements [A, B]: {() =>
+  ## Definition required because there's a conflict
+  #define foo: {() -> (:Number) => 30}
+}
+```
+
+If two traits require an extension with differing return types, an qualified implementation must be provided for each trait:
+
+```
+#trait A: {
+  #define foo: {() -> (:Number) => 10}
+}
+
+#trait B: {
+  #define foo: {() -> (:String) => "Wow"}
+}
+
+#object First implements [A, B]: {
+  #define A.foo: {() -> (:Number) => 20}
+  #define B.foo: {() -> (:String) => "Swiggity"}
+}
+```
