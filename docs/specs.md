@@ -595,3 +595,71 @@ Friendly extension methods are called just like any other extension method:
 	$rectangle getPerimeter ## 14
 
 If an extension method needs to mutate an object, it needs to make sure it returns the updated object along with any other needed information.
+
+## Generics
+
+Valiance supports generic types to allow functions and objects to work on any kind of object. For example, consider an element that finds the position of a number in a list of numbers:
+
+```
+#define find: {
+ (haystack: ℕ+, needle: ℕ) ->
+ (:ℕ?) =>
+    $haystack zipIndices filter: {
+      head $needle ==
+    } first last
+}
+```
+
+Performance issues aside, this performs the desired search. However, it only works with a list of numbers. To make the find element work with strings, a new overload would need to be added:
+
+```
+#define find: {
+ (haystack: String+, needle: String) ->
+ (:ℕ?) =>
+    $haystack zipIndices filter: {
+      head $needle ==
+    } first last
+}
+```
+
+Notably, the body is the exact same as the numbers overload. Extending this pattern for all desired types would lead to massive codebase sizes and lots of code duplication.
+
+Generic types act as a way to define an algorithm for "some type" to be specified later. Think of it like algebra but instead of substituting numbers, you substitute types.
+
+Functions (and by extension, extension methods) and objects can use generic types. Within functions, generics are declared within the parameter list:
+
+```
+{([Generics] arguments) -> (return types) => ...}
+```
+
+A generic version of `find` from before would look like:
+
+```
+#define find: {
+ ([T] haystack: T+, needle: T) ->
+ (:ℕ?) =>
+    $haystack zipIndices filter: {
+      head $needle ==
+    } first last
+}
+```
+
+Generics can also be used in the parameter list. 
+
+For objects, generics come after the object name:
+
+```
+#object List[T]: {() =>
+  [] ~> items: (T|T+)+
+  0 ~> size
+}
+```
+
+### Indexed Generics
+
+In the parameter list of a function, numbers can be used to specify taking a certain number of items from the stack. Under the hood, the popped items are automatically assigned generic types to allow for this generic behaviour. However, it may be desirable to explicitly reference the generic type of an automatically assigned generic. Therefore, `^n` will refer to the type of argument `n`. 
+
+### Other Notes
+
+- There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
+- For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date. 
