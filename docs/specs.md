@@ -684,7 +684,84 @@ Only extensions and members defined within the body of the trait need to be impl
 
 Within the trait body, extensions may have a non-empty function body to provide a default implementation. However, all extensions must declare a set of function parameters and return types.
 
-When an object implements multiple traits, and there are extensions/members with the same name, the object must provide an explicit overload. For example:
+To declare an extension that needs to be implemented:
+
+```
+#define Name #required: {(Parameters) -> (Returns)}
+```
+
+A default implementation needs no `#required`.
+
+To provide a concrete example of traits:
+
+```
+#trait Comparable[T]: {
+  #define === #required: {(this: T, other: T) -> (:Number)}
+  #define ===: {[U] this: T, other: U) -> (:Number) => 0}
+
+  #define < #required: {(this: T, other: T) -> (:Number)}
+  #define >: {(this: T, other: T) ->
+    $this $other 
+    fork: === <
+    both: not
+    and
+  }
+}
+
+#object Person implements [Comparable[Person]]: {($name: String, $age: Number) =>
+  #define ===: {(:Person, :Person) => both: {fork: $.name $.age pair} ===}
+  #define <: {(:Person, :Person) => both: $.age <}
+}
+```
+
+When an object implements multiple traits, there may be function signature conflicts between trait extension methods with the same name.
+
+For example:
+
+```
+#trait A: {
+  #define foo: {(:ℕ) -> (:ℕ) => 10}
+}
+
+#trait B: {
+  #define foo: {(:𝕊) -> (:𝕊) => "Text"}
+}
+```
+
+An object implementing both `A` and `B` will have two clashing definitions of `foo` (`𝔽[ℕ; ℕ]` vs `𝔽[𝕊; 𝕊]`). To resolve this conflict, an object has to specify an overload for each non-default-implementation extension method. The syntax for doing so is:
+
+```
+#define ~TraitName.methodName: ...
+```
+
+Where `...` is the definition.
+
+For example:
+
+```
+#trait A: {
+  #define foo #required: {() -> (:Number)}
+}
+
+#trait B: {
+  #define foo #required: {() -> (:String)}
+}
+
+#object MultiTrait implements [A, B]: {() =>
+  #define ~A.foo: {() -> (:Number) => 30}
+  #define ~B.foo: {() -> (:String) => "text"}
+}
+
+`MultiTrait` ~> baz
+
+{(:A) => foo} ~> f1
+{(:B) => foo} ~> f2
+
+$baz `f1` ## Returns 30 - `baz` is passed in an `A` context
+$baz `f2` ## Returns "text" - `baz` is passed in a `B` context
+```
+
+If default implementations are provided, they will be automatically added to the object:
 
 ```
 #trait A: {
@@ -692,37 +769,46 @@ When an object implements multiple traits, and there are extensions/members with
 }
 
 #trait B: {
-  #define foo: {() -> (:Number) => 20}
+  #define foo: {() -> (:String) => "Text"}
 }
 
-#object First implements [A]: {() =>
-  ## Does not need to define "foo"
-  ## Uses the definition from A
-}
+#object DefaultTraits implements [A, B]: {() =>}
+`DefaultTraits` ~> bar
 
-#object Second implements [B]: {() =>
-  ## Ditto, but with the definition from B
-}
+{(:A) => foo} ~> f1
+{(:B) => foo} ~> f2
 
-#object Third implements [A, B]: {() =>
-  ## Definition required because there's a conflict
-  #define foo: {() -> (:Number) => 30}
-}
+$bar `f1` ## 10
+$bar `f2` ## "Text"
 ```
 
-If two traits require an extension with differing return types, an qualified implementation must be provided for each trait:
+A similar principle applies to conflicting members:
 
 ```
-#trait A: {
-  #define foo: {() -> (:Number) => 10}
+#trait X: {
+  "Text" ~> foo
 }
 
-#trait B: {
-  #define foo: {() -> (:String) => "Wow"}
+#trait Y: {
+  20 ~> foo
 }
 
-#object First implements [A, B]: {
-  #define A.foo: {() -> (:Number) => 20}
-  #define B.foo: {() -> (:String) => "Swiggity"}
+#object MultiTrait implements [X, Y]: {() =>
+  "Hello" ~> ~X.foo
+  30 ~> ~Y.foo
 }
+
+#object DefaultTraits implements [A, B]: {() =>}
+
+`MultiTrait` ~> mt
+`DefaultTraits` ~> dt
+
+{(:X) => $.foo} ~> f1
+{(:Y) => $.foo} ~> f2
+
+mt `f1` ## "Hello"
+mt `f2` ## 30
+
+dt `f1` ## "Text"
+dt `f2` ## 20
 ```
