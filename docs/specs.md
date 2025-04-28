@@ -49,7 +49,8 @@ so by:
 11. Objects
 12. Generics
 13. Traits
-14. Modules
+14. Arity-Dependent Functions
+15. Modules
 
 ## The Stack
 
