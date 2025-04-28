@@ -575,7 +575,7 @@ Members can be retrieved by:
 
 So far, objects can be created and have multiple constructors, but there hasn't yet been a way to define methods for objects. In Valiance, objects do not own their methods. Rather, elements own extension methods which may be "friendly" (having full read/write access) to objects. To make an extension method friendly to an object, simply include it inside the object definition. For example, consider a rectangle object with private side size attributes:
 
-    #object Rectangle: {(.sides: Number+<4>) =>
+    #object Rectangle: {(!sides: Number+<4>) =>
 	  #define getPerimeter: {() -> (:Number) =>
 	    $sides sum
 	  }
