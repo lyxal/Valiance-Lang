@@ -424,6 +424,20 @@ An overloaded function has type:
 
 Where `𝔽n` is the type of each function.
 
+### The Return Stack
+
+By default, a function places its return values on the top of its main stack. However, sometimes a value that should be returned is located deeper in the stack. While typical stack manipulation can usually bring such a value to the top, there are cases where that’s not feasible—or simply inconvenient. Variables can be used as a workaround, but a more implicit and streamlined approach is often preferred.
+
+To support this, functions have access to a separate return stack. Values pushed onto this return stack are treated as return values when the function completes.
+
+Use the `#>>` element to push a value onto the return stack.
+
+You can also call a function in such a way that all of its return values are placed directly onto the return stack, rather than the main stack. To do this, use the `#>()` element when calling the function.
+
+To pop a value off the return stack, use `#>_`. 
+
+When a function returns, it first pulls values from the return stack, in the order they were pushed. If that stack doesn’t provide enough values to satisfy the return, the function falls back to the main stack, using its top values to complete the result.
+
 ## Modifiers
 
 A common pattern in functional programming is to pass functions as arguments to other functions.
