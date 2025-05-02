@@ -1,0 +1,19 @@
+#define #stack dip[T]: {(func: 𝔽, top: T) =>
+  `f` $top
+}
+
+#define #stack both: {(func: 𝔽) =>
+  `@f` ~> temp
+  `f` $temp detuple
+}
+
+#define #stack fork: {(first: 𝔽, second: 𝔽) =>
+  @($first) #peek ~> firstRes
+  `@second` ~> secondRes
+  $firstRes $secondRes both: detuple
+}
+
+#define #stack correspond: {(first: 𝔽, second: 𝔽) =>
+  `@first` ~> temp
+  `@second` $temp \ both: detuple
+}
