@@ -401,6 +401,7 @@ Here are some key things to note about functions:
 - Functions can be called using the `!()` element. 
 - If a function is stored in a variable, it can be called by wrapping the function name in backticks. 
 
+The `!()` and `` `backtick` `` function calling forms push all results onto the stack individually. However, it can be useful to automatically group all function results into a tuple. To achieve this, a function can be wrapped in a tuple, causing `!()` to return a tuple of results instead. Additionally, the `` `@name` `` form always auto-tuples the function's results.
 
 ### Function Overloading
 
