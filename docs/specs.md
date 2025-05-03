@@ -50,7 +50,7 @@ so by:
 12. Objects
 13. Generics
 14. Traits
-15. Object Traits - Sum Types
+15. Variants
 16. Modules
 
 ## The Stack
