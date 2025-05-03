@@ -774,7 +774,7 @@ Within the trait body, extensions may have a non-empty function body to provide 
 To declare an extension that needs to be implemented:
 
 ```
-#define Name #required: {(Parameters) -> (Returns)}
+#define #required Name : {(Parameters) -> (Returns)}
 ```
 
 A default implementation needs no `#required`.
@@ -783,10 +783,10 @@ To provide a concrete example of traits:
 
 ```
 #trait Comparable[T]: {
-  #define === #required: {(this: T, other: T) -> (:Number)}
+  #define #required ===: {(this: T, other: T) -> (:Number)}
   #define ===: {[U] this: T, other: U) -> (:Number) => 0}
 
-  #define < #required: {(this: T, other: T) -> (:Number)}
+  #define #required <: {(this: T, other: T) -> (:Number)}
   #define >: {(this: T, other: T) ->
     $this $other 
     fork: === <
@@ -827,11 +827,11 @@ For example:
 
 ```
 #trait A: {
-  #define foo #required: {() -> (:Number)}
+  #define #required foo: {() -> (:Number)}
 }
 
 #trait B: {
-  #define foo #required: {() -> (:String)}
+  #define #required foo: {() -> (:String)}
 }
 
 #object MultiTrait implements [A, B]: {() =>
