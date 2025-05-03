@@ -899,3 +899,80 @@ mt `f2` ## 30
 dt `f1` ## "Text"
 dt `f2` ## 20
 ```
+## Variants
+
+Objects and traits provide enough object-oriented support for comfortable OOPing. However, OOP support can be taken one step further with variants (what might be called `enum`s, `sealed` classes, or sum types in other programming languages). 
+
+Variants allow for subtyping without losing guarantees of exhaustive pattern matching. In other words, a variant is like a trait which has a finite, non-extendable, number of objects implementing the trait.
+
+Variants are defined with the `#variant` keyword, and behave almost exactly the same as `#trait`s. The key difference is that `#object`s defined inside the `#variant` block will be considered subtypes of the variant.
+
+To best illustrate the benefit of variants, compare a trait-based system for describing `Shape`s to a variant-based system:
+
+```
+#trait Shape: {
+  #define #required area: {() -> (:Number)}
+}
+
+#object Circle implements [Shape]: {
+  (!radius: Number) =>
+  #define area: {$radius square 3.14 *}
+}
+
+#object Rectangle implements [Shape]: {
+  (!width: Number, !height: Number) =>
+  #define area: {$width $height *}
+}
+```
+
+vs
+
+```
+#variant Shape: {
+  #define #required area: {() -> (:Number)}
+
+  #object Circle implements [Shape]: {
+    (!radius: Number) =>
+    #define area: {$radius square 3.14 *}
+  }
+
+  #object Rectangle implements [Shape]: {
+    (!width: Number, !height: Number) =>
+    #define area: {$width $height *}
+  }
+}
+```
+
+While there may not seem like much difference, the variant can be pattern matched without a default case:
+
+```
+## Assuming the trait definition
+
+#define typeOf: {(:Shape) =>
+  #match {
+    :Rectangle => "Got a rectangle",
+    :Circle => "Got a circle",
+    _ => "Huh???"
+    ## If a Triangle object were defined, there
+    ## would be no compiler error to indicate a
+    ## change is needed.
+  }
+}
+```
+
+vs
+
+```
+## Assuming the variant definition
+
+#define typeOf: {(:Shape) =>
+  #match {
+    :Rectangle => "Got a rectangle",
+    :Circle => "Got a circle",
+    ## No need for default case
+    ## Adding a Triangle object to the variant
+    ## will raise an exhausivity error, indicating
+    ## changes are needed
+  }
+}
+```
