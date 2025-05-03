@@ -46,11 +46,12 @@ so by:
 8. Modifiers
 9. Variables
 10. Extension Methods
-11. Objects
-12. Generics
-13. Traits
-14. Arity-Dependent Functions
-15. Modules
+11. Stack Elements
+12. Objects
+13. Generics
+14. Traits
+15. Object Traits - Sum Types
+16. Modules
 
 ## The Stack
 
@@ -539,6 +540,76 @@ Existing overloads can be overwritten. For example, to make addition actually pe
     #define +: {(:Number, :Number) => -}
 
 This will replace the existing definition of `+` when given two numbers. To retrieve the original definition of a built-in element, prefix it with `#@`. 
+
+## Stack Elements
+
+Sometimes, an element cannot be expressed in terms of a function with fixed inputs and outputs. For example, higher-order functions requiring variadic stack manipulation are impossible to represent, with function overloads only able to cover a finite subset of use-cases.
+
+Take for example the `dip` higher-order function. `dip` takes a function, stashes the top of the stack, performs that function, and then pushes the stashed top back to the stack. 
+
+Consider first an implementation of `dip` for monads:
+
+```
+#define dip: {
+ ([T, U, V] f: 𝔽[T; U], top: V, :T) ->
+ (:U, :V) =>
+    `f` $top
+}
+```
+
+This could be extended to dyads as:
+
+```
+#define dip: {
+ ([T, U, V, W] f: 𝔽[T, U; V], top: W, :T, :U) ->
+ (:V, :W) =>
+    `f` $top
+}
+```
+
+And triads as:
+
+```
+#define dip: {
+ ([T, U, V, W, X] f: 𝔽[T, U, V; W], top: X, :T, :U, :V) ->
+ (:W, :X) =>
+    `f` $top
+}
+```
+
+Evidently, this pattern quickly grows unruly. Additionally, these definitions only work for input functions with multiplicity 1 - different multiplicities would require even more overloads.
+
+To this end, elements can have a `#stack` annotation added to indicate that the element definition will operate on whatever is the stack when the element is called. For example, `dip` becomes:
+
+```
+#define #stack dip: {(f: 𝔽) =>
+  ~>temp
+  `f`
+  $temp
+}
+```
+
+When a stack element is called, the element code is type checked against the current stack state. In this way, stack elements are kind of like macros. However, variables defined within a stack element are local to that element, and do not persist after the element is finished.
+
+Some other examples of stack elements include:
+
+```
+#define #stack both: {(func: 𝔽) =>
+  `@f` ~> temp
+  `f` $temp detuple
+}
+
+#define #stack fork: {(first: 𝔽, second: 𝔽) =>
+  @($first) #peek ~> firstRes
+  `@second` ~> secondRes
+  $firstRes $secondRes both: detuple
+}
+
+#define #stack correspond: {(first: 𝔽, second: 𝔽) =>
+  `@first` ~> temp
+  `@second` $temp \ both: detuple
+}
+```
 
 ## Object Oriented Programming
 
