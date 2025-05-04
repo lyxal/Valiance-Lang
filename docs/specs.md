@@ -990,3 +990,94 @@ vs
   }
 }
 ```
+
+## Modules
+
+The final key to making Valiance production-usable is to have a way for code to be reused between files. Modules, much like in most other programming languages, allow for code in one file to be wrapped in a nice importable unit easily accessed from other files.
+
+By default, each file is a module, and can be imported from other Valiance files. For example:
+
+```
+## └── MathLib.vlnc
+
+#define abs: {(:Number) =>
+  #match: {
+    0 < => negate,
+    _ => dup
+  }
+}
+
+## Imagine there are other functions here
+```
+
+```
+## └── main.vlnc
+#import MathLib
+-4 MathLib.abs
+```
+
+The name of a module is, by default, the file name with non-keyword characters removed. However, an explicit module name can be provided with the `#module` keyword. This name _must_ be the top statement, and there can only be one `#module` keyword in a file. The module name can only contain keyword characters.
+
+For example:
+
+```
+## └── SomeRandomFile.vlnc
+#module MathLib
+
+#define abs: {(:Number) =>
+  #match: {
+    0 < => negate,
+    _ => dup
+  }
+}
+```
+
+(`main.vlnc` would remain unchanged)
+
+Modules can be nested by nesting the parent directories of the target file. For example:
+
+```
+## └── utils/math/operations.vlnc
+#module Operations
+```
+
+```
+## └── main.vlnc
+#import utils.math.Operations
+```
+
+### Import Specifics
+
+- `#import Name` will import the _namespace_ `Name`. All objects, traits, variants, and elements have to be accessed as `Name.<name>`
+- `#import Name: Alias` is the same as `#import Name`, but all references will need to be `Alias` instead.
+- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
+- `#import #all Name` will import all objects, traits, variants, and elements into the global namespace. Only use this in exceptional circumstances, as it may lead to naming conflicts
+- Valiance prevents circular dependencies between modules. If module A imports module B, then module B cannot import module A, either directly or through any chain of imports.
+- Attempting to import conflicting names without disambiguation will result in a compile-time error.
+
+### Module Path Resolution
+
+Valiance resolves module paths as follows:
+
+1. **Relative imports**: Paths starting with `./` or `../` are resolved relative to the importing file's location.
+   ```
+   #import ./utils  # Imports utils.vlnc from the same directory
+   #import ../common/helpers  # Goes up one directory then into common/helpers.vlnc
+   ```
+
+2. **Absolute imports**: Paths without leading `.` are resolved from project root or standard library locations.
+   ```
+   #import math.Operations  # Searches for math/Operations.vlnc in project and standard locations
+   ```
+
+3. **Search path order**:
+   - Current package directory
+   - Project root directory
+   - Standard library locations
+   - Additional directories specified in project configuration
+
+Module files must have the `.vlnc` extension, but this is omitted when importing.
+
+### Other Notes
+
+- Modules are initialised at import time, executing all top-level code in the module when the `#import` statement is processed. This ensures that any side effects (like registering handlers or initializing resources) happen predictably during program startup.
