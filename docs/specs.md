@@ -304,7 +304,6 @@ Every object in Valiance has a type. Some built-in types are pre-provided:
 | `None` | `∅` | A null value | `∅` |
 | `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
 | `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
-| `ArityDependentFunction` | `𝕗` | A function with an arity and multiplicity unknown, but statically calculatable. | `TODO`|
 | `OverloadedFunction` | `ℽ` | A function with multiple overloads | `TODO` |
 | `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
 | `Constructor` | `⨂` | A constructor for a type | NA |
@@ -331,6 +330,21 @@ There are other type operations that can be used in types:
 | `!` | Exactly an atomic type, never a list. Useful for controlling vectorisation. |
 
 Any type that is not a list is termed "atomic".
+
+### Shape Guards
+
+While list shape (itentional, not referring to rank) cannot be determined at compile time, Valiance provides a way to ensure a list will match a specific shape at runtime. These "shape guards" act in a similar
+way to `+` and `~`, except are not checked statically.
+
+`<d1, d2, d3, ..., dn>` after an atomic type will throw a runtime error if a provided argument does not exactly match that shape (or can be vectorised over as that shape - more on that in a bit). Each `dx` is the size of a dimension in the shape.
+
+`(d1, d2, d3, ..., dn)` an atomic type will throw a runtime error if a provided argument is smaller than the desired shape. 
+
+### The Shape of a List
+Any array language enthusiast will be quick to point out that lists — being not-arrays — do not have a shape. "After all," they will say, "what is the shape of `[[1, 2], [3, 4, 5]]` or even `[1, 2, [3, 4, 5]]`?"
+
+While the rectangular concept of *shape* does not translate to rugged lists, it can still be adapted to provide a "close-enough" definition. The shape of a list is the longest sublist at each depth. That means `[[1, 2], [3, 4, 5]]` is a 2×3 list, and `[1, 2, [3, 4, 5]]` is a list of three `Number | Number+`s.
+
 
 ## Vectorisation
 
