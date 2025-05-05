@@ -160,9 +160,9 @@ Placeholders can only include expressionable code, code which is not:
 - object definition
 - trait definition
 
-The second workaround is template strings. It can be described as immediate string formatting. Rather than waiting until `%` is used, a template string will pop from the stack to fill its placeholders. A template string starts with `#s"`:
+The second workaround is template strings. It can be described as immediate string formatting. Rather than waiting until `%` is used, a template string will pop from the stack to fill its placeholders. A template string starts with `#"`:
 
-    "Joe" #s"Hello, {}" 
+    "Joe" #"Hello, {}" 
 	## "Hello, Joe"
 
 Placeholders can have the same values as strings used in formatting.
