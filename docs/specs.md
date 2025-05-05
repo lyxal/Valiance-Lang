@@ -400,6 +400,8 @@ Some examples of functions are:
          @(x: Number, y: Number) => $x $y +,
         }
     } ## 𝔽[^1, ^2; Number/^2] (implicit generics)
+    {+} ## 𝔽[Number/String, Number/String; Number/String] Subject to other types present on +
+    {(x, y) => $x $y +} ## Also 𝔽[Number/String, Number/String; Number/String], as type inference can figure out x and y
 
 As seen above, if a function has a number in its argument list, it will have
 implicitly created generics. These generics act as if they were normal generics,
@@ -414,7 +416,8 @@ Here are some key things to note about functions:
 - However, a variable outside a function will be bound to any returned functions. This
   allows for closures.
 - Functions can be called using the `!()` element. 
-- If a function is stored in a variable, it can be called by wrapping the function name in backticks. 
+- If a function is stored in a variable, it can be called by wrapping the function name in backticks.
+- Parameters and return values can be completely omitted to have the functions inputs inferred from what would suit all elements in the function. The inferred return will be whatever is on the top of the stack
 
 The `!()` and `` `backtick` `` function calling forms push all results onto the stack individually. However, it can be useful to automatically group all function results into a tuple. To achieve this, a function can be wrapped in a tuple, causing `!()` to return a tuple of results instead. Additionally, the `` `@name` `` form always auto-tuples the function's results.
 
@@ -426,7 +429,7 @@ Function overloading is accomplished by using the addition element:
 
     {(:Number!) => "Got a number!"}
 	{(:String!) => "String input"}
-	+ ::=overloaded
+	+ ~> overloaded
 	5 `overloaded` ## "Got a number!"
 	"yes" `overloaded` ## "String input"
 
