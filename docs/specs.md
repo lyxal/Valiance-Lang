@@ -15,21 +15,21 @@ so by:
 
 1. **Looking Like Code**: The ultimate goal of Valiance is to make array programming
    look like, well, programming. This means forgoing the traditional symbol-based
-   notation of array languages in favour of syntax reminiscent of mainstream languages.
+   notation of array languages in favour of syntax reminiscent of mainstream languages. Programs should be able to be quickly understood 10 (metaphorical) feet away from the code.
 2. **Simplicity**: While simplicity is completely subjective, Valiance should be able
    to pass the pub test. For the non-Australians out there, this means a regular
    programmer should be able to look at Valiance code and say "yep, that's reasonable,
    and makes sense". Ideally, features will "just work" without requiring extra
    consideration, structuring, or handling.
-3. **Intentional OOP**: If you've ever used an array language with OO features, you'll
+4. **Intentional OOP**: If you've ever used an array language with OO features, you'll
    notice that they feel like a sort of afterthought.
    Valiance integrates object-oriented programming from the start, treating it not as an add-on but as a native and natural feature of the array programming paradigm.
-4. **Statically Typed**: Static typing has become a highly desirable feature in modern
+5. **Statically Typed**: Static typing has become a highly desirable feature in modern
    programming languages. And for good reason: it catches more bugs at compile time,
    and allows for potentially compiler optimisations. Array languages, save for
    outliers like Remora and Futhark, are dynamically typed. Breaking the trend,
    Valiance will be statically typed, but in a way that ideally feels dynamic.
-5. **Functional Programming**: Array languages are notable for having a lack of first-class
+6. **Functional Programming**: Array languages are notable for having a lack of first-class
    functions, opting instead for more "call-on-site" syntax and "second-class" objects (
    or at least, not first-class). First-class functions allow for a more expressive functional
    programming experience.
