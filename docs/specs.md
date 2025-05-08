@@ -45,13 +45,14 @@ so by:
 7. Functions
 8. Modifiers
 9. Variables
-10. Extension Methods
-11. Stack Elements
-12. Objects
-13. Generics
-14. Traits
-15. Variants
-16. Modules
+10. System Keywords
+11. Extension Methods
+12. Stack Elements
+13. Objects
+14. Generics
+15. Traits
+16. Variants
+17. Modules
 
 ## The Stack
 
@@ -530,6 +531,121 @@ The value of a variable can be retrieved by prefixing the name of the variable w
 All variables are local. This means that modifying a variable in a function will not change a variable with the same name outside of the function. This is called "scoping" in other languages. When a variable is set inside a function, it is added to that function's scope. When a function returns a value, all values inside that function's scope are deleted. 
 
 There is one exception to this. A function returned from another function will retain the values of any variables from outer scopes. This is referred to as "closures" in other programming languages. It can be seen as the returned function taking a snapshot of its environment at the time it was returned. This concept is useful for functional programming constructs.
+
+### Augmented Assignment
+
+The following is a common pattern in programming:
+
+```
+0 ~> my_var
+$my_var 1 + ~>my_var
+```
+
+Valiance provides a shortcut for getting a variable, applying an operation, and then putting the result back into the original variable. A `:` after a variable get will perform that operation on that variable
+using items from the stack.
+
+For example:
+
+```
+0 ~> my_var
+1 $my_var: +
+```
+
+## System Keywords
+
+Not all Valiance features can be expressed as elements and functions. Indeed, some programming constructs require special syntax and should be considered additional core units. System keywords start with a `#` an indicate that something is a core Valiance syntax construct. 
+
+System keywords typically fall under these categories:
+
+- Special syntax (eg `#{` for dictionaries and `#"` for template strings)
+- Control flow handling
+- Object oriented definitions
+- Elements that would otherwise be normal elements but need to be protected from addition of user-defined overloads
+- Elements that impact compilation (eg type casting)
+
+Objects will be presented later in these specs. For now, some control flow and element-like system keywords are presented. 
+
+### `#if`
+
+The `#if` system keyword takes a function and a number. If the number is non-zero, the function will be called with what is left on the stack. Otherwise, `None`s will be pushed for each value the function would have otherwise returned. 
+
+For example:
+
+```
+"secret" ~> password
+readline $password ==
+#if: {"TOKEN"}
+## Top of stack is now type String?
+```
+
+Optional types are returned to ensure the stack remains the same size. 
+
+### `#branch`
+
+`#branch` is what would be an if/else block in other programming languages. It takes two functions and a number. If the number is non-zero, the first function is called. Otherwise, the second function is called. The two functions must have the same multiplicity.
+
+For example:
+
+```
+3 4 ==
+#branch: {
+  "Math working just fine"
+} {
+  "Uh oh"
+}
+```
+
+### `#match`
+
+`#match` allows for pattern matching akin to Scala's pattern matching. `#match` pops the top of the stack and runs it against a suite of user-defined cases until it finds a suitable match, a default case, or errors with no match found.
+
+A case can be:
+
+- Any expression, matched if the top of the stack `===` the result
+- `|` followed by an expression, which will be matched if passing the top of the stack to the expression returns a non-zero value
+- A `:` followed by a type, which will be matched if the top of the stack satisfies that type
+- `~>` followed by a name, `:`, and a type, which acts like a type match, but stores the result in a variable
+- A list destructure match, started with `@[` continuing to `]`
+- A tuple destructure match, started with `@(` continuing to `)`
+- `_` to represent the default case
+
+Cases are separated with `,`. The pattern and function are separated with `=>`
+
+For example:
+
+```
+stdin parseInt #match: {
+  10 => "Got 10",
+  |20< => "Not 10, but less than 20",
+  _ => "Don't know what number"
+}
+
+[1, 2, 3, 4] #match: {
+  @[_, 2, 3, _] => "This will match",
+  @[_, 2, _] => "This would also match",
+  @[_] => "Also match",
+  :Number+ => "Also match",
+  :Number~ => "Also match",
+  ~>list: Number+ => {$list 5 +}
+}
+
+## Similar concept with tuples
+```
+
+### `#for`
+
+Valiance does not allow `for` loops that modify the stack, as they would make the stack size and types unknowable. However, Valiance draws inspiration from Scala where `for` loops are used purely for iteration with side effects. The key reason for a `#for` loop is for updating variables in the current scope without the troubles of operating in a function scope.
+
+For example, a for loop could sum the numbers in a list:
+
+```
+0 ~> sum
+10 one-range #for: {(:Number) =>
+  $sum: +
+}
+```
+
+(Don't do that in practice. Use `sum` or `fold: +`)
 
 ## Extension Methods
 
