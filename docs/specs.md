@@ -53,6 +53,7 @@ so by:
 15. Traits
 16. Variants
 17. Modules
+18. Function Annotations
 
 ## The Stack
 
@@ -1201,3 +1202,99 @@ Module files must have the `.vlnc` extension, but this is omitted when importing
 ### Other Notes
 
 - Modules are initialised at import time, executing all top-level code in the module when the `#import` statement is processed. This ensures that any side effects (like registering handlers or initializing resources) happen predictably during program startup.
+
+## Function Annotations
+
+Just like `#define` has support for annotations like `#stack` and `#required`, functions have support for their own annotations:
+
+### `#recursive`
+
+The `#recursive` annotation allows for easier recursion within a function. The `#this` element will call the nearest scoped function with a `#recursive` annotation. For example:
+
+```
+{(:Number) #recursive =>
+  #match: {
+    0 => 1,
+    _ => {1 - #this *}
+  }
+} ~> factorial
+```
+
+Is a recursive definition of the factorial function without needing to name the function. Another example is the recursive definition of the fibonacci sequence:
+
+```
+{(:Number) #recursive =>
+  #match: {
+    | [0, 1] contains => 1,
+    _ => {fork: {1-} {2-} both: #this +}
+  }
+}
+```
+
+To call a `#recursive` function outside of the currently executing recursive function, `#this[n]` will jump `n` functions up. This should be rarely needed, as it most likely is a sign something needs refactoring.
+
+### `#where`
+
+The `#where` annotation allows for type constraints to be placed on input parameters. This is useful for cases like:
+
+- Ensuring function arities are the same while supporting variable arities
+- Specifying that a minimum rank list is `n` ranks lower than another minimum rank list
+- Calculating return types based on numerical properties of inputs
+
+If present, the `#where` must come after the return list. The annotation is followed by a `:` and a `{}` wrapped block of constraints. Each condition is separated by a comma (`,`)
+
+For example:
+
+```
+#define #stack if: {
+  (condition: Number, true: Function, false: Function)
+  -> ($true.out / $false.out)
+  #where: {
+    $true.arity $false.arity ==,
+    $true.multy $false.multy ==
+  }
+  =>
+  [$true, $false] condition index call
+}
+```
+
+In this example, the arity of `$true` and `$false` are guaranteed to be the same. This guarantee cannot be easily made with generics or other data types.
+
+Constraints can also specify properties of types. For example:
+
+```
+#define reshape: {
+  ([T] list: T~, shape: @(Number...)) -> (:T+$n) #where: {
+    $shape length ~> n
+  } =>
+  ## Body of reshape here
+}
+```
+
+In this example the return type, an exact-rank list, is set based upon how many arguments are in the `$shape` argument. As a tuple will always have a fixed length at compile time, this constraint can be checked and utilised at compile time.
+
+Operations allowed in the `#where` annotation are:
+
+- Basic math (`+`, `-`, `*`, `/`)
+- `dup` / `^`
+- `swap` / `` \ ``
+- `pop` / `_`
+- Variable retrieval
+- Variable setting
+- `length`
+- Unnamed argument reference (`` `n` `` - a different meaning to funciton call because function calls are disallowed)
+- Number pushing
+- Comparison operators (`==`, `<=`, `>=`, `!=`, `===`)
+
+This list may be expanded in the future.
+
+#### Dynamic Types
+
+In the above examples, there were some unusal return types:
+
+- `$true.out / $false.out`
+- `T+$n`
+
+These types are dynamic in that they are not known when writing the types. They are in fact known at compile time.
+
+`$` followed by a variable name and potentially a member access will make the variable value part of the type. The value must fit in the context of the type: `T+$true.out` would cause a compile error, because a function's outputs are not a number. `$n / $false.out` would cause a compile error, because a number is not a type.
