@@ -818,6 +818,28 @@ Friendly extension methods are called just like any other extension method:
 
 If an extension method needs to mutate an object, it needs to make sure it returns the updated object along with any other needed information.
 
+### Function Object Members
+
+_This would have gone in the section on functions, but object members hadn't been discussed yet._
+
+Functions, being objects, have some members of their own:
+
+- `$.arity` - Gets the number of parameters a function takes
+- `$.multy` - Gets the number of values returned from a function
+- `$.in` - A tuple of all types in the function's parameters
+- `$.out` - A tuple of all types in the function's return values
+
+The last two are intended for usage in specifying types. For example:
+
+```
+#define #stack both: {(func: 𝔽) -> ($func.out, $func.out) =>
+  `@f` ~> temp
+  `f` $temp detuple
+}
+```
+
+The `.out` member will automatically be detupled, as would any references to `.in`.
+
 ## Generics
 
 Valiance supports generic types to allow functions and objects to work on any kind of object. For example, consider an element that finds the position of a number in a list of numbers:
