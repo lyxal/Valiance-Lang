@@ -419,6 +419,7 @@ Here are some key things to note about functions:
 - Functions can be called using the `!()` element. 
 - If a function is stored in a variable, it can be called by wrapping the function name in backticks.
 - Parameters and return values can be completely omitted to have the functions inputs inferred from what would suit all elements in the function. The inferred return will be whatever is on the top of the stack
+- If parameters are specified, then attempting to pop from an empty stack will cycle back through the parameters. For example, `{(x:Number, y:Number) => ++}` will return `x + y + x`, as popping goes through x, y, then x again. 
 
 The `!()` and `` `backtick` `` function calling forms push all results onto the stack individually. However, it can be useful to automatically group all function results into a tuple. To achieve this, a function can be wrapped in a tuple, causing `!()` to return a tuple of results instead. Additionally, the `` `@name` `` form always auto-tuples the function's results.
 
