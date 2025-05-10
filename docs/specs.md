@@ -607,8 +607,9 @@ A case can be:
 - `|` followed by an expression, which will be matched if passing the top of the stack to the expression returns a non-zero value
 - A `:` followed by a type, which will be matched if the top of the stack satisfies that type
 - `~>` followed by a name, `:`, and a type, which acts like a type match, but stores the result in a variable
-- A list destructure match, started with `@[` continuing to `]`
-- A tuple destructure match, started with `@(` continuing to `)`
+- A list destructure match, started with `#[` continuing to `]`
+- A tuple destructure match, started with `#(` continuing to `)`
+- A `#"` string, pattern matching like `s"` strings in Scala.
 - `_` to represent the default case
 
 Cases are separated with `,`. The pattern and function are separated with `=>`
