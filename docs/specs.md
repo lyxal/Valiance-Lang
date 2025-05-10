@@ -15,21 +15,21 @@ so by:
 
 1. **Looking Like Code**: The ultimate goal of Valiance is to make array programming
    look like, well, programming. This means forgoing the traditional symbol-based
-   notation of array languages in favour of syntax reminiscent of mainstream languages.
+   notation of array languages in favour of syntax reminiscent of mainstream languages. Programs should be able to be quickly understood 10 (metaphorical) feet away from the code.
 2. **Simplicity**: While simplicity is completely subjective, Valiance should be able
    to pass the pub test. For the non-Australians out there, this means a regular
    programmer should be able to look at Valiance code and say "yep, that's reasonable,
    and makes sense". Ideally, features will "just work" without requiring extra
    consideration, structuring, or handling.
-3. **Intentional OOP**: If you've ever used an array language with OO features, you'll
+4. **Intentional OOP**: If you've ever used an array language with OO features, you'll
    notice that they feel like a sort of afterthought.
    Valiance integrates object-oriented programming from the start, treating it not as an add-on but as a native and natural feature of the array programming paradigm.
-4. **Statically Typed**: Static typing has become a highly desirable feature in modern
+5. **Statically Typed**: Static typing has become a highly desirable feature in modern
    programming languages. And for good reason: it catches more bugs at compile time,
    and allows for potentially compiler optimisations. Array languages, save for
    outliers like Remora and Futhark, are dynamically typed. Breaking the trend,
    Valiance will be statically typed, but in a way that ideally feels dynamic.
-5. **Functional Programming**: Array languages are notable for having a lack of first-class
+6. **Functional Programming**: Array languages are notable for having a lack of first-class
    functions, opting instead for more "call-on-site" syntax and "second-class" objects (
    or at least, not first-class). First-class functions allow for a more expressive functional
    programming experience.
@@ -45,13 +45,15 @@ so by:
 7. Functions
 8. Modifiers
 9. Variables
-10. Extension Methods
-11. Stack Elements
-12. Objects
-13. Generics
-14. Traits
-15. Variants
-16. Modules
+10. System Keywords
+11. Extension Methods
+12. Stack Elements
+13. Objects
+14. Generics
+15. Traits
+16. Variants
+17. Modules
+18. Function Annotations
 
 ## The Stack
 
@@ -418,6 +420,7 @@ Here are some key things to note about functions:
 - Functions can be called using the `!()` element. 
 - If a function is stored in a variable, it can be called by wrapping the function name in backticks.
 - Parameters and return values can be completely omitted to have the functions inputs inferred from what would suit all elements in the function. The inferred return will be whatever is on the top of the stack
+- If parameters are specified, then attempting to pop from an empty stack will cycle back through the parameters. For example, `{(x:Number, y:Number) => ++}` will return `x + y + x`, as popping goes through x, y, then x again. 
 
 The `!()` and `` `backtick` `` function calling forms push all results onto the stack individually. However, it can be useful to automatically group all function results into a tuple. To achieve this, a function can be wrapped in a tuple, causing `!()` to return a tuple of results instead. Additionally, the `` `@name` `` form always auto-tuples the function's results.
 
@@ -530,6 +533,122 @@ The value of a variable can be retrieved by prefixing the name of the variable w
 All variables are local. This means that modifying a variable in a function will not change a variable with the same name outside of the function. This is called "scoping" in other languages. When a variable is set inside a function, it is added to that function's scope. When a function returns a value, all values inside that function's scope are deleted. 
 
 There is one exception to this. A function returned from another function will retain the values of any variables from outer scopes. This is referred to as "closures" in other programming languages. It can be seen as the returned function taking a snapshot of its environment at the time it was returned. This concept is useful for functional programming constructs.
+
+### Augmented Assignment
+
+The following is a common pattern in programming:
+
+```
+0 ~> my_var
+$my_var 1 + ~>my_var
+```
+
+Valiance provides a shortcut for getting a variable, applying an operation, and then putting the result back into the original variable. A `:` after a variable get will perform that operation on that variable
+using items from the stack.
+
+For example:
+
+```
+0 ~> my_var
+1 $my_var: +
+```
+
+## System Keywords
+
+Not all Valiance features can be expressed as elements and functions. Indeed, some programming constructs require special syntax and should be considered additional core units. System keywords start with a `#` an indicate that something is a core Valiance syntax construct. 
+
+System keywords typically fall under these categories:
+
+- Special syntax (eg `#{` for dictionaries and `#"` for template strings)
+- Control flow handling
+- Object oriented definitions
+- Elements that would otherwise be normal elements but need to be protected from addition of user-defined overloads
+- Elements that impact compilation (eg type casting)
+
+Objects will be presented later in these specs. For now, some control flow and element-like system keywords are presented. 
+
+### `#if`
+
+The `#if` system keyword takes a function and a number. If the number is non-zero, the function will be called with what is left on the stack. Otherwise, `None`s will be pushed for each value the function would have otherwise returned. 
+
+For example:
+
+```
+"secret" ~> password
+readline $password ==
+#if: {"TOKEN"}
+## Top of stack is now type String?
+```
+
+Optional types are returned to ensure the stack remains the same size. 
+
+### `#branch`
+
+`#branch` is what would be an if/else block in other programming languages. It takes two functions and a number. If the number is non-zero, the first function is called. Otherwise, the second function is called. The two functions must have the same multiplicity.
+
+For example:
+
+```
+3 4 ==
+#branch: {
+  "Math working just fine"
+} {
+  "Uh oh"
+}
+```
+
+### `#match`
+
+`#match` allows for pattern matching akin to Scala's pattern matching. `#match` pops the top of the stack and runs it against a suite of user-defined cases until it finds a suitable match, a default case, or errors with no match found.
+
+A case can be:
+
+- Any expression, matched if the top of the stack `===` the result
+- `|` followed by an expression, which will be matched if passing the top of the stack to the expression returns a non-zero value
+- A `:` followed by a type, which will be matched if the top of the stack satisfies that type
+- `~>` followed by a name, `:`, and a type, which acts like a type match, but stores the result in a variable
+- A list destructure match, started with `#[` continuing to `]`
+- A tuple destructure match, started with `#(` continuing to `)`
+- A `#"` string, pattern matching like `s"` strings in Scala.
+- `_` to represent the default case
+
+Cases are separated with `,`. The pattern and function are separated with `=>`
+
+For example:
+
+```
+stdin parseInt #match: {
+  10 => "Got 10",
+  |20< => "Not 10, but less than 20",
+  _ => "Don't know what number"
+}
+
+[1, 2, 3, 4] #match: {
+  @[_, 2, 3, _] => "This will match",
+  @[_, 2, _] => "This would also match",
+  @[_] => "Also match",
+  :Number+ => "Also match",
+  :Number~ => "Also match",
+  ~>list: Number+ => {$list 5 +}
+}
+
+## Similar concept with tuples
+```
+
+### `#for`
+
+Valiance does not allow `for` loops that modify the stack, as they would make the stack size and types unknowable. However, Valiance draws inspiration from Scala where `for` loops are used purely for iteration with side effects. The key reason for a `#for` loop is for updating variables in the current scope without the troubles of operating in a function scope.
+
+For example, a for loop could sum the numbers in a list:
+
+```
+0 ~> sum
+10 one-range #for: {(:Number) =>
+  $sum: +
+}
+```
+
+(Don't do that in practice. Use `sum` or `fold: +`)
 
 ## Extension Methods
 
@@ -699,6 +818,28 @@ Friendly extension methods are called just like any other extension method:
 	$rectangle getPerimeter ## 14
 
 If an extension method needs to mutate an object, it needs to make sure it returns the updated object along with any other needed information.
+
+### Function Object Members
+
+_This would have gone in the section on functions, but object members hadn't been discussed yet._
+
+Functions, being objects, have some members of their own:
+
+- `$.arity` - Gets the number of parameters a function takes
+- `$.multy` - Gets the number of values returned from a function
+- `$.in` - A tuple of all types in the function's parameters
+- `$.out` - A tuple of all types in the function's return values
+
+The last two are intended for usage in specifying types. For example:
+
+```
+#define #stack both: {(func: 𝔽) -> ($func.out, $func.out) =>
+  `@f` ~> temp
+  `f` $temp detuple
+}
+```
+
+The `.out` member will automatically be detupled, as would any references to `.in`.
 
 ## Generics
 
@@ -1084,3 +1225,99 @@ Module files must have the `.vlnc` extension, but this is omitted when importing
 ### Other Notes
 
 - Modules are initialised at import time, executing all top-level code in the module when the `#import` statement is processed. This ensures that any side effects (like registering handlers or initializing resources) happen predictably during program startup.
+
+## Function Annotations
+
+Just like `#define` has support for annotations like `#stack` and `#required`, functions have support for their own annotations:
+
+### `#recursive`
+
+The `#recursive` annotation allows for easier recursion within a function. The `#this` element will call the nearest scoped function with a `#recursive` annotation. For example:
+
+```
+{(:Number) #recursive =>
+  #match: {
+    0 => 1,
+    _ => {1 - #this *}
+  }
+} ~> factorial
+```
+
+Is a recursive definition of the factorial function without needing to name the function. Another example is the recursive definition of the fibonacci sequence:
+
+```
+{(:Number) #recursive =>
+  #match: {
+    | [0, 1] contains => 1,
+    _ => {fork: {1-} {2-} both: #this +}
+  }
+}
+```
+
+To call a `#recursive` function outside of the currently executing recursive function, `#this[n]` will jump `n` functions up. This should be rarely needed, as it most likely is a sign something needs refactoring.
+
+### `#where`
+
+The `#where` annotation allows for type constraints to be placed on input parameters. This is useful for cases like:
+
+- Ensuring function arities are the same while supporting variable arities
+- Specifying that a minimum rank list is `n` ranks lower than another minimum rank list
+- Calculating return types based on numerical properties of inputs
+
+If present, the `#where` must come after the return list. The annotation is followed by a `:` and a `{}` wrapped block of constraints. Each condition is separated by a comma (`,`)
+
+For example:
+
+```
+#define #stack if: {
+  (condition: Number, true: Function, false: Function)
+  -> ($true.out / $false.out)
+  #where: {
+    $true.arity $false.arity ==,
+    $true.multy $false.multy ==
+  }
+  =>
+  [$true, $false] condition index call
+}
+```
+
+In this example, the arity of `$true` and `$false` are guaranteed to be the same. This guarantee cannot be easily made with generics or other data types.
+
+Constraints can also specify properties of types. For example:
+
+```
+#define reshape: {
+  ([T] list: T~, shape: @(Number...)) -> (:T+$n) #where: {
+    $shape length ~> n
+  } =>
+  ## Body of reshape here
+}
+```
+
+In this example the return type, an exact-rank list, is set based upon how many arguments are in the `$shape` argument. As a tuple will always have a fixed length at compile time, this constraint can be checked and utilised at compile time.
+
+Operations allowed in the `#where` annotation are:
+
+- Basic math (`+`, `-`, `*`, `/`)
+- `dup` / `^`
+- `swap` / `` \ ``
+- `pop` / `_`
+- Variable retrieval
+- Variable setting
+- `length`
+- Unnamed argument reference (`` `n` `` - a different meaning to funciton call because function calls are disallowed)
+- Number pushing
+- Comparison operators (`==`, `<=`, `>=`, `!=`, `===`)
+
+This list may be expanded in the future.
+
+#### Dynamic Types
+
+In the above examples, there were some unusal return types:
+
+- `$true.out / $false.out`
+- `T+$n`
+
+These types are dynamic in that they are not known when writing the types. They are in fact known at compile time.
+
+`$` followed by a variable name and potentially a member access will make the variable value part of the type. The value must fit in the context of the type: `T+$true.out` would cause a compile error, because a function's outputs are not a number. `$n / $false.out` would cause a compile error, because a number is not a type.
