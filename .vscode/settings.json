@@ -1,0 +1,11 @@
+{
+    "files.watcherExclude": {
+        "**/target": true
+    },
+    "python.analysis.extraPaths": [
+        "./valiance",
+    ],
+    "python.autoComplete.extraPaths": [
+        "./valiance",
+    ],
+}

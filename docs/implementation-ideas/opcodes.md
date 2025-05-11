@@ -8,7 +8,7 @@ Terms:
 |`01`|`ELEMENT_B1`|Like `ELEMENT` except reads the next full byte |
 |`02`|`ELEMENT_B2`|Like `ELEMENT_B1` except reads the next two full bytes|
 |`03`|`POP`|Pop a single value off the stack|
-|`04`|`POP_N`|Pop an integer, n, and then pop that many values|
+|`04`|`DUP`|Duplicate the top value on the stack|
 |`05`|`SWAP`|Classic swap operation|
 |`06`|`JMP`|Set the instruction pointer to a multibyte address|
 |`07`|`JMP_B1`|Like `JMP` but the address is the next full byte|
