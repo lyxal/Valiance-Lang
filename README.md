@@ -10,14 +10,4 @@ be something that is an "adventure". It just needs to work. Valiance does that.
 
 ## But Where's the Code?
 
-Okay so at this stage, I don't have any actual implementation. Only specs and
-planning documents. And I don't think I'll be able to work on implementation
-for a while because University is back for the year, and it's
-going to get rather busy. Therefore, I figured it'd be best to share
-the design plans I've come up with so far.
-
-## Can I Implement This?
-
-Well, technically I can't stop you from doing so. But I'd strongly recommend
-not doing so because things are likely to change without notice. Features
-haven't been finalised yet, so probably hold off for a while.
+Right now, I'm going for a python implementation of Valiance. I tried doing a scala project, but metals just wasn't playing nice. Additionally, while Valiance will need to be ported to something faster at some point, I think it's worth creating a quick and dirty proof of concept to demonstrate language features instead of going fast. 
