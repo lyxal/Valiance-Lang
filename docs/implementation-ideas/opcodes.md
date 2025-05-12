@@ -5,14 +5,14 @@ Terms:
 | Bytes | Name | Description |
 |--|--|--|
 |`00`|`ELEMENT`|Execute the element with the given multibyte lookup code|
-|`01`|`ELEMENT_B1`|Like `ELEMENT` except reads the next full byte |
-|`02`|`ELEMENT_B2`|Like `ELEMENT_B1` except reads the next two full bytes|
+|`01`|`ELEMENT_B`|Like `ELEMENT` except reads the next full byte |
+|`02`|`VEC_ELEMENT`|Execute the next element but with runtime vectorisation checking|
 |`03`|`POP`|Pop a single value off the stack|
 |`04`|`DUP`|Duplicate the top value on the stack|
 |`05`|`SWAP`|Classic swap operation|
 |`06`|`JMP`|Set the instruction pointer to a multibyte address|
 |`07`|`JMP_B1`|Like `JMP` but the address is the next full byte|
-|`08`|`JMP_B2`|Like `JMP_B1` except 2 full bytes|
+|`08`|`VEC_ELEMENT_B`|Like `VEC_ELEMENT` except 1 byte|
 |`09`|`PRINT`|Pop and print the top of the stack|
 |`0a`|`JNZ`|Jump to instruction at multibyte address if top of stack is not 0|
 |`0b` | `JZ` | Jump to instruction at multibyte address if top of stack is 0|

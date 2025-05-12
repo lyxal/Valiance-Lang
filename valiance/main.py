@@ -6,14 +6,15 @@ from bytecode.ops import OpCode
 def main():
     testChunk: Chunk = Chunk()
 
-    testChunk.write_push_int(69420)
-    testChunk.write_byte(OpCode.DUP)
-    testChunk.write_byte(OpCode.ADD)
+    testChunk.write_push_string("Hello, World!")
+    testChunk.write_byte(OpCode.PRINT)
+
+    print("Bytecode:")
+    print(testChunk)
 
     interpreter = Interpreter(testChunk.code)
     result = interpreter.run()
-    print("Bytecode:")
-    print(testChunk)
+
     print("Result:", result)
 
 
