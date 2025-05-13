@@ -1,21 +1,9 @@
-from bytecode.chunk import Chunk
-from bytecode.interpreter import Interpreter
-from bytecode.ops import OpCode
+from vm.Interpreter import Interpreter
 
 
 def main():
-    testChunk: Chunk = Chunk()
-
-    testChunk.write_push_string("Hello, World!")
-    testChunk.write_byte(OpCode.PRINT)
-
-    print("Bytecode:")
-    print(testChunk)
-
-    interpreter = Interpreter(testChunk.code)
-    result = interpreter.run()
-
-    print("Result:", result)
+    interpreter = Interpreter()
+    interpreter.run([0x01, 0x03, 0x01, 0x04, 0x06])
 
 
 if __name__ == "__main__":
