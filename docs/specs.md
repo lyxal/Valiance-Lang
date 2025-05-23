@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Valiance is an array-oriented programming language designed to make the
+Valiance is a stack-based array-oriented programming language designed to make the
 array programming paradigm accessible to mainstream programmers. It does
 so by:
 
