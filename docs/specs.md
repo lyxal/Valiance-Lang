@@ -326,6 +326,7 @@ There are other type operations that can be used in types:
 |----------|-------------|
 | `+` | A rank 1 list of the type. |
 | `~` | A list of at least rank 1 of the type. |
+| `^` | A list of at most rank 1 of the type. | 
 | `/` | A union of types. |
 | `&` | An intersection of types. |
 | `?` | An optional type. Same as `T / None`|
@@ -333,14 +334,10 @@ There are other type operations that can be used in types:
 
 Any type that is not a list is termed "atomic".
 
-### Shape Guards
+### Rank Guards
 
-While list shape (itentional, not referring to rank) cannot be determined at compile time, Valiance provides a way to ensure a list will match a specific shape at runtime. These "shape guards" act in a similar
-way to `+` and `~`, except are not checked statically.
-
-`<d1, d2, d3, ..., dn>` after an atomic type will throw a runtime error if a provided argument does not exactly match that shape (or can be vectorised over as that shape - more on that in a bit). Each `dx` is the size of a dimension in the shape.
-
-`(d1, d2, d3, ..., dn)` an atomic type will throw a runtime error if a provided argument is smaller than the desired shape. 
+A type `T` can be followed by `<m, n>` to indicate that the type must be a list be
+at least rank `m` and at most rank `n`. This is called a "rank guard". For example, `ℕ<2, 3>` is a list of numbers that is at least rank 2 and at most rank 3.
 
 ### The Shape of a List
 Any array language enthusiast will be quick to point out that lists — being not-arrays — do not have a shape. "After all," they will say, "what is the shape of `[[1, 2], [3, 4, 5]]` or even `[1, 2, [3, 4, 5]]`?"
@@ -388,11 +385,11 @@ Similarly, the outputs part of the function can be a mixed list of:
 - A number, indicating to push that many items onto the stack,
 - A colon followed by a type, indicating to push an item of that type onto the stack,
 
-The type of a function is `𝔽[<inputs>;<outputs>]`
+The type of a function is `𝔽[<inputs> -> <outputs>]`
 
 Some examples of functions are:
 
-    {(:Number, :Number) => +} ## 𝔽[Number, Number; Number] (Output inferred)
+    {(:Number, :Number) => +} ## 𝔽[Number, Number -> Number] (Output inferred)
     {(:Number{2}) => +} ## Same deal
     {(x: Number, y: Number) -> (:Number) => $x $y +} ## Same deal
     {() -> () => } ## 𝔽[]
@@ -402,8 +399,8 @@ Some examples of functions are:
          @(x: Number, y: Number) => $x $y +,
         }
     } ## 𝔽[^1, ^2; Number/^2] (implicit generics)
-    {+} ## 𝔽[Number/String, Number/String; Number/String] Subject to other types present on +
-    {(x, y) => $x $y +} ## Also 𝔽[Number/String, Number/String; Number/String], as type inference can figure out x and y
+    {+} ## 𝔽[Number/String, Number/String -> Number/String] Subject to other types present on +
+    {(x, y) => $x $y +} ## Also 𝔽[Number/String, Number/String -> Number/String], as type inference can figure out x and y
 
 As seen above, if a function has a number in its argument list, it will have
 implicitly created generics. These generics act as if they were normal generics,
@@ -436,7 +433,7 @@ Function overloading is accomplished by using the addition element:
 	5 `overloaded` ## "Got a number!"
 	"yes" `overloaded` ## "String input"
 
-A function overload's arguments are not allowed to be a prefix of another function overload's arguments. For example, a function `𝔽[Number; Number]` can't be overloaded with another function `𝔽[Number, Number; Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
+A function overload's arguments are not allowed to be a prefix of another function overload's arguments. For example, a function `𝔽[Number -> Number]` can't be overloaded with another function `𝔽[Number, Number -> Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
 
 _As a consequence, unit functions cannot appear as a function overload_
 
@@ -687,7 +684,7 @@ Consider first an implementation of `dip` for monads:
 
 ```
 #define dip: {
- ([T, U, V] f: 𝔽[T; U], top: V, :T) ->
+ ([T, U, V] f: 𝔽[T -> U], top: V, :T) ->
  (:U, :V) =>
     `f` $top
 }
@@ -697,7 +694,7 @@ This could be extended to dyads as:
 
 ```
 #define dip: {
- ([T, U, V, W] f: 𝔽[T, U; V], top: W, :T, :U) ->
+ ([T, U, V, W] f: 𝔽[T, U -> V], top: W, :T, :U) ->
  (:V, :W) =>
     `f` $top
 }
@@ -707,7 +704,7 @@ And triads as:
 
 ```
 #define dip: {
- ([T, U, V, W, X] f: 𝔽[T, U, V; W], top: X, :T, :U, :V) ->
+ ([T, U, V, W, X] f: 𝔽[T, U, V -> W], top: X, :T, :U, :V) ->
  (:W, :X) =>
     `f` $top
 }
@@ -874,14 +871,14 @@ Generic types act as a way to define an algorithm for "some type" to be specifie
 Functions (and by extension, extension methods) and objects can use generic types. Within functions, generics are declared within the parameter list:
 
 ```
-{([Generics] arguments) -> (return types) => ...}
+{|generics| (arguments) -> (return types) => ...}
 ```
 
 A generic version of `find` from before would look like:
 
 ```
-#define find: {
- ([T] haystack: T+, needle: T) ->
+#define find: { |T|
+ (haystack: T+, needle: T) ->
  (:ℕ?) =>
     $haystack zipIndices filter: {
       head $needle ==
@@ -899,6 +896,25 @@ For objects, generics come after the object name:
   0 ~> size
 }
 ```
+
+### Generics and List Types
+
+The type represented by `T` will be one rank lower than the input type.
+
+For example, given the following function:
+
+```
+{|T| (list: T+) -> (:Number+) =>
+  [] ~> seen: T+
+  $list #foreach: {(item: T) =>
+    $seen $item contains not #if: {$item $seen:append}
+  }
+  $seen
+} ~> uniquify
+```
+
+If `uniquify` is passed `Number+`, then `T` will be `Number`. However, if it is
+passed `Number++`, then `T` will be `Number+`.
 
 ### Indexed Generics
 
@@ -942,7 +958,7 @@ To provide a concrete example of traits:
 ```
 #trait Comparable[T]: {
   #define #required ===: {(this: T, other: T) -> (:Number)}
-  #define ===: {[U] this: T, other: U) -> (:Number) => 0}
+  #define ===: {|U| (this: T, other: U) -> (:Number) => 0}
 
   #define #required <: {(this: T, other: T) -> (:Number)}
   #define >: {(this: T, other: T) ->
@@ -973,7 +989,7 @@ For example:
 }
 ```
 
-An object implementing both `A` and `B` will have two clashing definitions of `foo` (`𝔽[ℕ; ℕ]` vs `𝔽[𝕊; 𝕊]`). To resolve this conflict, an object has to specify an overload for each non-default-implementation extension method. The syntax for doing so is:
+An object implementing both `A` and `B` will have two clashing definitions of `foo` (`𝔽[ℕ -> ℕ]` vs `𝔽[𝕊 -> 𝕊]`). To resolve this conflict, an object has to specify an overload for each non-default-implementation extension method. The syntax for doing so is:
 
 ```
 #define ~TraitName.methodName: ...
@@ -1286,8 +1302,8 @@ In this example, the arity of `$true` and `$false` are guaranteed to be the same
 Constraints can also specify properties of types. For example:
 
 ```
-#define reshape: {
-  ([T] list: T~, shape: @(Number...)) -> (:T+$n) #where: {
+#define reshape: {|T|
+  (list: T~, shape: @(Number...)) -> (:T+$n) #where: {
     $shape length ~> n
   } =>
   ## Body of reshape here
