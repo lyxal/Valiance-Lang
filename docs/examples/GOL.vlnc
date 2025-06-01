@@ -1,0 +1,23 @@
+#import grids
+
+#define step: {(grid: Number($n, $m)) -> (:Number++) =>
+  @(grid: $grid, wrap: true) grids.neighbours
+  map: {
+    fork: {4 itemAt} {4 removeAt sum} pair
+    #match: {
+      [_, 3] => 1,
+      [1, 2] => 1,
+      _      => 0
+    }
+  }
+}
+
+[1, 1, 1, 1, 0, 0, 0, 1, 0] @(3, 3) reshape ~> glider
+$glider @(size: @(10, 10), 
+          fill: 0, 
+          location: grids.BOTTOM_RIGHT) grids.fill
+~> initial
+
+10 ~> iterations
+
+$initial $iterations {step} repeat
