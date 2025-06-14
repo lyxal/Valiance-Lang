@@ -147,7 +147,10 @@ Every value in Valiance has a type. Some built-in types are pre-provided. Types 
 **Syntax:**
 
 ```ebnf
-Type = Identifier # This grammar rule is incomplete
+Type = Union_Type
+Union_Type = Intersection_Type {"/" Intersection_Type}
+Intersection_Type = Primary_Type {"&" Primary_Type}
+Primary_Type = (Identifier [Generics] [Type_Modifiers]) | ("(" Type ")")
 ```
 
 More on types will be explained later in this specification. 
