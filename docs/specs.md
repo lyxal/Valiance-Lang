@@ -139,6 +139,18 @@ String = @" {r[^"]|@\ ANY_CHAR} @"
 - Strings are utf8 encoded. 
 - Strings are considered a single atomic value, rather than a list of characters.
 
+## Types
+
+Every value in Valiance has a type. Some built-in types are pre-provided. Types can be comprised of multiple different types, and can be modified to indicate the type is a list.
+
+**Syntax:**
+
+```ebnf
+Type = Identifier # This grammar rule is incomplete
+```
+
+More on types will be explained later in this specification. 
+
 ## Variables
 
 Variables allow for values to be temporarily stored separately to the stack. Variables can be set and later pushed back to the stack. 
