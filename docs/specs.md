@@ -4,11 +4,7 @@
 > To view philosophy, design goals, and for a more narrative-style
 > overview, check [the overview document](overview.md).
 
-## Syntax
-
-This section only refers to the syntax of language features, not the details or implementation requirements of the features.
-
-### General Syntax Rules
+## General Language Points
 
 * Files are, by default, UTF-8 encoded.
 * Source code files use the `.vlnc` extension.
@@ -16,9 +12,7 @@ This section only refers to the syntax of language features, not the details or 
   etc. do not need to be separated by newlines nor semicolons.
 * Whitespace is not significant, except when separating tokens.
 
-### EBNF Definitions
-
-* `r[...]` indicates a regex rather than an optional section.
+## EBNF Definitions
 
 ```ebnf
 LETTER = r[a-zA-Z]
@@ -26,7 +20,14 @@ DIGIT = r[0-9]
 ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
 ```
 
-### Comments
+## Comments
+
+### Description
+
+* Comments are used to annotate the source code, providing
+  explanations or notes for developers.
+
+### Syntax
 
 * Single line comments start with `##` and continue until the first
   newline character
@@ -34,10 +35,15 @@ ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
 * Comments are ignored by the compiler and do not affect the program's
   behavior.
 
-### Element Syntax
+## Elements
+
+### Description
 
 * Elements are the basic building blocks of Valiance programs. They
   are the equivalent of keywords and operators in other languages.
+
+### Syntax
+
 * An element is defined as:
 
 ```ebnf
