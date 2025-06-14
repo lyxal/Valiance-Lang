@@ -139,6 +139,25 @@ String = @" {r[^"]|@\ ANY_CHAR} @"
 - Strings are utf8 encoded. 
 - Strings are considered a single atomic value, rather than a list of characters.
 
+## Variables
+
+Variables allow for values to be temporarily stored separately to the stack. Variables can be set and later pushed back to the stack. 
+
+**Syntax:**
+
+```ebnf
+Variable_Get = @$ Identifier
+Variable_Set = "~>" {WHITESPACE} Identifier [@: Type]
+```
+
+**Notes**:
+
+- All variables are local, no global variables. 
+- A variable has to be set before it can be used.
+- Every variable has a type. The type of a variable is determined the first time it is set. Every following variable set must set the variable to that type. 
+
+More will be explained about variables later in this specification.
+
 ## Lexing Conflict Resolution
 
 Tokens are completed when no additional characters can extend the current token pattern.
