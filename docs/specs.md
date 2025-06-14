@@ -24,6 +24,10 @@ language features.
 - In EBNF blocks, `r` before `[...]` indicates a regular expression/character class.
 - In EBNF blocks, `@` before a character is equivalent to wrapping that character in quotes and escaping it as needed. This is useful for characters that would otherwise be confusing to represent.
 
+### Glossary
+
+- **Atomic value** (_atomic_) = A value that is not a list. 
+
 ## Lexical Structure
 
 ### Character Set and Encoding
@@ -106,6 +110,12 @@ DecimalNumber = '-'? Number ["." Number]
 Number = 0 | (r[1-9] {DIGIT})
 ```
 
+**Notes:**
+
+- Numbers can be arbitrarily large and arbitrarily exact. There's no maximum/minimum number size, nor is there a limit to the number of decimal places that can be stored. 
+- All numbers fall under the `Number` (`ℕ`) type, with subtyping as needed (eg `Number.Whole`, `Number.Decimal`).
+- Numbers can also have a complex part.
+
 #### String Literals
 
 Strings can consist of any number of utf8 characters. 
@@ -115,3 +125,8 @@ Strings can consist of any number of utf8 characters.
 ```ebnf
 String = @" {r[^"]|@\ ANY_CHAR} @"
 ```
+
+**Notes:**
+
+- Strings are utf8 encoded. 
+- Strings are considered a single atomic value, rather than a list of characters.
