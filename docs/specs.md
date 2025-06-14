@@ -150,7 +150,10 @@ Every value in Valiance has a type. Some built-in types are pre-provided. Types 
 Type = Union_Type
 Union_Type = Intersection_Type {"/" Intersection_Type}
 Intersection_Type = Primary_Type {"&" Primary_Type}
-Primary_Type = (Identifier [Generics] [Type_Modifiers]) | ("(" Type ")")
+Primary_Type = ((Simple_Type | Generic_Type) [Type_Modifiers]) | ("(" Type ")")
+Simple_Type = Identifier | Builtin_Type
+Generic_Type = Simple_Type "[" Type {"," Type} "]"
+Type_Modifiers = {"+"|"~"|"?"} ["!"|"_"]
 ```
 
 More on types will be explained later in this specification. 
