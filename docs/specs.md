@@ -67,6 +67,10 @@ ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
 Element = (ELEMENT_SYMBOL - DIGIT) {ELEMENT_SYMBOL}
 ```
 
+**Notes:**
+
+- There are no limitations on element names. In fact, reserved element names begin with a `#` (see system elements below).
+
 More will be explained about elements further on in this specification.
 
 ### System Elements
@@ -93,6 +97,10 @@ DIGIT = r[0-9]
 Identifier = (LETTER | '_') {LETTER | DIGIT | '_'}
 ```
 
+**Notes:**
+
+- As identifiers are used in concordance with sigils/environments expecting only a user defined name, there are no limitations on what can be used as an identifier.
+
 ### Literals
 
 Literals are hardcoded values in the source code used to create some of the built-in data types.
@@ -114,7 +122,7 @@ Number = 0 | (r[1-9] {DIGIT})
 
 - Numbers can be arbitrarily large and arbitrarily exact. There's no maximum/minimum number size, nor is there a limit to the number of decimal places that can be stored. 
 - All numbers fall under the `Number` (`ℕ`) type, with subtyping as needed (eg `Number.Whole`, `Number.Decimal`).
-- Numbers can also have a complex part.
+- Numbers can also have a complex part. This will make the number equal `real part + imaginary part`
 
 #### String Literals
 
@@ -130,3 +138,16 @@ String = @" {r[^"]|@\ ANY_CHAR} @"
 
 - Strings are utf8 encoded. 
 - Strings are considered a single atomic value, rather than a list of characters.
+
+## Lexing Conflict Resolution
+
+Tokens are completed when no additional characters can extend the current token pattern.
+
+For example, `123abc` is lexed as `123` and `abc`.
+
+Notably, sequences like `++` are lexed as-is. `++` will remain a single token. 
+
+
+## Unknown Tokens
+
+If a character sequence cannot form a valid token, a lexical error is raised.
