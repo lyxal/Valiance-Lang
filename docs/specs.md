@@ -22,6 +22,7 @@ language features.
 ## Document Semantics
 
 - In EBNF blocks, `r` before `[...]` indicates a regular expression/character class.
+- In EBNF blocks, `@` before a character is equivalent to wrapping that character in quotes and escaping it as needed. This is useful for characters that would otherwise be confusing to represent.
 
 ## Lexical Structure
 
@@ -62,6 +63,8 @@ ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
 Element = (ELEMENT_SYMBOL - DIGIT) {ELEMENT_SYMBOL}
 ```
 
+More will be explained about elements further on in this specification.
+
 ### System Elements
 
 System elements are predefined system constructs that are part of the Valiance language, and cannot be overridden or redefined. System elements encompass syntax constructs, compile-time versions of built-in elements, and other core language features.
@@ -71,6 +74,8 @@ System elements are predefined system constructs that are part of the Valiance l
 ```ebnf
 SystemElement = '#' Element
 ```
+
+More will be explained about system elements further on in this specification.
 
 ### Identifiers
 
@@ -99,4 +104,14 @@ DIGIT = r[0-9]
 NumericLiteral = DecimalNumber ['i' DecimalNumber]
 DecimalNumber = '-'? Number ["." Number]
 Number = 0 | (r[1-9] {DIGIT})
+```
+
+#### String Literals
+
+Strings can consist of any number of utf8 characters. 
+
+**Syntax**:
+
+```ebnf
+String = @" {r[^"]|@\ ANY_CHAR} @"
 ```
