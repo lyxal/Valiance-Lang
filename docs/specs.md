@@ -4,89 +4,98 @@
 > To view philosophy, design goals, and for a more narrative-style
 > overview, check [the overview document](overview.md).
 
-## General Language Points
+## Introduction
 
-* Files are, by default, UTF-8 encoded.
-* Source code files use the `.vlnc` extension.
-* There is no concept of "lines" in Valiance. Expressions, statements,
-  etc. do not need to be separated by newlines nor semicolons.
-* Whitespace is not significant, except when separating tokens.
+Valiance is a stack-based array-oriented programming language designed to make the
+array programming paradigm accessible to mainstream programmers. It does
+so by:
 
-## EBNF Definitions
+- Incorporating familiar programming constructs from traditional languages
+- Providing a tacit and expressive programming environment
+- De-emphasising pure mathematical elegance in favour of practicality
+- Aiming to actually look like a programming language.
+
+This document describes the language specification of Valiance, including its syntax,
+semantics, and core features. It is intended to serve as a definitive reference for
+language features.
+
+## Document Semantics
+
+- In EBNF blocks, `r` before `[...]` indicates a regular expression/character class.
+
+## Lexical Structure
+
+### Character Set and Encoding
+
+Valiance files, ending with the `.vlnc` extension, are utf-8 encoded files containing Valiance source code.
+
+### Whitespace
+
+Whitespace is considered insignificant in Valiance, except where it is used to separate tokens. Whitespace characters are:
+
+- Space (` `) (U+0020)
+- Tab (`\t`) (U+0009)
+- Newline (`\n`) (U+000A)
+
+### Code Lines
+
+There is no concept of a "line" of code in Valiance. Code is split into tokens, and whitespace is used to separate these tokens. A line break does not imply the end of a statement or expression.
+
+### Comments
+
+Comments are used to annotate code and explain purpose, context, and meaning to other developers. They are ignored by the compiler and do not affect program execution. There are two types of comments:
+
+- **Single-line comments**: Start with `##` and continue to the next newline character.
+- **Multi-line comments**: Start with `#/` and end with `/#`. They can contain multiple newlines.
+
+Multi-line comments cannot be nested.
+
+### Elements
+
+Elements are the basic building blocks of Valiance programs. They are the equivalent of keywords and operators in other languages.
+
+**Syntax:**
 
 ```ebnf
-LETTER = r[a-zA-Z]
 DIGIT = r[0-9]
 ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
-```
-
-## Comments
-
-### Description
-
-* Comments are used to annotate the source code, providing
-  explanations or notes for developers.
-
-### Syntax
-
-* Single line comments start with `##` and continue until the first
-  newline character
-* Multi-line comments start with `##{` and end with `}##`
-* Comments are ignored by the compiler and do not affect the program's
-  behavior.
-
-## Elements
-
-### Description
-
-* Elements are the basic building blocks of Valiance programs. They
-  are the equivalent of keywords and operators in other languages.
-
-### Syntax
-
-* An element is defined as:
-
-```ebnf
 Element = (ELEMENT_SYMBOL - DIGIT) {ELEMENT_SYMBOL}
 ```
 
 ### System Elements
 
-* System elements are predefined system constructs that are part of the Valiance
-  language, and cannot be overridden or redefined.
-* System elements encompass syntax constructs, compile-time versions
-  of built-in elements, and other core language features.
-* System elements are defined as:
+System elements are predefined system constructs that are part of the Valiance language, and cannot be overridden or redefined. System elements encompass syntax constructs, compile-time versions of built-in elements, and other core language features.
+
+**Syntax:**
 
 ```ebnf
 SystemElement = '#' Element
 ```
 
-* In this way, Valiance does not have reserved keywords in the traditional
-  sense. Rather, protected concepts are marked with symbolic prefixes.
+### Identifiers
 
-### Identifiers/Names
+Identifiers (also called "names" interchangeably) are similar to elements, but restricted to only letters, digits, and `_`. Identifiers must start with a letter or `_`. Identifiers are used with variables and types.
 
-* Identifiers (also called "names" interchangeably) are similar
-  to elements, but restricted to only letters, digits, and `_`.
-* Identifiers must start with a letter or `_`.
-* Identifiers are used with variables and types.
-* An identifier is defined as:
+**Syntax:**
 
 ```ebnf
+LETTER = r[a-zA-Z]
+DIGIT = r[0-9]
 Identifier = (LETTER | '_') {LETTER | DIGIT | '_'}
 ```
 
 ### Literals
 
-* Literals are hardcoded values in the source code used to create
-  some of the built-in data types.
+Literals are hardcoded values in the source code used to create some of the built-in data types.
 
-#### Numbers
+#### Numeric Literals
 
-* Numbers can be whole numbers, decimal numbers, or complex numbers.
+Numbers can be whole numbers, decimal numbers, or complex numbers.
+
+**Syntax:**
 
 ```ebnf
+DIGIT = r[0-9]
 NumericLiteral = DecimalNumber ['i' DecimalNumber]
 DecimalNumber = '-'? Number ["." Number]
 Number = 0 | (r[1-9] {DIGIT})
