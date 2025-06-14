@@ -131,13 +131,14 @@ Strings can consist of any number of utf8 characters.
 **Syntax**:
 
 ```ebnf
-String = @" {r[^"]|@\ ANY_CHAR} @"
+String = @" {r[^"]|@\ @"} @"
 ```
 
 **Notes:**
 
 - Strings are utf8 encoded. 
 - Strings are considered a single atomic value, rather than a list of characters.
+- There is a whole system of string formatting and templating. This will be specified later in this specification. 
 
 ## Types
 
