@@ -6,6 +6,8 @@
 
 ## Syntax
 
+This section only refers to the syntax of language features, not the details or implementation requirements of the features.
+
 ### General Syntax Rules
 
 * Files are, by default, UTF-8 encoded.
@@ -16,10 +18,12 @@
 
 ### EBNF Definitions
 
+* `r[...]` indicates a regex rather than an optional section.
+
 ```ebnf
-LETTER = [a-zA-Z]
-DIGIT = [0-9]
-ELEMENT_SYMBOL = [0-9a-zA-Z_\-?!*+=&%><]
+LETTER = r[a-zA-Z]
+DIGIT = r[0-9]
+ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
 ```
 
 ### Comments
@@ -75,10 +79,9 @@ Identifier = (LETTER | '_') {LETTER | DIGIT | '_'}
 #### Numbers
 
 * Numbers can be whole numbers, decimal numbers, or complex numbers.
-* There is no limit on the size of numbers, both magnitude and
-  precision, except for practical limits of the system.
 
 ```ebnf
-NumericLiteral = Number ('i' Number)?
-Number = '-'? (DIGIT {DIGIT} | DIGIT '.' {DIGIT} | '.' {DIGIT})
+NumericLiteral = DecimalNumber ['i' DecimalNumber]
+DecimalNumber = '-'? Number ["." Number]
+Number = 0 | (r[1-9] {DIGIT})
 ```
