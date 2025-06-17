@@ -1210,8 +1210,7 @@ Modules can be nested by nesting the parent directories of the target file. For 
 
 - `#import Name` will import the _namespace_ `Name`. All objects, traits, variants, and elements have to be accessed as `Name.<name>`
 - `#import Name: Alias` is the same as `#import Name`, but all references will need to be `Alias` instead.
-- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
-- `#import #all Name` will import all objects, traits, variants, and elements into the global namespace. Only use this in exceptional circumstances, as it may lead to naming conflicts
+- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
 - Valiance prevents circular dependencies between modules. If module A imports module B, then module B cannot import module A, either directly or through any chain of imports.
 - Attempting to import conflicting names without disambiguation will result in a compile-time error.
 
