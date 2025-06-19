@@ -92,8 +92,8 @@ Identifiers (also called "names" interchangeably) are similar to elements, but r
 **Syntax:**
 
 ```ebnf
-LETTER = r[a-zA-Z]
-DIGIT = r[0-9]
+LETTER = (* any character with Unicode general category Lu, Ll, Lt, Lm, Lo, or Nl *)
+DIGIT = (* any character with Unicode general category Nd *)
 Identifier = (LETTER | '_') {LETTER | DIGIT | '_'}
 ```
 
@@ -150,23 +150,26 @@ Every value in Valiance has a type. Some built-in types are pre-provided. Types 
 Type = Union_Type
 Union_Type = Intersection_Type {"/" Intersection_Type}
 Intersection_Type = Primary_Type {"&" Primary_Type}
-Primary_Type = ((Simple_Type | Generic_Type) [Type_Modifiers]) | ("(" Type ")")
-Simple_Type = Identifier | Builtin_Type
+Primary_Type = ((Simple_Type | Generic_Type | Tuple_Type | Dimension_Destructure_Type) [Type_Modifiers]) | ("(" Type ")")
+Tuple_Type = "@(" [Tuple_Type_Item {"," Tuple_Type_Item}] ")"
+Dimension_Destructure_Type = "@[" [Tuple_Type_Item {"," Tuple_Type_Item}] "]"
+Tuple_Type_Item = (Identifier ":" Type) | (":" Type)
+Simple_Type = Identifier
 Generic_Type = Simple_Type "[" Type {"," Type} "]"
 Type_Modifiers = {"+"|"~"|"?"} ["!"|"_"]
 ```
 
-More on types will be explained later in this specification. 
+More on types will be explained later in this specification.
 
 ## Variables
 
-Variables allow for values to be temporarily stored separately to the stack. Variables can be set and later pushed back to the stack. 
+Variables allow for values to be temporarily stored separately to the stack. Variables can be set and later pushed back to the stack.
 
 **Syntax:**
 
 ```ebnf
-Variable_Get = @$ Identifier
-Variable_Set = "~>" {WHITESPACE} Identifier [@: Type]
+Variable_Get = "$" Identifier
+Variable_Set = "~>" {WHITESPACE} Identifier [":" Type]
 ```
 
 **Notes**:
@@ -183,7 +186,7 @@ Tokens are completed when no additional characters can extend the current token 
 
 For example, `123abc` is lexed as `123` and `abc`.
 
-Notably, sequences like `++` are lexed as-is. `++` will remain a single token. 
+Notably, sequences like `++` are lexed as-is. `++` will remain a single token.
 
 
 ## Unknown Tokens

@@ -1210,7 +1210,7 @@ Modules can be nested by nesting the parent directories of the target file. For 
 
 - `#import Name` will import the _namespace_ `Name`. All objects, traits, variants, and elements have to be accessed as `Name.<name>`
 - `#import Name: Alias` is the same as `#import Name`, but all references will need to be `Alias` instead.
-- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
+- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
 - Valiance prevents circular dependencies between modules. If module A imports module B, then module B cannot import module A, either directly or through any chain of imports.
 - Attempting to import conflicting names without disambiguation will result in a compile-time error.
 
@@ -1336,3 +1336,60 @@ In the above examples, there were some unusal return types:
 These types are dynamic in that they are not known when writing the types. They are in fact known at compile time.
 
 `$` followed by a variable name and potentially a member access will make the variable value part of the type. The value must fit in the context of the type: `T+$true.out` would cause a compile error, because a function's outputs are not a number. `$n / $false.out` would cause a compile error, because a number is not a type.
+
+## Advanced Tuple Destructuring
+
+While tuples have already been discussed earlier, there is an interesting language design side effect
+of their destructuring capabilities. For example, consider the following function:
+
+```valiance
+{(@(x: Number, y: Number)+) => ... }
+```
+
+Here, the function is given a list of tuples...with named arguments. This will cause `x` and `y` to
+contain a list of all `x` and `y` values in the tuples. This is a powerful feature, as it allows for
+quick reference of entire columns of data within the tuples.
+
+Generally speaking, the result stored in a named argument will be a list of all values for that argument across the tuples. The list will have the same shape as the list of tuples (or list of lists of tuples, etc).
+
+For example:
+
+```valiance
+{(@(x: Number)++) => $x}
+```
+
+would return a `Number++` containing all `x` values in the tuples passed to the function.
+
+
+## Named Dimensions
+
+Named dimensions allow for easier manipulation of highly ranked lists. They can allow operations
+to explicitly refer to a specific dimension of a list, rather than relying on the order of the
+dimensions (i.e. relational references).
+
+Named dimensions are specified in a type as `Type@[dimensions]`, where `dimensions` is a comma-separated list of dimension names. For example, `Number@[x, y]` would be a two-dimensional list of numbers with dimensions `x` and `y`.
+
+Additionally, one dimension can be destructured in the same way as tuples. Only one dimension can be
+destructured, as it is treated as the main content of the list. For example, `Number@[x: [a, b], y]` would be a two-dimensional list of numbers with dimensions `x` and `y`, and where `a` refers to all values in the first item of `x`, and `b` refers to all values in the second item of `x`.
+
+Operations on named dimensions can be accessed from the `dimensions` module.
+
+Named dimensions are properties of the value they are attached to, meaning they can be referred
+to using `$.` syntax. For example, if `image` is a `Number@[channel: [R, G, B], width, height]`, then `$.image.channel` would refer to the `channel` dimension of the image. Dimension references are their
+own type (`dimensions.Dimension`).
+
+Destructured dimensions can be referenced without `$.`, so `$R` would be the same as `$.image.channel.R`.
+
+Some examples of named dimensions include:
+
+```valiance
+#import dimensions
+{(image: Number@[channel: [R, G, B], width, height]) =>
+  $image dimensions.over: {$image.channel} {max} ## A [width, height] list of maximum values for each channel
+}
+
+{(data: Number@[location, temperature]) =>
+  $data dimensions.over: {$data.location} {avg} ## A list of average temperatures for each location
+}
+
+```
