@@ -1339,57 +1339,141 @@ These types are dynamic in that they are not known when writing the types. They 
 
 ## Advanced Tuple Destructuring
 
-While tuples have already been discussed earlier, there is an interesting language design side effect
-of their destructuring capabilities. For example, consider the following function:
+Valiance makes it easy to work with structured data — for example, lists of records or tuples.
+Many languages require explicit loops to pull data out of records. In Valiance, this happens automatically through tuple destructuring.
 
-```valiance
+### Destructuring a Single Tuple
+
+You can destructure a tuple in a function parameter like this:
+
+```
+{(@(x: Number, y: Number)) => $x $y }
+```
+
+If this function receives a tuple such as:
+
+```
+(x: 3.5, y: 7.2)
+```
+
+then `x` and `y` will be available as local variables with those values.
+
+
+### Destructuring Lists of Tuples
+
+More commonly, you will want to process a list of tuples — for example:
+
+```
+[(x: 1, y: 10), (x: 2, y: 20), (x: 3, y: 30)]
+```
+
+You can write:
+
+```
 {(@(x: Number, y: Number)+) => ... }
 ```
 
-Here, the function is given a list of tuples...with named arguments. This will cause `x` and `y` to
-contain a list of all `x` and `y` values in the tuples. This is a powerful feature, as it allows for
-quick reference of entire columns of data within the tuples.
+The result is that `x` and `y` will each be a list of values:
 
-Generally speaking, the result stored in a named argument will be a list of all values for that argument across the tuples. The list will have the same shape as the list of tuples (or list of lists of tuples, etc).
-
-For example:
-
-```valiance
-{(@(x: Number)++) => $x}
+```
+x = [1, 2, 3]
+y = [10, 20, 30]
 ```
 
-would return a `Number++` containing all `x` values in the tuples passed to the function.
+This lets you easily pull out "columns" from a list of records — with no loops, no iteration.
+
+
+### Higher-Rank Lists of Tuples
+
+If your data is nested — e.g. lists of lists of tuples — you can use ++:
+
+```
+{(@(x: Number)++) => $x }
+```
+
+This will extract an array of the same shape as the input — a list of lists of the `x` field.
+
 
 
 ## Named Dimensions
 
-Named dimensions allow for easier manipulation of highly ranked lists. They can allow operations
-to explicitly refer to a specific dimension of a list, rather than relying on the order of the
-dimensions (i.e. relational references).
+When working with multidimensional data — images, time series, or higher-rank arrays — it’s helpful to label each dimension by name.
 
-Named dimensions are specified in a type as `Type@[dimensions]`, where `dimensions` is a comma-separated list of dimension names. For example, `Number@[x, y]` would be a two-dimensional list of numbers with dimensions `x` and `y`.
+Valiance lets you do this with named dimensions.
 
-Additionally, one dimension can be destructured in the same way as tuples. Only one dimension can be
-destructured, as it is treated as the main content of the list. For example, `Number@[x: [a, b], y]` would be a two-dimensional list of numbers with dimensions `x` and `y`, and where `a` refers to all values in the first item of `x`, and `b` refers to all values in the second item of `x`.
+### Syntax
 
-Operations on named dimensions can be accessed from the `dimensions` module.
-
-Named dimensions are properties of the value they are attached to, meaning they can be referred
-to using `$.` syntax. For example, if `image` is a `Number@[channel: [R, G, B], width, height]`, then `$.image.channel` would refer to the `channel` dimension of the image. Dimension references are their
-own type (`dimensions.Dimension`).
-
-Destructured dimensions can be referenced without `$.`, so `$R` would be the same as `$.image.channel.R`.
-
-Some examples of named dimensions include:
-
-```valiance
-#import dimensions
-{(image: Number@[channel: [R, G, B], width, height]) =>
-  $image dimensions.over: {$image.channel} {max} ## A [width, height] list of maximum values for each channel
-}
-
-{(data: Number@[location, temperature]) =>
-  $data dimensions.over: {$data.location} {avg} ## A list of average temperatures for each location
-}
+You can give names to dimensions using this type syntax:
 
 ```
+Number@[x, y]
+```
+
+This represents a 2D array of numbers with dimensions named `x` and `y`.
+
+### Destructured Dimensions
+
+You can destructure a dimension to give names to its parts:
+
+```
+Number@[channel: [R, G, B], width, height]
+```
+
+Here:
+
+```
+channel is a dimension of size 3
+
+The parts of channel are named R, G, B
+```
+
+Now you can refer to these parts by name in your code:
+
+```
+$R  ## equivalent to $.image.channel.R
+$G
+$B
+```
+
+### Working with Dimensions
+
+Named dimensions are first-class properties of the value — you can access them:
+
+```
+$image.channel
+$image.width
+```
+
+You can also perform dimension-aware operations:
+
+```
+#import dimensions
+
+{(image: Number@[channel: [R, G, B], width, height]) =>
+  $image dimensions.over: {$image.channel} {max}
+  ## returns a [width, height] list of max value per channel
+}
+```
+
+Or:
+
+```
+{(data: Number@[location, time]) =>
+  $data dimensions.over: {$data.time} {avg}
+  ## returns average per location
+}
+```
+
+### Rank and Compatibility
+
+Using named dimensions is equivalent to specifying an exact rank:
+
+```
+Number@[x, y]
+```
+
+is exactly like `Number++`.
+
+If you pass a higher-rank array, the function will vectorize over the extra dimensions.
+
+You can’t mix named dimensions with tuple destructuring — they apply to different shapes.
