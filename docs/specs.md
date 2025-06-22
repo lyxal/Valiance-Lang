@@ -26,17 +26,19 @@ language features.
 
 ### Glossary
 
-- **Atomic value** (_atomic_) = A value that is not a list. 
+- **Atomic value** (_atomic_): A value that is not a list. 
 
 ## Lexical Structure
 
 ### Character Set and Encoding
 
-Valiance files, ending with the `.vlnc` extension, are utf-8 encoded files containing Valiance source code.
+Valiance files, ending with the `.vlnc` extension, are UTF-8 encoded files containing Valiance source code.
 
 ### Whitespace
 
-Whitespace is considered insignificant in Valiance, except where it is used to separate tokens. Whitespace characters are:
+Whitespace is considered insignificant in Valiance, except where it is used to separate tokens. Whitespace is not permitted within tokens.
+
+Whitespace characters are:
 
 - Space (` `) (U+0020)
 - Tab (`\t`) (U+0009)
@@ -53,7 +55,7 @@ Comments are used to annotate code and explain purpose, context, and meaning to 
 - **Single-line comments**: Start with `##` and continue to the next newline character.
 - **Multi-line comments**: Start with `#/` and end with `/#`. They can contain multiple newlines.
 
-Multi-line comments cannot be nested.
+Multi-line comments cannot be nested; a `#/` inside an existing multi-line comment does not start a new comment.
 
 ### Elements
 
@@ -62,16 +64,19 @@ Elements are the basic building blocks of Valiance programs. They are the equiva
 **Syntax:**
 
 ```ebnf
-DIGIT = r[0-9]
-ELEMENT_SYMBOL = r[0-9a-zA-Z_\-?!*+=&%><]
-Element = (ELEMENT_SYMBOL - DIGIT) {ELEMENT_SYMBOL}
+DIGIT           = r[0-9]
+ELEMENT_SYMBOL  = r[0-9a-zA-Z_\-?!*+=&%><]
+
+Element = (ELEMENT_SYMBOL - DIGIT) { ELEMENT_SYMBOL }
+          [ "[" Type { "," Type } "]" ]
 ```
 
 **Notes:**
 
-- There are no limitations on element names. In fact, reserved element names begin with a `#` (see system elements below).
+- There are no limitations on element names. Reserved element names begin with a #. These form system elements (see System Elements below), and are a separate syntactic construct.
+- If present, the opening `[` must immediately follow the element name without any intervening whitespace.
 
-More will be explained about elements further on in this specification.
+More details about elements will be provided later in this specification.
 
 ### System Elements
 
@@ -83,7 +88,7 @@ System elements are predefined system constructs that are part of the Valiance l
 SystemElement = '#' Element
 ```
 
-More will be explained about system elements further on in this specification.
+More details about system elements will be provided later in this specification.
 
 ### Identifiers
 
@@ -92,14 +97,14 @@ Identifiers (also called "names" interchangeably) are similar to elements, but r
 **Syntax:**
 
 ```ebnf
-LETTER = (* any character with Unicode general category Lu, Ll, Lt, Lm, Lo, or Nl *)
-DIGIT = (* any character with Unicode general category Nd *)
+LETTER     = (* any character with Unicode general category Lu, Ll, Lt, Lm, Lo, or Nl *)
+DIGIT      = (* any character with Unicode general category Nd *)
 Identifier = (LETTER | '_') {LETTER | DIGIT | '_'}
 ```
 
 **Notes:**
 
-- As identifiers are used in concordance with sigils/environments expecting only a user defined name, there are no limitations on what can be used as an identifier.
+- Identifiers are used in contexts expecting only a user-defined name. There are no additional limitations on what can be used as an identifier.
 
 ### Literals
 
@@ -112,21 +117,22 @@ Numbers can be whole numbers, decimal numbers, or complex numbers.
 **Syntax:**
 
 ```ebnf
-DIGIT = r[0-9]
+DIGIT          = r[0-9]
+
 NumericLiteral = DecimalNumber ['i' DecimalNumber]
-DecimalNumber = '-'? Number ["." Number]
-Number = 0 | (r[1-9] {DIGIT})
+DecimalNumber  = '-'? Number ["." Number]
+Number         = 0 | (r[1-9] {DIGIT})
 ```
 
 **Notes:**
 
 - Numbers can be arbitrarily large and arbitrarily exact. There's no maximum/minimum number size, nor is there a limit to the number of decimal places that can be stored. 
 - All numbers fall under the `Number` (`ℕ`) type, with subtyping as needed (eg `Number.Whole`, `Number.Decimal`).
-- Numbers can also have a complex part. This will make the number equal `real part + imaginary part`
+- Numbers can also have a complex part, written as `real_part i imaginary_part`. This represents the value `real_part + imaginary_part * i.`
 
 #### String Literals
 
-Strings can consist of any number of utf8 characters. 
+Strings can consist of any number of UTF-8 characters.
 
 **Syntax**:
 
@@ -136,9 +142,9 @@ String = @" {r[^"]|@\ @"} @"
 
 **Notes:**
 
-- Strings are utf8 encoded. 
+- Strings are UTF-8 encoded.
 - Strings are considered a single atomic value, rather than a list of characters.
-- There is a whole system of string formatting and templating. This will be specified later in this specification. 
+- There is a whole system of string formatting and templating. This will be specified later in this specification.
 
 ## Types
 
@@ -147,19 +153,36 @@ Every value in Valiance has a type. Some built-in types are pre-provided. Types 
 **Syntax:**
 
 ```ebnf
-Type = Union_Type
-Union_Type = Intersection_Type {"/" Intersection_Type}
-Intersection_Type = Primary_Type {"&" Primary_Type}
-Primary_Type = ((Simple_Type | Generic_Type | Tuple_Type | Dimension_Destructure_Type) [Type_Modifiers]) | ("(" Type ")")
-Tuple_Type = "@(" [Tuple_Type_Item {"," Tuple_Type_Item}] ")"
-Dimension_Destructure_Type = "@[" [Tuple_Type_Item {"," Tuple_Type_Item}] "]"
-Tuple_Type_Item = (Identifier ":" Type) | (":" Type)
-Simple_Type = Identifier
-Generic_Type = Simple_Type "[" Type {"," Type} "]"
-Type_Modifiers = {"+"|"~"|"?"} ["!"|"_"]
+Type                   = UnionType
+
+UnionType              = IntersectionType { "/" IntersectionType }
+
+IntersectionType       = PrimaryType { "&" PrimaryType }
+
+PrimaryType            = ( SimpleType | GenericType | TupleType )
+                         [ TypeModifiers | NamedDimensionType ]
+                       | "(" Type ")"
+
+NamedDimensionType     = "@[" NamedDimensions "]"
+
+NamedDimensions        = Identifier { "," Identifier }
+                       [ ":" "[" Identifier { "," Identifier } "]"
+                         { "," Identifier } ]
+
+TupleType              = "@(" [ TupleTypeItem { "," TupleTypeItem } ] ")"
+
+TupleTypeItem          = Identifier ":" Type
+                       | ":" Type
+
+SimpleType             = Identifier
+
+GenericType            = SimpleType "[" Type { "," Type } "]"
+
+TypeModifiers          = { "+" | "~" | "?" } [ "!" | "_" ]
+
 ```
 
-More on types will be explained later in this specification.
+More details about types will be provided later in this specification.
 
 ## Variables
 
@@ -169,7 +192,7 @@ Variables allow for values to be temporarily stored separately to the stack. Var
 
 ```ebnf
 Variable_Get = "$" Identifier
-Variable_Set = "~>" {WHITESPACE} Identifier [":" Type]
+Variable_Set = "~>" Identifier [":" Type]
 ```
 
 **Notes**:
@@ -178,16 +201,15 @@ Variable_Set = "~>" {WHITESPACE} Identifier [":" Type]
 - A variable has to be set before it can be used.
 - Every variable has a type. The type of a variable is determined the first time it is set. Every following variable set must set the variable to that type. 
 
-More will be explained about variables later in this specification.
+More details about variables will be provided later in this specification.
 
 ## Lexing Conflict Resolution
 
 Tokens are completed when no additional characters can extend the current token pattern.
 
-For example, `123abc` is lexed as `123` and `abc`.
+For example, `123abc` is lexed as two tokens: `123` (a numeric literal) and `abc` (an element).
 
 Notably, sequences like `++` are lexed as-is. `++` will remain a single token.
-
 
 ## Unknown Tokens
 
