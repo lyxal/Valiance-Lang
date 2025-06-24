@@ -1,0 +1,13 @@
+{|T| (list: T*) -> (:T+)
+ #recursive =>
+  [] #as[T+] $list fold: {
+    (acc: T+, item: T/T*) -> 
+    (:T+) =>
+
+    $item #match: {
+      :T+ => $acc swap addAll,
+      :T => $acc swap append,
+      _ => map: #this
+    }
+  }
+}
