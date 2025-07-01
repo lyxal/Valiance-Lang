@@ -355,7 +355,9 @@ Elements will "dig down" the higher-rank argument until the expected type is rea
 
 Vectorisation behaviour changes slightly when multiple higher-ranked lists are given as inputs to an element. Instead of digging down a single list, the element will dig down *multiple* lists at once until a point is reached where all arguments are the expected rank. More specifically:
 
-> If all arguments match the function overload, apply the function. Otherwise, zip, at the maximum shared depth, all arguments that do not match a function argument, keeping matching arguments as-is. To each item in the zip, try the vectorisation algorithm again.
+1. Passing an argument with a higher rank than expected causes vectorisation
+2. Vectorisation recurses down lists until expected types match.
+3. If there are multiple arguments, items are zipped with vectorisation recursively reapplied on needed. Arguments already matching are kept as-is and automatically repeated across the tuples.
 
 Zipping simply means to group corresponding items across multiple lists. For example, zipping `[1,2,3]` and `[4,5,6]` together gives `[[1, 4], [2, 5], [3, 6]]`.
 
