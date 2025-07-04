@@ -435,7 +435,7 @@ Function overloading is accomplished by using the addition element:
 	5 `overloaded` ## "Got a number!"
 	"yes" `overloaded` ## "String input"
 
-A function overload's arguments are not allowed to be a prefix of another function overload's arguments. For example, a function `𝔽[Number -> Number]` can't be overloaded with another function `𝔽[Number, Number -> Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
+A function overload's arguments are not allowed to be a suffix of another function overload's arguments. For example, a function `𝔽[Number -> Number]` can't be overloaded with another function `𝔽[Number, Number -> Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
 
 _As a consequence, unit functions cannot appear as a function overload_
 
