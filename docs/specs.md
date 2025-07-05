@@ -146,6 +146,317 @@ String = @" {r[^"]|@\ @"} @"
 - Strings are considered a single atomic value, rather than a list of characters.
 - There is a whole system of string formatting and templating. This will be specified later in this specification.
 
+#### List Literals
+
+Lists can contain any valid expressionable constructs.
+
+**Syntax:**
+
+```ebnf
+ListLiteral = "[" [ ListItem { "," ListItem } ] "]"
+
+ListItem = Expressionable
+```
+
+**Notes:**
+
+- Lists use square bracket notation
+- Items are separated by commas
+- Lists can be empty, nested, and heterogeneous
+- List items can be any expressionable construct except variable assignments and object/trait definitions
+
+#### Tuple Literals
+
+Tuples are immutable, fixed-size collections with heterogeneous types.
+
+**Syntax:**
+
+```ebnf
+TupleLiteral = "@(" [ TupleItem { "," TupleItem } ] ")"
+
+TupleItem = [ Identifier ":" ] Expressionable
+```
+
+**Notes:**
+
+- Tuples use `@(...)` notation
+- Items can be named or unnamed
+- Tuples are immutable after creation
+- Tuple items have fixed types and positions
+
+#### Dictionary Literals
+
+Dictionaries are key-value mappings.
+
+**Syntax:**
+
+```ebnf
+DictionaryLiteral = "#{" [ DictionaryItem { "," DictionaryItem } ] "}"
+
+DictionaryItem = String ":" Expressionable
+```
+
+**Notes:**
+
+- Dictionaries use `#{...}` notation
+- Keys must be strings
+- Values can be any expressionable construct
+- Key-value pairs are separated by commas
+
+#### String Formatting and Templates
+
+Valiance supports string interpolation through formatting and template strings.
+
+**Format Strings:**
+```ebnf
+FormatString = String
+FormatOperation = FormatString Value "%"
+```
+
+**Template Strings:**
+```ebnf
+TemplateString = "#" String
+```
+
+Template strings immediately consume values from the stack to fill placeholders marked with `{}`.
+
+**Placeholder Syntax:**
+- `{}` - Simple value insertion
+- `{operation}` - Apply operation to the value before insertion
+
+**Examples:**
+```
+"Hello, {}" "World" %           ## "Hello, World"
+"Count: {}" 42 %                ## "Count: 42"
+"Upper: {upper}" "text" %       ## "Upper: TEXT"
+
+"Bob" #"Hello, {}"              ## "Hello, Bob"
+```
+
+## Elements
+
+Elements are the built-in functions and operators of Valiance. They are the fundamental building blocks that operate on stack values.
+
+### Element Characteristics
+
+- Elements have fixed arity (number of inputs) and multiplicity (number of outputs)
+- Elements can be overloaded for different input types
+- Elements may vectorise when given higher-rank inputs than expected
+- Elements can be extended with user-defined overloads via `#define`
+
+### Element Naming
+
+Elements can have multiple names for the same functionality:
+- Mathematical operators: `+`, `add`, `plus`
+- Descriptive names: `length`, `count`, `size`
+- Short aliases for commonly used operations
+
+### Element Categories
+
+Elements fall into several categories:
+
+1. **Arithmetic**: `+`, `-`, `*`, `/`, `%`, `^` (power), `abs`, `negate`
+2. **Comparison**: `==`, `===`, `<`, `>`, `<=`, `>=`, `!=`, `!==`
+3. **Logic**: `and`, `or`, `not`, `xor`
+4. **List operations**: `length`, `append`, `prepend`, `concat`, `transpose`
+5. **Stack manipulation**: `dup`, `swap`, `pop`, `over`, `rot`
+6. **Functional**: `map`, `filter`, `reduce`, `fold`, `zip`
+7. **Type operations**: `as-type`, `type-of`, `assert`
+8. **I/O**: `print`, `readline`, `file-read`, `file-write`
+
+### Element Overloading
+
+Elements can have multiple definitions for different input types:
+
+```
+## Addition works on numbers
+1 2 +        ## 3
+
+## Addition also works on strings (concatenation)
+"Hello" " World" +    ## "Hello World"
+
+## Addition works on lists (concatenation)
+[1, 2] [3, 4] +      ## [1, 2, 3, 4]
+```
+
+### Built-in Element Reference
+
+Access to original built-in definitions is preserved via `#@element`:
+
+```
+## Override addition
+#define +: {(:Number, :Number) => -}
+
+## Use original addition
+2 3 #@+    ## 5 (uses original addition)
+2 3 +      ## -1 (uses overridden version)
+```
+
+## Program Structure
+
+A Valiance program consists of a sequence of statements that manipulate the stack and define program constructs.
+
+**Syntax:**
+
+```ebnf
+Program = { Statement }
+
+Statement = VariableAssignment
+          | SystemKeyword  
+          | Expressionable
+
+Expressionable = Literal
+               | Element [ Modifier ]
+               | Variable_Get
+               | FunctionCall
+               | SystemKeyword
+
+VariableAssignment = Variable_Set
+
+```
+
+### Complete Grammar Reference
+
+For reference, here is the complete EBNF grammar for Valiance:
+
+```ebnf
+(* Core Program Structure *)
+Program                = { Statement }
+Statement             = VariableAssignment | ObjectDefinition | TraitDefinition 
+                       | VariantDefinition | ExtensionDefinition | ModuleDeclaration
+                       | ImportStatement | Expressionable
+
+(* Expressions and Values *)
+Expressionable        = Literal | Element [ Modifier ] | Variable_Get 
+                       | FunctionCall | SystemKeyword
+
+Literal               = NumericLiteral | String | ListLiteral 
+                       | TupleLiteral | DictionaryLiteral | Function
+
+(* Numeric Literals *)
+NumericLiteral        = DecimalNumber [ "i" DecimalNumber ]
+DecimalNumber         = [ "-" ] Number [ "." Number ]
+Number                = "0" | ( r[1-9] { DIGIT } )
+DIGIT                 = r[0-9]
+
+(* String Literals *)
+String                = @" { r[^"] | @\ @" } @"
+
+(* Collection Literals *)
+ListLiteral           = "[" [ Expressionable { "," Expressionable } ] "]"
+TupleLiteral          = "@(" [ TupleItem { "," TupleItem } ] ")"
+TupleItem             = [ Identifier ":" ] Expressionable
+DictionaryLiteral     = "#{" [ DictionaryItem { "," DictionaryItem } ] "}"
+DictionaryItem        = String ":" Expressionable
+
+(* Functions *)
+Function              = "{" [ FunctionSignature "=>" ] Program "}"
+FunctionSignature     = [ "|" Generics "|" ] 
+                       [ "(" FunctionParameters ")" ]
+                       [ "->" "(" FunctionReturns ")" ]
+                       [ FunctionAnnotations ]
+FunctionParameters    = FunctionParameter { "," FunctionParameter }
+FunctionParameter     = Identifier [ ":" Type ] | ":" Type | Number
+                       | "@(" FunctionParameter { "," FunctionParameter } ")"
+FunctionReturns       = FunctionReturn { "," FunctionReturn }
+FunctionReturn        = ":" Type | Number
+Generics              = Identifier { "," Identifier }
+FunctionAnnotations   = { "#" Identifier }
+
+(* Function Calls *)
+FunctionCall          = "`" Identifier "`" | "`@" Identifier "`" 
+                       | "!()" | "#>()"
+
+(* Variables *)
+Variable_Get          = "$" [ "." ] Identifier [ "." Identifier ]
+Variable_Set          = "~>" [ "!" ] Identifier [ ":" Type ]
+Variable_Augmented_Assignment = "$" Identifier ":" Element
+
+(* Elements and Modifiers *)
+Element               = ( ELEMENT_SYMBOL - DIGIT ) { ELEMENT_SYMBOL }
+                       [ "[" Type { "," Type } "]" ]
+ELEMENT_SYMBOL        = r[0-9a-zA-Z_\-?!*+=&%><]
+Modifier              = Element ":" { Function | Variable_Get }
+
+(* System Keywords *)
+SystemKeyword         = "#" Identifier [ ":" "{" SystemKeywordBody "}" ]
+SystemKeywordBody     = Program
+
+(* Types *)
+Type                  = UnionType
+UnionType             = IntersectionType { "/" IntersectionType }
+IntersectionType      = PrimaryType { "&" PrimaryType }
+PrimaryType           = ( SimpleType | GenericType | TupleType )
+                       [ TypeModifiers | NamedDimensionType ]
+                      | "(" Type ")"
+SimpleType            = Identifier
+GenericType           = SimpleType "[" Type { "," Type } "]"
+TupleType             = "@(" [ TupleTypeItem { "," TupleTypeItem } ] ")"
+TupleTypeItem         = Identifier ":" Type | ":" Type
+TypeModifiers         = { "+" | "~" | "?" } [ "!" | "_" ]
+NamedDimensionType    = "@[" NamedDimensions "]"
+NamedDimensions       = Identifier { "," Identifier }
+                       [ ":" "[" Identifier { "," Identifier } "]"
+                         { "," Identifier } ]
+
+(* Object-Oriented Constructs *)
+ObjectDefinition      = "#object" Identifier [ Generics ] 
+                       [ "implements" "[" Type { "," Type } "]" ] 
+                       ":" Function
+TraitDefinition       = "#trait" Identifier [ Generics ]
+                       [ "implements" "[" Type { "," Type } "]" ] 
+                       ":" "{" TraitBody "}"
+VariantDefinition     = "#variant" Identifier [ Generics ] ":" "{" VariantBody "}"
+TraitBody             = { MemberDeclaration | ExtensionDeclaration }
+VariantBody           = { ExtensionDeclaration | ObjectDefinition }
+
+(* Extensions *)
+ExtensionDefinition   = "#define" [ ExtensionAnnotations ] Identifier ":" Function
+ExtensionAnnotations  = "#stack" | "#required"
+
+(* Modules *)
+ModuleDeclaration     = "#module" Identifier
+ImportStatement       = "#import" ImportSpec
+ImportSpec            = Identifier [ ":" Identifier ]
+                       | Identifier "{" Identifier { "," Identifier } "}"
+                       | RelativeImport
+RelativeImport        = ( "./" | "../" ) { Identifier "/" } Identifier
+
+(* Identifiers *)
+Identifier            = ( LETTER | "_" ) { LETTER | DIGIT | "_" }
+LETTER                = (* Unicode categories Lu, Ll, Lt, Lm, Lo, Nl *)
+```
+
+### Program Execution
+
+1. Statements are executed sequentially
+2. Each statement may modify the stack or define new constructs
+3. The final stack state represents the program output
+4. All elements and functions must be defined before use
+5. Type checking ensures stack safety throughout execution
+
+### File Structure
+
+A typical Valiance file structure:
+
+1. Optional `#module` declaration (must be first)
+2. `#import` statements
+3. Type, object, trait, and variant definitions
+4. Extension method definitions
+5. Main program logic
+
+### Error Handling
+
+Valiance performs extensive compile-time checking:
+
+- **Stack underflow prevention**: Ensures sufficient stack items for operations
+- **Type safety**: Verifies type compatibility for all operations  
+- **Definedness checking**: Ensures all referenced elements/variables are defined
+- **Pattern exhaustiveness**: Ensures variant pattern matches are exhaustive
+- **Module dependency cycles**: Prevents circular import dependencies
+
+Runtime errors are minimized through these compile-time guarantees.
+
 ## Types
 
 Every value in Valiance has a type. Some built-in types are pre-provided. Types can be comprised of multiple different types, and can be modified to indicate the type is a list.
@@ -608,6 +919,451 @@ References the current recursive function (requires `#recursive` annotation).
 **Syntax:**
 - `#this` - Call current function
 - `#this[n]` - Call function n levels up the call stack
+
+## Object-Oriented Programming
+
+Valiance integrates object-oriented programming through record-like objects with multiple dispatch and a trait system.
+
+### Objects
+
+Objects are defined with constructors and can have readable or private members. Methods are defined as extension methods rather than being owned by the object.
+
+**Syntax:**
+
+```ebnf
+ObjectDefinition = "#object" Identifier [ Generics ] 
+                   [ "implements" "[" Type { "," Type } "]" ] 
+                   ":" Function
+
+Generics = "[" Identifier { "," Identifier } "]"
+
+ObjectConstruction = Identifier | Variable_Get
+```
+
+### Object Members
+
+Object members are variables set in the constructor with specific visibility rules:
+
+- **Readable members**: Created with `~>variable` or `$parameter` in constructor signature
+- **Private members**: Created with `~>!variable` or `!parameter` in constructor signature
+
+**Member Access:**
+```ebnf
+MemberAccess = "$" Identifier "." Identifier
+             | "$" "." Identifier
+```
+
+### Object Constructors
+
+The primary constructor is defined in the object declaration. Additional constructors can be defined using `#init`:
+
+```ebnf
+AdditionalConstructor = "#init" Identifier ":" Function
+```
+
+**Constructor Rules:**
+- Function parameters prefixed with `$` become readable members
+- Function parameters prefixed with `!` become private members  
+- Variables set with `~>variable` become readable members
+- Variables set with `~>!variable` become private members
+- Additional constructors can only set members defined in the primary constructor
+- Constructor overloads must follow function overload rules
+
+### Extension Methods for Objects
+
+Objects do not own their methods. Instead, extension methods can be "friendly" to objects by being defined within the object definition:
+
+```ebnf
+FriendlyExtension = "#define" [ "#" Identifier ] Identifier ":" Function
+```
+
+**Friendly Extension Privileges:**
+- Can access private members
+- Can read/write all object members without `$.` prefix
+- Must return updated object if mutation is needed
+
+### Object Instantiation
+
+Objects are instantiated like function calls:
+```
+"Fido" "Joe" 5 `Dog`
+"Name" "Owner" 3 Dog !()
+```
+
+## Generics
+
+Generics allow functions and objects to work with any type, providing code reuse without duplication.
+
+**Syntax:**
+
+```ebnf
+GenericDeclaration = "|" Identifier { "," Identifier } "|"
+GenericConstraints = "#where" ":" "{" Constraint { "," Constraint } "}"
+IndexedGeneric = "^" Number
+```
+
+### Generic Functions
+
+Generics in functions are declared before the parameter list:
+
+```
+{|T| (haystack: T+, needle: T) -> (:Number?) => ...}
+```
+
+### Generic Objects
+
+Generics in objects come after the object name:
+
+```
+#object List[T]: {() => [] ~> items: (T|T+)+}
+```
+
+### Generic Type Resolution
+
+- The type `T` represents one rank lower than the input type
+- Given `T+` input, `T` is the element type
+- Given `T++` input, `T` is `T+` (one rank lower)
+
+### Indexed Generics
+
+Numeric parameters in functions create implicit generics accessible via `^n`:
+- `^1` refers to the type of the first argument
+- `^2` refers to the type of the second argument
+- etc.
+
+### Generic Invariance
+
+Generics are currently invariant (no covariance/contravariance). This may be expanded in future versions.
+
+## Traits
+
+Traits provide interface-like functionality, allowing objects to declare they implement specific method sets without inheritance.
+
+**Syntax:**
+
+```ebnf
+TraitDefinition = "#trait" Identifier [ Generics ]
+                  [ "implements" "[" Type { "," Type } "]" ] 
+                  ":" "{" TraitBody "}"
+
+TraitBody = { MemberDeclaration | ExtensionDeclaration }
+
+RequiredExtension = "#define" "#required" Identifier ":" FunctionSignature
+DefaultExtension = "#define" Identifier ":" Function
+```
+
+### Trait Implementation
+
+Objects implement traits by declaring them in the `implements` clause:
+
+```
+#object Person implements [Comparable[Person]]: {...}
+```
+
+### Required vs Default Implementations
+
+- **Required**: Must be implemented by the object, declared with `#required`
+- **Default**: Provided by the trait, automatically available to implementing objects
+
+### Trait Method Conflicts
+
+When implementing multiple traits with conflicting method names:
+
+```ebnf
+ConflictResolution = "#define" "~" Identifier "." Identifier ":" Function
+```
+
+Example:
+```
+#define ~TraitA.methodName: {...}
+#define ~TraitB.methodName: {...}
+```
+
+## Variants
+
+Variants provide sealed types with exhaustive pattern matching, similar to algebraic data types or enums in other languages.
+
+**Syntax:**
+
+```ebnf
+VariantDefinition = "#variant" Identifier [ Generics ] ":" "{" VariantBody "}"
+
+VariantBody = { ExtensionDeclaration | ObjectDefinition }
+```
+
+### Variant Semantics
+
+- Objects defined within a variant block are subtypes of the variant
+- The set of subtypes is closed (no external objects can implement the variant)
+- Pattern matching on variants can omit default cases
+- Adding new subtypes requires updating all pattern matches (exhaustivity checking)
+
+### Exhaustive Pattern Matching
+
+Variants enable exhaustive pattern matching without default cases:
+
+```
+shape #match: {
+  :Rectangle => "Rectangle",
+  :Circle => "Circle"
+  ## No default case needed - compiler ensures exhaustivity
+}
+```
+
+## Modules
+
+Modules provide code organization and reuse capabilities, allowing code to be packaged and imported across files.
+
+**Syntax:**
+
+```ebnf
+ModuleDeclaration = "#module" Identifier
+
+ImportStatement = "#import" ImportSpec
+
+ImportSpec = Identifier [ ":" Identifier ]
+           | Identifier "{" Identifier { "," Identifier } "}"
+           | RelativeImport
+
+RelativeImport = ( "./" | "../" ) { Identifier "/" } Identifier
+```
+
+### Module Structure
+
+- Each `.vlnc` file is a module by default
+- Module name defaults to filename with non-keyword characters removed
+- Explicit module names can be declared with `#module` (must be first statement)
+- Modules can be nested using directory structure
+
+### Import Types
+
+1. **Namespace import**: `#import ModuleName`
+   - Access as `ModuleName.item`
+
+2. **Aliased import**: `#import ModuleName: Alias`  
+   - Access as `Alias.item`
+
+3. **Selective import**: `#import ModuleName{item1, item2}`
+   - Items available without module prefix
+
+4. **Relative import**: `#import ./LocalModule` or `#import ../ParentModule`
+   - Relative to current file location
+
+### Module Resolution
+
+1. **Relative imports**: Resolved relative to importing file
+2. **Absolute imports**: Searched in order:
+   - Current package directory
+   - Project root directory
+   - Standard library locations
+   - Additional configured directories
+
+### Module Constraints
+
+- **Circular dependency prevention**: Module A cannot import module B if B imports A (directly or transitively)
+- **Name conflict resolution**: Conflicting imports must be disambiguated
+- **Initialization order**: Modules are initialized at import time, executing top-level code
+
+### Module Examples
+
+```
+## File: utils/math/operations.vlnc
+#module Operations
+
+#define abs: {(:Number) => #match: {0 < => negate, _ => dup}}
+```
+
+```
+## File: main.vlnc
+#import utils.math.Operations
+#import utils.math.Operations: Math
+#import Operations{abs}
+
+-5 Operations.abs  ## Using namespace
+-3 Math.abs        ## Using alias  
+-1 abs             ## Using selective import
+```
+
+## Extension Methods
+
+Extension methods allow adding new functionality to existing elements or creating new elements entirely.
+
+**Syntax:**
+
+```ebnf
+ExtensionDefinition = "#define" [ ExtensionAnnotations ] Identifier ":" Function
+
+ExtensionAnnotations = "#stack" | "#required"
+
+BuiltinReference = "#@" Identifier
+```
+
+### Extension Types
+
+1. **Regular extensions**: Add new overloads to existing elements
+2. **Stack extensions**: Operate on the entire stack state (annotated with `#stack`)
+3. **Required extensions**: Abstract extensions that must be implemented (used in traits)
+
+### Extension Semantics
+
+- Extensions add function overloads to elements
+- Must follow function overload prefix rules
+- Can overwrite existing built-in definitions
+- Original built-in definitions accessible via `#@element`
+
+### Stack Extensions
+
+Stack extensions receive the entire stack state and can perform arbitrary stack manipulation:
+
+```
+#define #stack dip: {(f: Function) =>
+  ~>temp    ## Store top of stack
+  `f`       ## Execute function
+  $temp     ## Restore stored value
+}
+```
+
+### Extension Scope
+
+- Extensions are scoped to their defining module
+- Imported extensions become available in the importing module
+- Extensions can be selectively imported
+
+## Function Annotations
+
+Function annotations provide additional metadata and capabilities for function definitions.
+
+### `#recursive` Annotation
+
+Enables recursive function calls using `#this`:
+
+**Syntax:**
+```
+{(params) #recursive => body}
+```
+
+**Semantics:**
+- `#this` calls the current function recursively
+- `#this[n]` calls the function n levels up the call stack
+- Enables tail recursion optimization
+
+### `#where` Annotation
+
+Specifies type constraints and relationships between parameters:
+
+**Syntax:**
+```
+{(params) -> (returns) #where: {constraint1, constraint2, ...} => body}
+```
+
+**Constraint Operations:**
+- Basic arithmetic: `+`, `-`, `*`, `/`
+- Stack operations: `dup`/`^`, `swap`/`\`, `pop`/`_`
+- Variable operations: get, set
+- Comparison: `==`, `<=`, `>=`, `!=`, `===`
+- Value access: `length`, indexed access
+
+**Dynamic Type Examples:**
+```
+{(f1: Function, f2: Function) -> ($f1.out / $f2.out) #where: {
+  $f1.arity $f2.arity ==,
+  $f1.multy $f2.multy ==
+} => ...}
+
+{|T| (list: T~, shape: @(Number...)) -> (:T+$n) #where: {
+  $shape length ~> n
+} => ...}
+```
+
+## Advanced Tuple Destructuring
+
+Tuple destructuring allows automatic extraction of structured data from tuples and lists of tuples.
+
+**Syntax:**
+
+```ebnf
+TupleDestructuring = "@(" DestructurePattern { "," DestructurePattern } ")"
+
+DestructurePattern = Identifier ":" Type
+                   | ":" Type
+
+DestructuredParameter = TupleDestructuring [ "+" | "++" | "~" | "~~" ]
+```
+
+### Single Tuple Destructuring
+
+Extract components from a single tuple:
+
+```
+{(@(x: Number, y: Number)) => $x $y +}
+```
+
+### List Tuple Destructuring
+
+Extract "columns" from lists of tuples:
+
+```
+{(@(x: Number, y: Number)+) => $x sum $y sum}
+## Input: [(x: 1, y: 10), (x: 2, y: 20)]
+## Result: x = [1, 2], y = [10, 20]
+```
+
+### Higher-Rank Destructuring
+
+Handle nested structures:
+
+```
+{(@(x: Number)++) => $x}
+## Preserves the nested list structure while extracting the x field
+```
+
+## Named Dimensions
+
+Named dimensions provide semantic labeling for multidimensional data structures.
+
+**Syntax:**
+
+```ebnf
+NamedDimensions = Type "@[" DimensionSpec { "," DimensionSpec } "]"
+
+DimensionSpec = Identifier [ ":" "[" Identifier { "," Identifier } "]" ]
+```
+
+### Dimension Declaration
+
+```
+Number@[x, y]                          ## 2D with named dimensions
+Number@[channel: [R, G, B], width, height]  ## 3D with destructured dimension
+```
+
+### Dimension Access
+
+Named dimensions become accessible as properties:
+
+```
+{(image: Number@[channel: [R, G, B], width, height]) =>
+  $image.channel  ## Access the channel dimension
+  $R              ## Access the R component directly
+  $image.width    ## Access width dimension
+}
+```
+
+### Dimension Semantics
+
+- Named dimensions are equivalent to exact rank types
+- `Number@[x, y]` is equivalent to `Number++`
+- Higher-rank inputs vectorise over extra dimensions
+- Cannot mix named dimensions with tuple destructuring
+
+### Dimension-Aware Operations
+
+```
+$image dimensions.over: {$image.channel} {max}
+## Apply max over the channel dimension
+
+$data dimensions.over: {$data.time} {avg}  
+## Average over the time dimension
+```
 
 ## Lexing Conflict Resolution
 
