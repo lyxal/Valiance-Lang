@@ -68,7 +68,7 @@ DIGIT           = r[0-9]
 ELEMENT_SYMBOL  = r[0-9a-zA-Z_\-?!*+=&%><]
 
 Element = (ELEMENT_SYMBOL - DIGIT) { ELEMENT_SYMBOL }
-          [ "[" Type { "," Type } "]" ]
+          [ "[" Type { "," Type } "]" ] [ "(" Expressionable { "," Expressionable } ")" ]
 ```
 
 **Notes:**
@@ -146,7 +146,7 @@ String = @" {r[^"]|@\ @"} @"
 - Strings are considered a single atomic value, rather than a list of characters.
 - There is a whole system of string formatting and templating. This will be specified later in this specification.
 
-## Types
+### Types
 
 Every value in Valiance has a type. Some built-in types are pre-provided. Types can be comprised of multiple different types, and can be modified to indicate the type is a list.
 
@@ -178,13 +178,13 @@ SimpleType             = Identifier
 
 GenericType            = SimpleType "[" Type { "," Type } "]"
 
-TypeModifiers          = { "+" | "~" | "?" } [ "!" | "_" ]
+TypeModifiers          = { "+" | "~" | "?" } [ "!" | "_" | "*" ]
 
 ```
 
 More details about types will be provided later in this specification.
 
-## Variables
+### Variables
 
 Variables allow for values to be temporarily stored separately to the stack. Variables can be set and later pushed back to the stack.
 
@@ -197,13 +197,35 @@ Variable_Set = "~>" Identifier [":" Type]
 
 **Notes**:
 
-- All variables are local, no global variables. 
+- All variables are local, no global variables.
 - A variable has to be set before it can be used.
-- Every variable has a type. The type of a variable is determined the first time it is set. Every following variable set must set the variable to that type. 
+- Every variable has a type. The type of a variable is determined the first time it is set. Every following variable set must set the variable to that type.
 
 More details about variables will be provided later in this specification.
 
-## Lexing Conflict Resolution
+### Functions
+
+Functions are reusable blocks of code that can be called with arguments. They can return values and can be defined with or without parameters. A function without parameters, called a "quick function", will
+have its parameters inferred from the operations it performs.
+
+**Syntax:**
+
+```ebnf
+Function              = "{" [ FunctionSignature "=>" ] Program "}"
+FunctionSignature     = [ "|" Generics "|" ] 
+                       [ "(" FunctionParameters ")" ]
+                       [ "->" "(" FunctionReturns ")" ]
+                       [ FunctionAnnotations ]
+FunctionParameters    = FunctionParameter { "," FunctionParameter }
+FunctionParameter     = Identifier [ ":" Type ] | ":" Type | Number
+                       | "@(" FunctionParameter { "," FunctionParameter } ")"
+FunctionReturns       = FunctionReturn { "," FunctionReturn }
+FunctionReturn        = ":" Type | Number
+Generics              = Identifier { "," Identifier }
+FunctionAnnotations   = { "#" Identifier }
+```
+
+### Lexing Conflict Resolution
 
 Tokens are completed when no additional characters can extend the current token pattern.
 
@@ -211,6 +233,22 @@ For example, `123abc` is lexed as two tokens: `123` (a numeric literal) and `abc
 
 Notably, sequences like `++` are lexed as-is. `++` will remain a single token.
 
-## Unknown Tokens
+### Unknown Tokens
 
 If a character sequence cannot form a valid token, a lexical error is raised.
+
+## Syntax
+
+```
+Program = { Statement }
+
+Statement = VariableAssignment
+          | SystemKeyword  
+          | Expressionable
+
+Expressionable = Literal
+               | Element [ Modifier ]
+               | Variable_Get
+               | FunctionCall
+               | SystemKeyword
+```
