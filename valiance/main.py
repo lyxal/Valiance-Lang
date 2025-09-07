@@ -1,10 +1,18 @@
-from vm.Interpreter import Interpreter
+from lexer.Lexer import Lexer
 
 
 def main():
-    interpreter = Interpreter()
-    interpreter.run([0x01, 0x03, 0x01, 0x04, 0x06])
-
+    while True:
+        text = ""
+        try:
+            text = input("valiance> ")
+        except EOFError:
+            break
+        if not text:
+            continue
+        tokens = Lexer.tokenise(text)
+        for token in tokens:
+            print(token)
 
 if __name__ == "__main__":
     main()
