@@ -1,7 +1,7 @@
 [project]
 name = "valiance"
 version = "0.1.0"
-description = "Interpreter for the valiance language
+description = "Interpreter for the valiance language"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
