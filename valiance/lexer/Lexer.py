@@ -120,9 +120,15 @@ class Lexer:
             elif self.headEqual(DOUBLE_QUOTE):
                 self.lexString()
             elif self.headEqual(VARIABLE_GET):
-                self.quickToken(TokenType.VARIABLE_GET, VARIABLE_GET)
+                self.eat(VARIABLE_GET)
+                self.addToken(
+                    TokenType.VARIABLE_GET, self.simpleName(), self.line, self.column
+                )
             elif self.headEqual(VARIABLE_SET):
-                self.quickToken(TokenType.VARIABLE_SET, VARIABLE_SET)
+                self.eat(VARIABLE_SET)
+                self.addToken(
+                    TokenType.VARIABLE_SET, self.simpleName(), self.line, self.column
+                )
             elif self.headEqual(LIST_OPEN):
                 self.quickToken(TokenType.LIST_OPEN, LIST_OPEN)
             elif self.headEqual(LIST_CLOSE):
@@ -145,8 +151,37 @@ class Lexer:
                 self.eat("#")
                 if self.headEqual("{"):
                     self.quickToken(TokenType.DICTIONARY_OPEN, DICTIONARY_OPEN)
+                elif self.headEqual("#"):
+                    # Comment
+                    self.eat("#")
+                    while self.program and not self.headEqual(NEWLINE):
+                        self.pop()
+                elif self.headEqual("/"):
+                    self.eat("/")
+                    while self.program and not self.headMatch(r"\/(?!\\)#"):
+                        self.pop()
+                    self.eat("/#")
+                elif self.headEqual('"'):
+                    self.lexString(template=True)
+                elif self.headEqual("("):
+                    self.quickToken(TokenType.HASH_L_PAREN, "#(")
+                elif self.headEqual(")"):
+                    self.quickToken(TokenType.HASH_R_PAREN, "#)")
                 else:
                     self.lexElement(hash=True)
+            elif self.headEqual("|"):
+                self.quickToken(TokenType.PIPE, "|")
+            elif self.headEqual(FUNCTION_RETURN_TYPE_SEPARATOR):
+                self.quickToken(
+                    TokenType.FUNCTION_RETURN_TYPE_SEPARATOR,
+                    FUNCTION_RETURN_TYPE_SEPARATOR,
+                )
+            elif self.headEqual(FUNCTION_BODY_SEPARATOR):
+                self.quickToken(
+                    TokenType.FUNCTION_BODY_SEPARATOR, FUNCTION_BODY_SEPARATOR
+                )
+            elif self.headEqual("@"):
+                self.quickToken(TokenType.AT_SYMBOL, "@")
             elif self.safeCheck(lambda c: re.match(ELEMENT_CHARACTERS, c) is not None):
                 self.lexElement()
             else:
@@ -201,7 +236,7 @@ class Lexer:
             number += self.pop()
         return number
 
-    def lexString(self):
+    def lexString(self, template: bool = False):
         start = (self.line, self.column)
         self.eat(DOUBLE_QUOTE)
         string_content = ""
@@ -226,7 +261,10 @@ class Lexer:
             else:
                 string_content += self.pop()
         self.eat(DOUBLE_QUOTE)
-        self.addToken(TokenType.STRING, string_content, *start)
+        if template:
+            self.addToken(TokenType.TEMPLATE_STRING, string_content, *start)
+        else:
+            self.addToken(TokenType.STRING, string_content, *start)
 
     def lexElement(self, hash: bool = False):
         start = (self.line, self.column)

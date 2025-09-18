@@ -5,6 +5,7 @@ class TokenType(enum.Enum):
     NUMBER = "number"
     UNKNOWN = "unknown"
     STRING = "string"
+    TEMPLATE_STRING = "template_string"
     ELEMENT = "element"
     VARIABLE_GET = "variable_get"
     VARIABLE_SET = "variable_set"
@@ -22,7 +23,12 @@ class TokenType(enum.Enum):
     R_PAREN = "r_paren"
     R_CURLY = "r_curly"
 
-    NAME = "name"
-    TYPE = "type"
+    HASH_L_PAREN = "hash_l_paren"
+    HASH_R_PAREN = "hash_r_paren"
+    HASH_L_SQUARE = "hash_l_square"
+    HASH_R_SQUARE = "hash_r_square"
+
+    PIPE = "pipe"
+    AT_SYMBOL = "at_symbol"
 
     HASH_ELEMENT = "hash_element"
