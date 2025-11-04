@@ -1,979 +1,1186 @@
-# The Valiance Programming Language
+# 0. Prologue 
 
-## Introduction
+Some of what you're about to read will be considered horribly offensive to array programming traditionalists. Heretic, even. 
 
-Valiance is a stack-based array-oriented programming language designed to make the
-array programming paradigm accessible to mainstream programmers. It does
-so by:
+If you find yourself up in arms about any of the concepts outlined in this language overview, you have my apologies. 
 
-- Incorporating familiar programming constructs from traditional languages
-- Providing a tacit and expressive programming environment
-- De-emphasising pure mathematical elegance in favour of practicality
-- Aiming to actually look like a programming language.
+But then again, if you're that stuck in the trench of strict conformity to Iversonian ideals, perhaps you're part of the reason this language exists ;) 
 
-## Language Design Principles
+# 1. Introduction
 
-1. **Looking Like Code**: The ultimate goal of Valiance is to make array programming
-   look like, well, programming. This means forgoing the traditional symbol-based
-   notation of array languages in favour of syntax reminiscent of mainstream languages. Programs should be able to be quickly understood 10 (metaphorical) feet away from the code.
-2. **Simplicity**: While simplicity is completely subjective, Valiance should be able
-   to pass the pub test. For the non-Australians out there, this means a regular
-   programmer should be able to look at Valiance code and say "yep, that's reasonable,
-   and makes sense". Ideally, features will "just work" without requiring extra
-   consideration, structuring, or handling.
-4. **Intentional OOP**: If you've ever used an array language with OO features, you'll
-   notice that they feel like a sort of afterthought.
-   Valiance integrates object-oriented programming from the start, treating it not as an add-on but as a native and natural feature of the array programming paradigm.
-5. **Statically Typed**: Static typing has become a highly desirable feature in modern
-   programming languages. And for good reason: it catches more bugs at compile time,
-   and allows for potentially compiler optimisations. Array languages, save for
-   outliers like Remora and Futhark, are dynamically typed. Breaking the trend,
-   Valiance will be statically typed, but in a way that ideally feels dynamic.
-6. **Functional Programming**: Array languages are notable for having a lack of first-class
-   functions, opting instead for more "call-on-site" syntax and "second-class" objects (
-   or at least, not first-class). First-class functions allow for a more expressive functional
-   programming experience.
+Valiance is a stack-based array language that moves beyond the traditional "notation as a tool of thought" dogma into "notation as a tool of _doing_". More specifically, Valiance takes the aspects of Iversonian array languages that provide such beautiful clarity of thought and balances them with practicality.
 
-## Table of Contents
+The defining features of Valiance are that it:
 
-1. The Stack
-2. Elements
-3. Literals
-4. The List Model
-5. Types
-6. Vectorisation
-7. Functions
-8. Modifiers
-9. Variables
-10. System Keywords
-11. Extension Methods
-12. Stack Elements
-13. Objects
-14. Generics
-15. Traits
-16. Variants
-17. Modules
-18. Function Annotations
+- Provides an inherently integrated interface to the array programming paradigm, while still being useful for software development.
+- Favours conceptual brevity over literal brevity.
+- Intentionally incorperates other programming paradigms like Object-Oriented and Functional Programming, rather than tacking them on as afterthoughts.
+- Comes with a large suite of pre-made built-ins, rather than forcing users to build from a limited set of primitives.
+- Strives to be accessible to more than just mathematicians and array-language fanatics.
 
-## The Stack
+Ultimately, Valiance acts to elevate array languages beyond rough sketches and algorithmatic prototypes. Valiance brings array languages to the software development table.
 
-The stack is the fundamental concept of Valiance. All operations are performed
-on the stack, with data being pushed to and popped from the stack as needed.
+# 2. The Stack
 
-A stack is pretty much a list that only allows items to be appended ("pushed") and only
-allows the last item to be removed ("popped"). Multiple values can be pushed
-or popped at once.
+## 2.1. Theory
 
-The stack can contain any number of items, and the items need not be of the same type.
+Valiance is a stack-based programming language. This means that all computing operations take place around a centralised stack. But what exactly is a stack? 
 
-Attempting to pop from an empty stack will result in a compile-time error.
+Consider, for a moment, a pile of plates. Those familiar with English might also call this a "stack" of plates.
 
-## Elements
+If one desires to take a plate from this pile, and not create a mess of broken pottery, they have to take the top plate off the pile. Likewise, if one desires to add more plates to the pile, they have to put the plates at the top of the pile. 
 
-What you would call "built-ins" or "primitives" in other languages are called
-"elements" in Valiance. The idea is that they are the fundamental building blocks
-of Valiance programs.
+In Valiance, stacks operate exactly the same way, but with data instead of plates. When performing an operation, like addition, the data at the top of the stack is used, and the result is put back on top. The act of taking a value from the stack is called a "pop" and the act of putting a value on the top of the stack is called a "push". 
 
-They take input from the stack, perform some operation, and push the result back onto the stack.
+As a further example, consider a pile of dirty plates that need to be washed. While there are plates to be cleaned, the plate at the top of the pile will be removed, scrubbed, and placed into a new "clean plate" pile. This demonstrates how stack-based systems manage work — each operation depends on the last result, building up a history that’s undone or consumed one step at a time.
 
-Some examples of elements are:
+## 2.2. Practical
 
-- `+` / `add` / `plus`: Adds two numbers together.
-- `-` / `subtract` / `minus`: Subtracts the second number from the first.
-- `length`: Returns the length of a list.
-- `map`: Applies a function to each element of a list.
+In Valiance, most (more on the exceptions later) operations are performed on a global stack. There is only one global stack. Here are some specifics about the global stack:
 
-_Eventually, there will be a reference for all pre-defined elements._
+- It starts empty at the beginning of every program.
+- It can contain any number of items.
+- It can have items of different types stored on it.
+- Trying to pop from an empty global stack is a compile error.
 
-Some elements may be defined for multiple sets of inputs. Each definition is called an overload. For example, addition also performs concatenation of two strings.
+# 3. Basic Stack Items
 
-## Literals
+What good is a stack if it is not storing anything?  Valiance has 7 fundamental types of values that can be stored on the stack:
 
-Numbers, strings, lists, tuples, and dictionaries all have literal syntax in Valiance.
-That means that it is possible to write them directly in code.
+1. Numbers
+2. Strings
+3. Lists
+4. Tuples
+5. Dictionaries
+6. Functions
+7. Objects
 
-### Numbers
+This section of the overview will outline the semantics and syntax of Numbers, Strings, Tuples and Dictionaries. The other three types require their own sections.
 
-Numbers follow the syntax:
+## 3.1. A Note on Literals
 
-    NUMERIC_LITERAL = DECIMAL ("i" DECIMAL)?
-    DECIMAL = "-" NUMBER ("." [0-9]+)? 
-    NUMBER = 0 | ([1-9] [0-9]*)
+A literal in Valiance is syntax that pushes the corresponding stack item.
 
-The presence of `i` in a number indicates that it is a complex number.
+## 3.2. A Note on Comments
 
-A number is negative if it starts with a `-`, and there is no space between the `-` and the number.
+While not a stack item, Valiance supports single line comments and multiline comments. Comments are little human-readable notes one can leave in a program to make it clear what a section of code is doing. The compiler completely ignores comments. 
 
-There is no limitation on number size nor precision.
+### 3.2.1. Single Line Comments 
 
-Examples:
+A single line comment begins with `#:` and continues until the next newline character. 
 
-- `8`
-- `53.87`
-- `-8`
-- `-53.87`
-- `8i2`
-- `-8i2.3`
-- `-8i-2.3`
+```
+#: This is an example comment
+#: It ends at the end of the line
+```
 
-### Strings
+### 3.2.2. Multiple Line Comments
 
-Strings are opened and closed with double quotes. They can contain any character except
-for double quotes, which must be escaped with a backslash. Further, strings can
-span multiple lines, and the line breaks will be preserved in the string.
+A multiple-line comment starts with `#:{` and continues until a matching `}:#` is reached. 
 
-The syntax is:
+```
+#:{ This is a comment
+that continues over
+multiple lines. }:#
+```
 
-      STRING_LITERAL = '"' ([^"\] | ESCAPED_CHAR)* '"'
-      ESCAPED_CHAR = "\" [\"]
+## 3.3. Numbers
 
-Examples:
+Numbers in Valiance are the same as any number one would use in real life. Well, almost. Numbers can be of any size, any precision, have a complex part, and sometimes represent an exact Real number (e.g surds, multiples of pi, multiples of `e`, `ln(2)`). 
 
-- `"Hello, world!"`
-- `"Hello, \"world\"!"`
+The syntax for numbers is:
 
-    "Hello
-    World!"
+```
+NumericLiteral := Decimal ["i" Decimal]
+Decimal := ["-"] Number ["." Number]
+Number := "0" | (<1-9> {<0-9>})
+```
 
-#### String Formatting
+Valid examples of numbers include:
 
-A common pattern in programming is concatenating strings to other values. For example, personalising a greeting by adding in a person's name. This often leads to a rather unpleasant chain of `+`s, and obscures the intention of inserting data into a string. 
+```
+0
+12
+459.243
+-83
+-14.3
+0.6
+3i4
+8.2i4
+9.2i1.6
+-8i3
+9.2i-3
+-9.2i-2.6
+```
 
-Valiance has two workarounds for this. The first is *string formatting*, which allows for a string to declare placeholder points able to be filled in later. Placeholders are designated with `{}`, and are filled in when the format overload of `%` is used. 
+## 3.4. Strings
+
+Strings in Valiance are similar to those found in languages like Python, JavaScript, and Julia. They are standalone objects, UTF-8 encoded, and indexed by grapheme clusters rather than by raw code points or bytes. Strings have arbitrary length and are immutable. Unlike in many array-oriented languages, Valiance strings are not treated as arrays of characters. Instead, they are atomic text values — single, indivisible units that can, when needed, be viewed or manipulated as sequences of characters depending on context.
+
+Strings can span multiple lines without needing to escape newlines.
+
+The syntax for strings is:
+
+```
+StringLiteral := '"' {<non double quote> | '\"'} '"'
+```
+
+Valid examples of strings include:
+
+```
+"Hello, World!"
+""
+"There's a \"quote\" in my string"
+"This
+String
+Spans
+Multiple
+Lines"
+```
+
+### 3.4.1. String Interpolation
+
+- `$""` for string interpolation a la scala.
+
+## 3.5. Tuples
+
+Tuples in Valiance are heterogeneous immutable collections of objects.
+
+Their primary purpose is to act as a collection type with a well-defined compile-time length. Tuples can contain any finite number of items. 
+
+The syntax for tuples is:
+
+```
+TupleStructure := L_PAREN [Value {COMMA Value}] R_PAREN
+```
+
+Valid examples of tuples include:
+
+```
+()
+(1, 2, 3)
+(1, "string", 6.2)
+((1, 2, 3), ("ab"), ("abc", 1, 2, 3))
+([1, 2, 3], [4, 5])
+```
+
+## 3.6. Dictionaries
+
+Dictionaries in Valiance allow for a key-value mapping, similar to dictionaries/hashmaps/JSON. A dictionary can have any number of key-value pairs.
+
+Any value that implements the `stdlib.Hashable` trait can be used as a key. 
+
+`=` is used to separate keys and values.
+
+Keys in a dictionary are unique. Writing to an already present key will overwrite the old value. 
+
+Attempting to retrieve a key that is not present in a dictionary is a runtime error.
+
+The syntax for dictionaries is:
+
+```
+DictionaryStructure := "#{" [
+  Value EQUAL Value {Value} {COMMA Value EQUAL Value {Value}}
+] R_PAREN
+```
+
+Valid examples of dictionaries include:
+
+```
+#{}
+#{
+  "name" = "Joe",
+  (10, 20) = [1, 2, 3],
+  "x" "y" + = 3 4 +
+}
+```
+
+# 4. Types 
+
+Every value in Valiance has a type. Types describe what a value is, what it can do, and how it can interact with other values. They prevent category errors, guide compiler optimisations, and act as a shared language between programmer and machine.
+
+## 4.1. Simple and Composite Types
+
+The simplest types correspond directly to the basic literals of the language. All numbers have the type `Number`, and strings have the type `String`. Tuples combine multiple values of potentially different types — for example, `(1, 2, "3")` has the type `(Number, Number, String)`. Dictionaries express mappings between types, such as `Dictionary[String -> String]`, where both keys and values have well-defined types.
+
+These simple types form the foundation of the type system. From here, Valiance builds outward into more expressive structures.
+
+## 4.2. Optional, Union, and Intersection Types
+
+Valiance allows types to describe more than fixed categories — they can also express choice and conditional presence.
+
+An optional type, written as `T?`, represents either a value of type `T` or the special value `None`. It’s often used for variables that may not yet have a value assigned.
+
+A union type, `T|U`, indicates that a value may be one of several specific types — for example, a function that returns either a `String` or an `Error`.
+
+An intersection type, `T&U`, is the opposite: it describes a value that satisfies multiple type constraints at once. For instance, an object might simultaneously implement two traits, each providing its own set of methods.
+
+These forms give Valiance a flexible but precise way to express the full range of possible values a variable might hold.
+
+## 4.3. Lists as Type Operations
+
+Rather than defining a dedicated “List” type, Valiance treats lists as *type operations* applied to other types. Dimensionality is expressed directly in the type itself.
+
+The `+` operator denotes a list of a fixed rank. For example, `Number+` is a one-dimensional list of numbers, `Number++` is a list of lists (a rank-2 list), and `Number+3` represents a rank-3 list.
+
+The `*` operator indicates a *minimum* rank rather than a fixed one. `Number*` means “at least a flat list of numbers,” while `Number**` means “at least a list of lists.” Numeric suffixes can again specify depth — `Number*4` represents a structure that’s at least four levels deep.
+
+The distinction is straightforward: `+` describes an exact shape, while `*` describes a lower bound. Any value of type `T+n` can safely be treated as type `T*m` if `n ≥ m`. For example, `T++` can safely be used where `T*` is expected, but not the other way around.
+
+Irregular, or “ragged,” lists are represented using the tilde operator (`~`). A `T~` value can contain `T`, or lists of `T`, or any further combinations thereof. Basically, items of `T~` are `T|T~`. Multiple tildes (`T~~`, `T~3`, etc.) extend the level of nesting. These notations allow ragged and regular data to share the same conceptual framework.
+
+To explicitly mark something as *not* a list, Valiance uses the `!` operator. `T!` denotes a strictly atomic `T` — a single value that will never be treated as a list. For specifying bounded complexity, `T<m, n>` represents any value between depths `m` and `n` inclusive.
+
+The absolute base type of a list can be represented as `T_`.
+
+Parentheses may also be used to control grouping and operator precedence within complex type expressions. This allows for explicit composition of type operations — for example, `(Number|Number+)+` represents a list whose elements may be either individual numbers or lists of numbers. Grouping ensures that nested type structures remain unambiguous even when combining multiple operations.
+
+Through these operations, Valiance’s type system treats structure and dimension as first-class ideas, making arrays, lists, and nested data all part of one coherent model.
+
+## 4.4. Casting Between Types
+
+There are times when the compiler cannot infer the exact type of a value, but the programmer can. In these cases, Valiance allows explicit *type casting* using the form `as NewType`.
+
+Casting tells the compiler to treat a value as a specific type — for example, converting a value known to be a `Number*` into a `Number+` if the programmer knows it is a flat list. This allows for controlled flexibility without discarding type safety entirely.
+
+## 4.5. Bridge to Lists
+
+With this foundation in place, lists can be understood not as isolated data structures but as an expression of type behavior itself. In Valiance, lists emerge naturally from the type system rather than existing apart from it — dimensionality, rank, and nesting are all matters of type composition, not special syntax. The next section explores this idea in depth, showing how lists form the practical core of Valiance’s execution model and how this unified approach allows irregular, high-rank, and mixed data structures to coexist under a single coherent design.
+
+# 5. Lists and the List Model
+
+Lists are central to Valiance. They are the primary data structure through which most computation occurs, reflecting Valiance’s identity as an array language. However, in Valiance, lists are not arrays. Instead, they form a superset of arrays — providing all of the same capabilities while allowing for more general, heterogeneous, and irregular structures.
+
+For a detailed rationale behind the choice of a list model over an array model, see *Appendix A.1.2*.
+
+## 5.1. General Properties
+
+Lists in Valiance are defined by a few simple but powerful properties:
+
+* They can contain any number of "items", including infinite sequences.
+* They can contain items of any type, even heterogeneous ones.
+* They have a well-defined rank, derived from their type structure, not from the runtime shape of their contents.
+
+## 5.2. Rank and Type Structure
+
+The rank of a list is the number of nested list layers present in its type, not the maximum depth of any single item.
+
+Formally:
+
+* Non-list values have rank 0.
+* A list of rank-`n` item has rank `n + 1`.
+* If a list contains items of different ranks, their item types form a union type at that level, but the list itself still contributes exactly one layer of rank.
+
+Under this definition, rank becomes a purely type-based property, independent of the list’s shape or uniformity.
 
 For example:
 
-    "Hello, {}" 
-
-Allows for any value to be inserted in the place of the `{}`:
-
-    "Hello, {}" "Joe" %
-	## "Hello, Joe" 
-
-Any operations can be performed on the data in the `{}`:
-
-    "Your string in lowercase is: {lower}" "PiZZa" %
-	## "Your string in lowercase is: pizza" 
-
-Placeholders can only include expressionable code, code which is not:
-
-- variable assignment
-- extension definition
-- object definition
-- trait definition
-
-The second workaround is template strings. It can be described as immediate string formatting. Rather than waiting until `%` is used, a template string will pop from the stack to fill its placeholders. A template string starts with `#"`:
-
-    "Joe" #"Hello, {}" 
-	## "Hello, Joe"
-
-Placeholders can have the same values as strings used in formatting.
- 
-
-### Lists
-
-Lists are opened and closed with square brackets. List items can be any
-Valiance construct that is not:
-
-- variable assignment
-- extension method definition
-- object definition
-- trait definition
-
-Items are separated by commas, a design choice made for familiarity and
-clarity.
-
-Lists can contain any number of items, can be empty, and can even
-be arbitrarily nested. Additionally, list items do not need to be of
-the same type (well, at least in list literals). More will be said about this in the section on the list model,
-because this list model breaks the traditional array model of array languages.
-
-Examples:
-
-- `[]`
-- `[1, 2, 3]`
-- `[1, 2, 3, "Hello, world!"]`
-- `[1, 2, [3, 4, 5], 6]`
-- `[[1], [2, 3], [4, 5, 6]]`
-
-### Tuples
-
-Tuples are a bit like lists but with a few key differences:
-
-- They contain a fixed number of items, with fixed types.
-- Values in a tuple cannot be changed after the tuple is created.
-- Values cannot be added or removed from a tuple after the tuple is created.
-- Tuples are not rectangular, and do not have a shape.
-
-While this may seem useless, tuples are useful for tasks like representing
-state between function calls, or for passing multiple values to a function.
-
-Tuples are opened with `@(` and closed with `)`. Items are separated by commas,
-and follow the same rules as list items. Tuples can be empty, and can even be
-nested.
-
-Examples:
-
-- `@()`
-- `@(1, 2, 3)`
-- `@(1, 2, 3, "Hello, world!")`
-- `@(1, 2, @(3, 4, 5), 6)`
-- `@([1], [2, 3], @(4, 5, 6))`
-
-### Dictionaries
-
-Dictionaries are mappings of keys/labels to values. They might be called
-hashmaps, tables, or associative arrays in other languages. They are opened
-with `#{` and closed with `}`.
-
-Key-value pairs are separated by commas, and the key/value pair itself
-is delimited with a colon.
-
-Keys can only be strings. Values can be any Valiance construct that is not:
-
-- variable assignment
-- extension method definition
-- object definition
-- trait definition
-
-Examples:
-
-    #{
-      "firstname": "Joe",
-      "lastname": "Mama",
-      "age": 69,
-      "height": 420.69,
-    }
-
-    #{}
-
-    #{"attr1": [1,2,3], "attr2": #{}, "attr3": 69}
-
-## The List Model
-
-Where most array programming languages use a rectangular array model, Valiance opts instead for a list-like model. However unlike array languages, like K, that use a standard list model, Valiance has a slightly different perspective on lists.
-
-Lists:
-
-- Can contain any number of items.
-- Can be arbitrarily nested.
-- Must have all items be the same type.
-- Need not have the same number of items in sublists. 
-
-This differs to normal lists which can have a wide mix of types. For example:
-
 ```
-[1, "2", [3, 4, "5"]]
+[[1, 2], [3, 4]]
 ```
 
-Is completely fine in a language using a normal list model. 
-
-However, these restrictions are merely formalisations for static typing. In practice the list from earlier is completely fine in Valiance. It has the type `Number/String/((Number/String)+)+`. Verbose, but rugged. This lines up with how lists would be represented in a language like Scala. 
-
-### The Rank of Lists 
-
-In array programming, the "rank" of an array is a very important concept. It represents the number of dimensions present in an array. A 2d matrix has a rank of 2. A 3d cube has a rank of 3. This is crucial for determining how to apply operations, especially when it comes to vectorisation (more on that later).
-
-Usually, rank is a difficult concept to apply to a list model; the lack of regularity in dimensions would require a slight change to how rank is defined. However, because Valiance lists are required to have the same type, rank is easily translated from array programming. 
-
-For example, the list from before:
+has the type `Number++` — a rank-2 list of numbers, identical to what an array model would call a 2D array.
 
 ```
-[1, "2", [3, 4, "5"]]
+[[1, 2], [3, 4, 5]]
 ```
 
-Is considered to be a rank 1 list of `Number/String/((Number/String)+)`s. 
+is also a `Number++`. The differing sublist lengths do not affect rank, because the dimensionality implied by the type remains the same.
 
 ```
-[[1, 2, 3], [4, 5, 6, 7]]
+[[1, 2], 3, [4]]
 ```
 
-Is considered to be a rank 2 list of `Number`s, even though the sublists are of different lengths. 
+has the type `(Number|Number+)+` — a rank-1 list whose items may be either numbers or rank-1 lists of numbers.
 
-## Types
+```
+[[1, 2], 3, [[4]]]
+```
 
-Given Valiance is a statically typed language, there is a type system ensuring data is passed only where it's supposed to go.
+has the type `(Number|Number+|Number++)+`, again a rank-1 list. Despite the deeper nesting in one item, the outer list adds only one level of rank.
 
-Every object in Valiance has a type. Some built-in types are pre-provided:
+This generalises neatly:
 
-| Type | Unicode Alias | Description | Examples |
-|------|---------------|-------------|----------|
-| `Number` | `ℕ` | A real number | `1`, `3.14`, `0.0` |
-| `Number.Whole` | `ℤ` | An integer | `1`, `0`, `-1` |
-| `Number.Rational` | `ℚ` | A rational number | `1/2`, `3/4`, `0/1` |
-| `Number.Complex` | `ℂ` | A complex number | `1+2i`, `3.14-1.0i`, `0.0+0.0i` |
-| `String` | `𝕊` | A string | `"hello"`, `"world"`, `""` |
-| `None` | `∅` | A null value | `∅` |
-| `Dictionary` | `§` | A dictionary. Can have generics for key and value types | `["hello" = "world"]` |
-| `Function` | `𝔽` | A function. Generics for arguments and possibly multiple branches | `{(x) => $x 2 +}` |
-| `OverloadedFunction` | `ℽ` | A function with multiple overloads | `TODO` |
-| `Tuple` | `@` | A tuple of multiple values | `@(12, "Hello")` |
-| `Constructor` | `⨂` | A constructor for a type | NA |
+```
+[
+  [[1, 2, 3], 4],
+  [5, 6, 7]
+]
+```
 
-There is no dedicated list type in Valiance. Rather, lists are expressed as "type operations" upon a base type.
+has the type `(Number|Number+)+2` — a rank-2 list whose items may be numbers or rank-1 lists of numbers.
 
-The `+` type operation indicates a rank 1 list of a type. For example, `ℕ+` is a list of numbers. Multiple `+`s increase the rank of the list: `ℕ+++` is a 3d list of Numbers (list of lists of lists of numbers). To save characters, a number can be specified after the `+` to indicate rank. `ℕ+8` is a horribly nested 8 dimensional list of numbers.
+This type-based definition of rank extends naturally to irregular or ragged data structures. It allows operations that depend on rank — such as broadcasting or reduction — to apply consistently without special-casing. In essence, rank describes type depth, not geometric uniformity.
 
-However, it is impossible to always know the exact rank of a list: elements like `reshape` can turn a list into any shape, even dynamically generated shapes. Luckily, it is possible to tell the _minimum_ rank of a list - at the very least, a list will be a flat list, regardless of shape. Therefore, the `~` type operation is used to indicate minimum rank. For example, `ℕ~` is at least a flat list of numbers, although it could also be any depth-uniform list. Like `+`, `~`s can be stacked to indicate a higher minimum rank. `ℕ~~` is at least a list of lists of numbers, and each item in the list is at least `ℕ~`. Arbitrary ranks can be specified with a number like with `+`.
+## 5.3. Syntax
 
-`+`s and `~`s can't be mixed in a type, but a `+` list can be used where a `~` list is expected if the rank of the `+` list is >= the rank of the `~` list. In other words, `T+n` is considered `T~m` if `n >= m`.
+Lists are constructed using square brackets, following a straightforward syntax:
 
-For example, `T++` can be safely considered as `T~`. On the other hand, `T+` cannot be safely considered as `T~~`.
+```
+ListStructure := L_SQUARE [Value {COMMA Value}] R_SQUARE
+```
 
-There are other type operations that can be used in types:
+This form applies to all lists, regardless of rank or content type. The type of a list is inferred from its items according to the rules above, with union types and list operators (`+`, `*`, `~`, `!`, and grouping parentheses) providing explicit control when necessary.
 
-| Operator | Description |
-|----------|-------------|
-| `+` | A rank 1 list of the type. |
-| `~` | A list of at least rank 1 of the type. |
-| `^` | A list of at most rank 1 of the type. | 
-| `/` | A union of types. |
-| `&` | An intersection of types. |
-| `?` | An optional type. Same as `T / None`|
-| `!` | Exactly an atomic type, never a list. Useful for controlling vectorisation. |
+# 6. Variables
 
-Any type that is not a list is termed "atomic".
+Variables are stores of data that exist outside of the stack. Each variable has a name, a designated type it can store, and can be retrieved or overwritten ("getting"/"setting" respectively).
 
-### Rank Guards
+Getting a variable follows this syntax:
 
-A type `T` can be followed by `<m, n>` to indicate that the type must be a list be
-at least rank `m` and at most rank `n`. This is called a "rank guard". For example, `ℕ<2, 3>` is a list of numbers that is at least rank 2 and at most rank 3.
+```ebnf
+VariableGet:= "$" Name
+Name := (<any letter> | "_") {<any letter> | "_" | <any digit>}
+```
 
-### The Shape of a List
-Any array language enthusiast will be quick to point out that lists — being not-arrays — do not have a shape. "After all," they will say, "what is the shape of `[[1, 2], [3, 4, 5]]` or even `[1, 2, [3, 4, 5]]`?"
+Setting a variable follows this syntax:
 
-While the rectangular concept of *shape* does not translate to rugged lists, it can still be adapted to provide a "close-enough" definition. The shape of a list is the longest sublist at each depth. That means `[[1, 2], [3, 4, 5]]` is a 2×3 list, and `[1, 2, [3, 4, 5]]` is a list of three `Number | Number+`s.
+```ebnf
+VariableSet := VariableGet EQUAL SimpleItem {SimpleItem} NEWLINE
+```
+
+Valid examples of getting and setting variables include:
+
+```
+$pi = 3.14
+$languageName = "Valiance"
+$numbers = [5, 2, 7, 4]
+
+$pi
+$languageName
+$numbers
+```
 
 
-## Vectorisation
+The type of a variable is determined when it is first set. This type can be controlled by using `as Type`. This is primarily useful for empty lists or values that are optional types.
 
-One of the most important aspects of the array programming paradigm is pervasiveness - applying functions across all atomic items in a list. For example, `[1,2,3] + 4` gives `[5,6,7]` as a result. In Valiance, this is referred to as "vectorisation", and the act of doing is called "vectorising". Some elements do vectorise, others do not.
+There are no global variables. Variables can only be set in the scope they are defined (this will become apparent when functions are introduced). 
 
-Generally speaking, an element vectorises when it expects an argument of a certain rank, but is given an argument with a higher rank. Atomic values can be considered to have rank 0.
+Trying to get a variable that hasn't been defined or hasn't been set is a compile error.
 
-Elements will "dig down" the higher-rank argument until the expected type is reached. For example, `+` is defined for the inputs `Number, Number`. If given `Number+, Number` as input, it will add the second number to each number in the first list.
+Trying to set a variable to a value that has a type incompatible with that variable's type is a compile error. For example, the following snippet is invalid:
 
-Vectorisation behaviour changes slightly when multiple higher-ranked lists are given as inputs to an element. Instead of digging down a single list, the element will dig down *multiple* lists at once until a point is reached where all arguments are the expected rank. More specifically:
+```
+$number = 10
+$number = "string" #: Compile error - string can't be assigned to Number
+```
 
-1. Passing an argument with a higher rank than expected causes vectorisation
-2. Vectorisation recurses down lists until expected types match.
-3. If there are multiple arguments, items are zipped with vectorisation recursively reapplied on needed. Arguments already matching are kept as-is and automatically repeated across the tuples.
+Notably, the following are not errors:
 
-Zipping simply means to group corresponding items across multiple lists. For example, zipping `[1,2,3]` and `[4,5,6]` together gives `[[1, 4], [2, 5], [3, 6]]`.
+```
+$listA = [] as Number~     #: Type: Number~
+$listB = [] as Number*     #: Type: Number*
 
-Therefore, adding `[1,2,3]` and `[4,5,6]` would give `[5, 7, 9]`, as corresponding items are added together (`[1 + 4, 2 + 5, 3 + 6]`).
+$listA = [[1, 2, 3]]        #: OK: Number~ accepts ragged lists
+$listB = [$listA, [$listA]] #: OK: Number* accepts "at least rank 1"
+```
 
-There is an exception to the vectorisation rule. An element will not vectorise if a higher-ranked argument is given where a `!` type is expected. For example, if addition was instead defined on `Number!, Number!`, calling addition with `Number+, Number` would result in a type error. This allows elements to explicitly _not_ vectorise if it wouldn't make sense to do so. Given the importance of vectorisation in array programming, it is recommended to use the `!` type operation sparingly.
+## 6.1. Constants
 
-## Functions
+A constant is a variable that cannot be changed after initial assignment. 
+
+The syntax for constants is as follows:
+
+```
+VariableConst := "const" VariableSet
+```
+
+Attempting to assign to an already assigned constant is a compile error. 
+
+For example:
+
+```
+$piVar = 3.14
+$piVar = 3.15 #: Valid, but incorrect
+const $PI = 3.14
+$PI = 3.15 #: Error
+const $PI = 3.15 #: Also error
+```
+
+## 6.2. Augmented Assignment
+
+_Editor's note: will need to be moved to the section where `:` as a modifier is introduced. It's only here for completeness while writing the draft, because the section on `:` hasn't been written yet_
+
+When using variables, it is a common pattern to update the variable based on its value. For example, incrementing a variable by 5 might be written as:
+
+```
+$x = $x 5 +
+```
+
+This is a little bit verbose, so Valiance provides syntax sugar to make it shorter:
+
+```
+$x: {5+}
+```
+
+# 7. Elements
+
+Data is useless unless you can do something with said data. After all, what is the use of having a 3 and a 4 lying around if they can't be combined to get 7?
+
+What other programming languages call built-in functions, operators, primitives, or (if you're J or K inclined) verbs, Valiance calls "elements". Specifically, an element is something that:
+
+- Takes inputs from the stack
+- Directly applies an operation
+- Pushes its results to the stack
+
+The second condition there is the key one. Elements perform their action as soon as they are used. This distinction will become important when considering function objects, which satisfy conditions 1 and 3, but do not necessarily execute as soon as they are on the stack. 
+
+Some common elements include:
+
+```
++ (Number, Number) = Add two numbers
+- (Number, Number) = Subtract two numbers
+* (Number, Number) = Multiply two numbers
+/ (Number, Number) = Divide two numbers
+sum (Number+) = Add all of the items of a list of numbers together
+```
+
+Some examples of these elements in practice include:
+
+```
+3 4 + #: 7
+8 2 - #: 6
+5 6 * #: 30
+5 2 / #: 2.5
+
+[3, 5, 2] sum #: 10
+```
+
+Note that the order stack items are passed to elements is reversed relative what is popped. That is, the top of the stack isn't always used as the "left most" argument. 
+
+## 7.1. Element Overloads
+
+Elements can do different things based on the types of the items on the stack. 
+
+For example, in addition to performing addition when given two numbers, `+` will perform string concatenation when given two strings. 
+
+That is:
+
+```
+3 4 + #: 7
+"Hello" "World" + #: "HelloWorld"
+```
+
+Each definition of `+` is called an overload. Elements can have any non-zero number of overloads. 
+
+Overloads are unique. More will be said about this in the section that talks about user defined elements.
+
+## 7.2. Syntax
+
+The syntax for an element is:
+
+```
+Element := ElementFirstChar {ElementChar}
+ElementFirstChar := <A-Z>|<a-z>|"-"|"+"|"*"|"%"|"!"|"?"|"="|"/"|"&"|"<"|">"
+ElementChar := ElementFirstChar | <0-9>
+```
+
+## 7.3. Terminology 
+
+- The number of inputs an element takes is called its "arity".
+- An element may be mixed arity, depending on the type signatures of its overloads.
+- The number of outputs an element returns is called its "multiplicity".
+- Like arity, multiplicity may vary between elements.
+- It is recommended that element arity and multiplicity be consistent among overloads.
+
+## 7.4. Element Call Syntax
+
+While elements usually take their arguments from the stack, it is possible to use mainstream-style `()` to explicitly specify an argument. 
+
+For example:
+
+```
+3 4 +
++(3, 4)
+```
+
+Are equivalent. Additionally:
+
+```
+[1,2,3] sum
+sum([1,2,3])
+```
+
+Are also equivalent.
+
+Arguments can be named:
+
+```
+"This is a string" " " split
+"This is a string" split(" ")
+split("This is a string", " ")
+"This is a string" split(on = " ")
+split(item = "This is a string", on = " ")
+split(item = "This is a string", " ")
+```
+
+And more are all equivalent.
+
+`_`
+
+## 7.5 Overload Disambiguation 
+
+If an element overload cannot be determined from the stack, a compile error will be raised. This will commonly arise from elements with overloads that have different arities. 
+
+For example, say the following overloads of an element named `finger` exist:
+
+```
+finger (Number) -> (Number)
+finger (Number, Number) -> Number
+```
+
+The following program would be problematic:
+
+```
+3 4 finger #: which element named finger should be called?
+```
+
+The ambiguity arises from both overloads being valid. 
+
+And while `finger(3, 4)`  and `finger(_, _)` disambiguate to the two number overload, it doesn't give a way for the single number overload to be called when the stack contains two numbers. 
+
+To this end, the exact overload can be specified by providing the types in square brackets after the element name:
+
+```
+3 4 finger[Number] #: Single number overload
+3 4 finger[Number, Number]
+3 4 finger[Number](5)
+```
+
+# 8. Functions
 
 Functions are user-definable objects that take input values and transform them into other values. In this way, functions can be seen as a sort of element. Unlike elements, functions are not automatically applied to stack items, but instead reside on the stack until needed.
 
-A function has inputs and outputs. The number of inputs to a function is called the "arity" of a function. The number of outputs from a function is called the "multiplicity" of a function.
+Dissimilar to (most - BQN acts as an outlier here) other Iversonian array languages, functions are first class citizens. This means that functions are just as much stack items as say numbers, strings, and lists.
 
-As Valiance is stack based, all functions must have a fixed arity and multiplicity - varargs are not allowed (they create too many problems when trying to do static analysis).
+Just like elements, functions have inputs, outputs, and optionally overloads. 
 
-Functions are opened with a `{` and are closed with a `}`. The inputs and outputs of a function are specified in the format `(inputs) -> (outputs)`, and is followed by a `=>`. Both inputs and outputs can be empty, and the outputs can be omitted. If outputs are omitted, Valiance will infer the return type from the top of the stack. If inputs or outputs are empty, then the function is considered to take no arguments or return no results respectively.
+## 8.1. Syntax
 
-The inputs part of the function can be a mixed list of:
-
-- A number, indicating to pop that many items from the stack,
-- A colon followed by a type, indicating to pop an item of that type from the stack,
-- A variable name, indicating to pop an item from the stack and assign it to that variable.
-- A variable name followed by a colon and a type, indicating to pop an item from the stack, assign it to that variable, and check that it is of that type.
-
-Similarly, the outputs part of the function can be a mixed list of:
-
-- A number, indicating to push that many items onto the stack,
-- A colon followed by a type, indicating to push an item of that type onto the stack,
-
-The type of a function is `𝔽[<inputs> -> <outputs>]`
-
-Some examples of functions are:
-
-    {(:Number, :Number) => +} ## 𝔽[Number, Number -> Number] (Output inferred)
-    {(:Number{2}) => +} ## Same deal
-    {(x: Number, y: Number) -> (:Number) => $x $y +} ## Same deal
-    {() -> () => } ## 𝔽[]
-    {() -> (:Number) => 1} ## 𝔽[;Number];
-    {(2) -> (1) =>
-        2tuple #match: {
-         @(x: Number, y: Number) => $x $y +,
-        }
-    } ## 𝔽[^1, ^2; Number/^2] (implicit generics)
-    {+} ## 𝔽[Number/String, Number/String -> Number/String] Subject to other types present on +
-    {(x, y) => $x $y +} ## Also 𝔽[Number/String, Number/String -> Number/String], as type inference can figure out x and y
-
-As seen above, if a function has a number in its argument list, it will have
-implicitly created generics. These generics act as if they were normal generics,
-but can't be accessed directly in a function body. More will be said about this in the
-section on generics.
-
-Here are some key things to note about functions:
-
-- Functions operate on their own stack. What's passed to a function is the only
-  external data available to the function.
-- Variables outside of a function can only be accessed, not modified.
-- However, a variable outside a function will be bound to any returned functions. This
-  allows for closures.
-- Functions can be called using the `!()` element. 
-- If a function is stored in a variable, it can be called by wrapping the function name in backticks.
-- Parameters and return values can be completely omitted to have the functions inputs inferred from what would suit all elements in the function. The inferred return will be whatever is on the top of the stack
-- If parameters are specified, then attempting to pop from an empty stack will cycle back through the parameters. For example, `{(x:Number, y:Number) => ++}` will return `x + y + x`, as popping goes through x, y, then x again. 
-
-The `!()` and `` `backtick` `` function calling forms push all results onto the stack individually. However, it can be useful to automatically group all function results into a tuple. To achieve this, a function can be wrapped in a tuple, causing `!()` to return a tuple of results instead. Additionally, the `` `@name` `` form always auto-tuples the function's results.
-
-### Function Overloading
-
-Much like elements, and other programming languages, functions can be overloaded to perform different behaviours depending on the types of its input arguments. 
-
-Function overloading is accomplished by using the addition element:
-
-    {(:Number!) => "Got a number!"}
-	{(:String!) => "String input"}
-	+ ~> overloaded
-	5 `overloaded` ## "Got a number!"
-	"yes" `overloaded` ## "String input"
-
-A function overload's arguments are not allowed to be a suffix of another function overload's arguments. For example, a function `𝔽[Number -> Number]` can't be overloaded with another function `𝔽[Number, Number -> Number]`, as it would be impossible to tell which overload to use if the top of the stack were two numbers. 
-
-_As a consequence, unit functions cannot appear as a function overload_
-
-An overloaded function has type:
-
-    ℽ[𝔽1, 𝔽2, ..., 𝔽n] 
-
-Where `𝔽n` is the type of each function.
-
-### The Return Stack
-
-By default, a function places its return values on the top of its main stack. However, sometimes a value that should be returned is located deeper in the stack. While typical stack manipulation can usually bring such a value to the top, there are cases where that’s not feasible—or simply inconvenient. Variables can be used as a workaround, but a more implicit and streamlined approach is often preferred.
-
-To support this, functions have access to a separate return stack. Values pushed onto this return stack are treated as return values when the function completes.
-
-Use the `#>>` element to push a value onto the return stack.
-
-You can also call a function in such a way that all of its return values are placed directly onto the return stack, rather than the main stack. To do this, use the `#>()` element when calling the function.
-
-To pop a value off the return stack, use `#>_`. 
-
-When a function returns, it first pulls values from the return stack, in the order they were pushed. If that stack doesn’t provide enough values to satisfy the return, the function falls back to the main stack, using its top values to complete the result.
-
-## Modifiers
-
-A common pattern in functional programming is to pass functions as arguments to other functions.
-For example, consider the `map` element, which takes a function and a list, and applies the function to each element of the list. To map the function `{(:Number) => 2 *}` over the list `[2, 4, 5]`, you would write:
-
-    [2, 4, 5] {(:Number) => 2 *} map
-
-Notice how the element always appears after the function. For long functions, this means that
-the element will be far away from the start of the function, distancing the element from the
-data it operates on. This is not ideal, and can make code harder to read.
-
-In Valiance, an element can be followed by a `:` to "modify" the element to read its function
-arguments from the next tokens. This is slightly different to other array languages where
-modifiers (or whatever the language calls them) are dedicated keywords/symbols.
-
-To turn the `map` element into a modifier, you would write:
-
-    [2, 4, 5] map: {(:Number) => 2 *}
-
-The `map` element no longer takes a function from the stack, but instead takes the function
-directly next to it. The code now reads more naturally, and readers do not need to scan
-to the end of the function to see how the function is used.
-
-An element can only be modified if it takes at least one function as an argument.
-
-### Design Rationale
-
-One of the main reasons for treating modifiers as syntactic sugar is to avoid potential duplication of elements. Traditionally, modifiers, by design, require a fixed function to operate on. This creates a fundamental limitation: when only a modifier exists for a functional programming construct, that construct cannot dynamically reference or apply first-class functions from the stack.
-
-To overcome this limitation, it's desirable to introduce a corresponding keyword—one that can access function arguments dynamically from the stack. However, this leads to an overlap in functionality: now both a modifier and a keyword exist for the same purpose. This redundancy leads to one form inevitably being preferred over the other, making the lesser-used form useless.
-
-There is a very simple solution to this problem: realise that modifiers are really just wrappers
-around elements. Then, only a single element is required, and the benefits of modifier syntax is
-retained.
-
-Notably, this is not a problem in other array languages where functions are not first-class. In fact,
-modifiers acting upon fixed functions is the _only_ way to do functional programming in those languages.
-The duplication problem is unique to Valiance resulting from its design goals.
-
-As an aside, the `:` was chosen as the modifier symbol because:
-
-1. Originally, modifiers _were_ separate keywords. To help indicate that a keyword was
-   a modifier, modifier keywords were suffixed with a `:`. Upon attempting to solve the
-   redundancy problem, it was realised that only the `:` needed to be special syntax.
-2. `:` already acts as a modifier-esque construct in Valiance. For example, arguments in
-   functions can have a type specified after a `:`. The metaphor translates nicely to modifiers.
-
-## Variables 
-
-Variables are stores of data that exist outside of the stack. Each variable has a name, a designated type it can store, and can be retrieved or overwritten ("getting"/"setting" respectively). 
-
-Variables are set by prefixing a valid name with a `~>`. Valid names must start with a letter, and can contain `A-Za-z0-9_`. Whatever is on the top of the stack is placed into the variable. 
-
-Adding a `!` after the `~>` will make the variable a constant, meaning it cannot be written to any more. For example, `3.14 ~>!PI` will set `PI` to `3.14`, and attempting to use `3.15 ~>PI` will cause a compile error.
-
-The first time a variable is set, the type can be specified with a colon followed by the type name. However, in most cases, the type of the variable can be omitted, as it can be inferred from the top of the stack. 
-
-Once a variable has a type, attempting to store a value of an incompatible type will result in a compiler error. 
-
-Some examples include:
-
-    10 ~>myNumber
-	20 ~>yourNumber: Number? ## Useful for specifying a type that wouldn't be inferred. 
-	"Jam" ~>condiment: String ## Redundant, as it would otherwise be inferred as string.
-
-The value of a variable can be retrieved by prefixing the name of the variable with a `$`. This will push the value to the stack. Note that the variable will still contain a copy of the value (i.e retrieving a variable does not empty it). To continue the examples from earlier:
-
-    $myNumber $yourNumber #or: 5 ==
-	$condiment " is put on toast" +
-
-All variables are local. This means that modifying a variable in a function will not change a variable with the same name outside of the function. This is called "scoping" in other languages. When a variable is set inside a function, it is added to that function's scope. When a function returns a value, all values inside that function's scope are deleted. 
-
-There is one exception to this. A function returned from another function will retain the values of any variables from outer scopes. This is referred to as "closures" in other programming languages. It can be seen as the returned function taking a snapshot of its environment at the time it was returned. This concept is useful for functional programming constructs.
-
-### Augmented Assignment
-
-The following is a common pattern in programming:
+The syntax for functions is as follows:
 
 ```
-0 ~> my_var
-$my_var 1 + ~>my_var
+TypeWithRepeat := Type ["*" Number]
+
+FunctionStructure := FUNCTION_DELIM [
+  L_PAREN [
+    [Name] COLON TypeWithRepeat {COMMA [Name] COLON TypeWithRepeat}
+  ] R_PAREN
+] [
+  ARROW
+    [ TypeWithRepeat {COMMA TypeWithRepeat} R_PAREN ]
+  
+] L_CURLY Program R_CURLY
 ```
 
-Valiance provides a shortcut for getting a variable, applying an operation, and then putting the result back into the original variable. A `:` after a variable get will perform that operation on that variable
-using items from the stack.
+## 8.2. Function Type Signature
+
+The type of a function is specified as:
+
+```
+Function[input -> output]
+```
+
+The `[...]` can be omitted to represent a function with any inputs and outputs. Such a function cannot be called - only functions with input and output in the type can be called. 
+
+Examples of function types include:
+
+```
+Function[Number, Number -> Number]
+Function[Number+ -> Number]
+Function[Number -> ]
+Function[ -> String]
+```
+
+## 8.3. Calling a Function
+
+A function can be called using `call`. It expects the function to be the top of the stack, followed by its arguments. Arguments can also be specified in element call syntax. 
+
+## 8.4. Function Execution
+
+When a function is called, it creates its own local stack and scope, separate from the calling context. The function's parameters are pushed onto this local stack as initial values.Argument Reuse: If a function's operations consume more items than are currently on the stack, the function's arguments are automatically reused in order. This eliminates the need for explicit duplication and stack shuffling in many common patterns.
+For example, given arguments 3 and 4:
+
+```
+fn(:Number, :Number) { + + }
+```
+
+Execution proceeds as:
+```
+Stack: [3, 4]
++      → [7]        (consumed 3 and 4)
++      → [10]       (consumed 7 and 3 - first argument reused)
+```
+
+This function cycles through arguments as needed:
+
+```fn(:Number, :Number) { + + + + + } call(3, 4)
+
+Stack trace:
+[3, 4]  +  → [7]
+[7]     +  → [10]   (reuse 3)
+[10]    +  → [14]   (reuse 4)  
+[14]    +  → [17]   (reuse 3)
+[17]    +  → [21]   (reuse 4)
+Result: 21
+```
+
+This is useful because many operations naturally want to repeatedly combine a result with the same base values. Without reuse, you'd need explicit duplication (`^`) before each operation. Argument reuse makes these patterns concise and natural.
+
+Whatever remains on the function's stack becomes the return value. If the stack is empty but the return type expects values, arguments are reused if type-compatible.
+
+## 8.5. Function Input and Output Inference
+
+If the input list is omitted from a function, the parameters will be inferred from the operations inside the function. 
+
+If the return list is omitted from a function, the return will the top of the stack at the end of the function. Only a single item will be returned in this case. If the stack is empty, void of even the initial arguments, the return type will be inferred as empty.
+
+## 8.6. Quick Functions
+
+`fn {x}` is very long for when `x` is a single element. `'x` is shorthand for `fn {x}`:
+
+```
+[[1, 2, 3], [4, 5, 6], [7, 8, 9]] 'length map
+#: Of course, equivalent to map: length
+```
+
+# 9. Vectorisation
+
+A defining feature of array programming languages is the ability to automatically apply operations over a whole list without explicit iteration. 
+
+For example, to add `4` to each number in the list `[1, 2, 3]` one might write one of the following approaches:
+
+```
+[1, 2, 3] map: {4+}
+[1, 2, 3] 4 zipwith: +
+[1, 2, 3] 4 '+ bind map
+```
+
+However, Valiance allows for:
+
+```
+[1, 2, 3] 4 +
+```
+
+To accomplish the same result without needing extra elements and functions. 
+
+This behaviour is called "vectorisation". Vectorisation works by repeating a lower rank argument for every item in a higher rank list and applying the operation pairwise. This repeating behaviour is called "broadcasting".
+
+Where other array languages utilise the shape of arguments to determine how to vectorise, Valiance utilises the types of arguments. The highest ranked argument defines how lower ranked arguments should be broadcast. 
+
+For example, in this snippet:
+
+```
+[[1, 2], [3, 4]] [5, 6] +
+```
+
+`[5, 6]` will be broadcasted as `[[5, 6], [5, 6]]`, meaning the result will be:
+
+```
+[[1, 2] + [5, 6], [3, 4] + [5, 6]]
+= [[1 + 5, 2 + 6], [3 + 5, 4 + 6]]
+= [[6, 8], [8, 10]]
+```
+
+Monadic functions, functions that only take one argument, do not need to worry about broadcasting. Single-argument operations recursively apply to nested structures until reaching the expected type.
+
+Dyadic functions will broadcast the lower ranked argument to the higher ranked argument. If there is a mismatch in length of any paired lists, then whatever is present in the longer list is kept as-is. For example:
+
+```
+[1, 2, 3] [4, 5] +
+#: [1 + 4, 2 + 5, 3]
+#: [5, 7, 3]
+
+[[1, 2], [3, 4, 5]] [10, 20] +
+#: [[1, 2] + [10, 20], [3, 4, 5] + [10, 20]]
+#: [[1 + 10, 2 + 20], [3 + 10, 4 + 20, 5]]
+#: [[11, 22], [13, 24, 5]]
+```
+
+For functions taking 3 or more arguments, the same broadcasting rules apply, but an error is thrown if there is length mismatch - the reasoning being that it is hard to definitively know which arguments should be kept as default. This is why dyadic vectorisation works just fine with mismatching shapes, as it is reasonable to keep unpaired values unchanged, preserving all information from both inputs
+
+However, if a function being vectorised takes arguments of optional types, then length mismatches will not error if all non optional arguments are present. Missing arguments will be treated as None. Such a function will even take priority over dyadic vectorisation.
+
+```
+fn(x: Number, y: Number?, z: Number) { ... }
+
+[1, 2, 3] [4, 5] [6, 7, 8] call
+#: [fn(1,4,6), fn(2,5,7), fn(3,None,8)]
+#: No error because y is optional
+```
+
+## 9.1. Preventing Vectorisation
+
+There is an exception to the vectorisation rule. An element will not vectorise if a higher-ranked argument is given where a `!` type is expected. For example, if addition was instead defined on `Number!, Number!`, calling addition with `Number+, Number` would result in a type error. This allows elements to explicitly _not_ vectorise if it wouldn't make sense to do so.
+
+## 9.2. Fine-grained Vectorisation Control 
+
+_It's recommended you come back to this section after reading about generics_
+
+Say you have `Number+++` on the stack, and an element named `finger` that is defined for a generic `T+`. And say you want to vectorise that element at a `Number+` level. 
+
+Just calling the element won't trigger the dig down effect, because `T = Number++` in this case. 
+
+And while you can `map: map: finger`, that's horribly long and doesn't scale well to higher ranked lists. 
+
+Instead, you can use the same type specification syntax that disambiguates overloads to control what rank is passed to the element:
+
+```
+finger[Number+]
+```
+
+This will case `T = Number`, meaning `finger` will dig down to the `Number+` level as desired. 
+
+# 10. Modifiers
+
+## 10.1. The `:` Modifier
+
+Passing functions to other functions is a common pattern in Valiance. For example, `map` is an element that takes a function and a list, and applies that function to every item in the list.
+
+However, this requires wrapping code in a function:
+
+```
+fn {...} map
+```
+
+When mapping a single element over a list, this adds extra ceremony:
+
+```
+fn {length} map
+```
+
+And when mapping a long function over a list, by the time you see that you're mapping a function, there's a good chance you'll forget the purpose of the function:
+
+```
+fn {
+  ...
+} map #: Wait, what was the function doing again?
+#: How is it supposed to map?
+```
+
+
+- Most important modifier
+- Has several meanings, depending on syntax context
+
+- Element context = specify function arguments inline. Useful for readability (eg. `reduce: +` instead of `fn {+} reduce`.
+	- All function arguments must be specified.
+	- If overloads have a different number of function arguments each, then:
+
+```
+ CompileError: Cannot freeform modify element `Name` with inconsistent function parameters. Try specifying the overload. 
+```
+
+So:
+
+```
+elem: a b    #: Fine if all overloads have 2 function args
+elem[A, B]: a b #: needed if different number
+```
+
+This is because there would be parsing ambiguities otherwise - how would the difference between `(Function[x -> y], Number)` and `(Function[x -> y], Number, Function[x -> y])` be determined from `10 elem: a b`.
+
+- Variable context = augmented assignment. `$name: elem` is the same as `$name = fn {$name elem}`.
+
+- Example:
+
+```
+$x = 10
+$x: {5 +}
+println($x) #: 15
+```
+
+## 10.2. The `~` Modifier
+
+- Infix fork.
+- `elem1 elem2~ elem3` == `fork: elem1 elem3 elem2`
+- Useless on monads
+- Extends to n-adic functions by:
+
+```
+E1 nadic~ E2 E3 ... En
+#: same as
+fork: fork: fork: ...: E1 E2 E3 ... En nadic
+```
+
+```
+[1, 4, 6, 12] sum /~ length
+#: same as
+[1, 4, 6, 12] sum /` {[1, 4, 6, 12] length}
+#: same as
+fork: sum length /
+```
+
+## 10.3. The `^` Modifier 
+
+- Not strictly a modifier like the other three
+- But instead, the duplicate modifier
+- `^` by itself == `dup`
+
+```
+3 ^ #: [3 3]
+1 2 ^ #: [1 2 2]
+```
+
+- Can also have labels:
+
+```
+^[current stack pattern -> things to copy to top]
+```
 
 For example:
 
 ```
-0 ~> my_var
-1 $my_var: +
+1 2 3 ^[a b c -> a c c b a] #: [1 2 3 1 3 3 2 1]
 ```
 
-## System Keywords
+`_` can be included as a "ignore this item on the stack":
 
-Not all Valiance features can be expressed as elements and functions. Indeed, some programming constructs require special syntax and should be considered additional core units. System keywords start with a `#` an indicate that something is a core Valiance syntax construct. 
+```
+1 2 3 ^[a _ b -> a b a b] #: [1 2 3 1 3 1 3]
+```
 
-System keywords typically fall under these categories:
+## 10.4. The `\` Modifier
 
-- Special syntax (eg `#{` for dictionaries and `#"` for template strings)
-- Control flow handling
-- Object oriented definitions
-- Elements that would otherwise be normal elements but need to be protected from addition of user-defined overloads
-- Elements that impact compilation (eg type casting)
+- Also not strictly a modifier like `:`, `` ` ``, or `~`.
+- More like `^`.
+- Instead of `dup`, `swap`.
+- `\` by itself == `swap`
 
-Objects will be presented later in these specs. For now, some control flow and element-like system keywords are presented. 
+```
+3 4 \ #: [4 3]
+1 2 3 \ #: [1 3 2]
+```
 
-### `#if`
+- Can also have labels:
 
-The `#if` system keyword takes a function and a number. If the number is non-zero, the function will be called with what is left on the stack. Otherwise, `None`s will be pushed for each value the function would have otherwise returned. 
+```
+\[current stack pattern -> things to move to top]
+```
 
 For example:
 
 ```
-"secret" ~> password
-readline $password ==
-#if: {"TOKEN"}
-## Top of stack is now type String?
+1 2 3 \[a b c -> a c c b a] #: 1 3 3 2 1
 ```
 
-Optional types are returned to ensure the stack remains the same size. 
-
-### `#branch`
-
-`#branch` is what would be an if/else block in other programming languages. It takes two functions and a number. If the number is non-zero, the first function is called. Otherwise, the second function is called. The two functions must have the same multiplicity.
-
-For example:
+Note that it removes the initial copies of the stack pattern. This makes the `_` idea even more powerful:
 
 ```
-3 4 ==
-#branch: {
-  "Math working just fine"
+1 2 3 \[a _ b -> a b a b] #: [2 1 3 1 3]
+```
+
+# 11. Partial Application
+
+- Consider a function to keep numbers in a list smaller than a target number.
+- Conventionally:
+
+```
+fn (ns: Number+, target: Number) -> :Number+ {
+  $ns filter: {<` $target}
+}
+```
+
+- However, that's a little verbose. And also doesn't suit auto-inference.
+- One might try:
+
+```
+fn {^[ns, _ -> ns] < keep}
+```
+
+- Better, but requires a little bit of stack shuffling. Also, surely functional programming can be used here.
+- What if original idea, but implicit:
+
+```
+fn {<(_, #) filter}
+```
+
+- The `#` in `<(_, #)` means "fill this argument in `<` to be whatever is on the stack". Basically, `fn {# <}`.
+- It'll push a function object of the partially applied function.
+- Very useful for functional programming without verbosity.
+
+# 12. Control Flow Structures
+## 12.1. `match`
+
+- Pop stack value and test against several branches. Execute code of first matching branch
+- Branches start with the branch type. Branch type is one of:
+	- `exactly`
+	- `if`
+	- `pattern`
+	- `as`
+	- `default`
+ 
+- `exactly` branch matches if top of stack exactly matches case.
+- `if` branch matches if top of stack, after case, is truthy
+- `pattern` is like scala pattern matching.
+	- String exactly like scala
+	- List -> `_` = single item placeholder, `...` = greedy placeholder, `$name = _` = capture placeholder, `$name = ...` = capture greedy placeholder.
+	- Same business with tuples.
+- `as` is both match on type, and match into variable
+	- `as :Type` -> just the type
+	- `as $name: Type` -> match into name if type
+	- `as $name` -> named catchall
+- `default` is just the default case.
+
+- Branch = `type ... -> code,`. `->` separates, branch ends on `,`.
+
+- Here are some defining examples:
+
+```
+stdin.readLine parseInt
+assert {^ nonNull}
+match {
+  exactly 10 -> "Number was 10",
+  if 20 < -> "Number was less than 20",
+  default -> "I don't know that number"
+} println
+
+#: Note that only the first branch will run
+#: But that all patterns here would match
+[1, 2, 3, 4] match {
+  pattern [1, _, 3, 4] -> "Match!",
+  pattern [1, $middle = ..., 4] -> "Match!", #: $middle = [2, 3]
+  pattern [..., 4] -> "Match!",
+  pattern [...] -> "Match!", #: Basically a catchall list
+  pattern [1, 2, 3, 4] -> "Match!", #: Equal to:
+  exactly [1, 2, 3, 4] -> "Match!" 
+}
+
+#: Imagine some union type is on the stack
+match {
+  as :Number -> "Got a Number",
+  as $str: String -> $"The string is $str",
+  as $def -> "The default case"
+}
+```
+
+## 12.2. `assert`
+
+- Basically like assert in any programming language
+- `assert {cond}` - throw exception if cond gives falsey result.
+- But wait there's more.
+- `assert {cond} else {errorValue}` - if cond gives falsey result, immediately return `Error(errorValue)`.
+- Note that `assert {cond} else {value}` in a function automatically promotes that function's return type to a `Result[T, E]`.
+- `assert {cond}` without `else` doesn't promote the type.
+- `assert ... else ...` great for validation.
+
+Consider:
+
+```
+fn validateNumberFromString(num: String) {
+  assert {$num notEmpty} else {"Input was empty"}
+  $num parseInt
+  assert {^ notNone} else {"Input not numeric"}
+  $parsed = unwrap #: Number, but safe
+  assert {$parsed >` 0} else {"Negative number"}
+  $parsed
+}
+```
+
+## 12.3. `if`
+
+- It's an if statement, but only one branch.
+- Execute the branch if the top of the stack is truthy.
+- `if (cond) {code}`
+- Return type is the top of the stack type of `code` but optionalised. `None` is returned if not executed.
+- `code` is executed with stack function semantics
+	- variables can be changed
+	- but everything in the stack created by `code` deleted after code finishes.
+
+```
+if (2 2 + 5 ==) {"Uh oh"} #: String? - Will most likely be None
+```
+
+## 12.4. `branch`
+
+- `if`, but with a second branch.
+- execute first if truthy, second otherwise.
+- return type = union of two branches
+
+```
+branch (3 4 <) {
+  "3 is smaller than 4. The world is as it should."
 } {
-  "Uh oh"
+  "Mathematics has gone very severely wrong."
+} #: Should return the first string.
+```
+
+## 12.5. `foreach`
+
+- Eager stack-semantic-enabled map
+- realistically, don't use this, unless really needing the eager eval
+- `foreach (name) {code}`
+
+```
+$sum = 0
+range(1, 10) foreach ($n) {$sum: +}
+#: Don't do that in practice
+```
+
+## 12.6. `while`
+
+- `while (cond) {code}`
+- Another stack-semantic structure. Repeat code while cond is truthy. Condition creates its own stack, filled with previous tops of stack.
+- First iteration = take args from stack.
+- Return = last top of stack of code.
+
+```
+10 while (0 >) {
+  println(^) decrement
+} #: prints 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+#: returns 0
+```
+
+# 13. The `define` structure
+
+- Important enough to have its own section.
+- Adds an overload to an element
+- Very similar to `fn`, but `define` instead.
+- Doesn't push a function, writes to element.
+- Can be used just like any other element, no `$` needed.
+- Elements names can't be reserved words.
+- Element name can be any valid element name.
+```
+define[Generics] name(args) -> returnType {
+  ...
 }
 ```
 
-### `#match`
-
-`#match` allows for pattern matching akin to Scala's pattern matching. `#match` pops the top of the stack and runs it against a suite of user-defined cases until it finds a suitable match, a default case, or errors with no match found.
-
-A case can be:
-
-- Any expression, matched if the top of the stack `===` the result
-- `|` followed by an expression, which will be matched if passing the top of the stack to the expression returns a non-zero value
-- A `:` followed by a type, which will be matched if the top of the stack satisfies that type
-- `~>` followed by a name, `:`, and a type, which acts like a type match, but stores the result in a variable
-- A list destructure match, started with `#[` continuing to `]`
-- A tuple destructure match, started with `#(` continuing to `)`
-- A `#"` string, pattern matching like `s"` strings in Scala.
-- `_` to represent the default case
-
-Cases are separated with `,`. The pattern and function are separated with `=>`
-
-For example:
+- Redefining an overload overwrites it within module scope. This is fine because you're either knowingly overwriting it yourself, or you're intentionally importing an overwrite from another file. Confusion only happens on purpose
+- For example
 
 ```
-stdin parseInt #match: {
-  10 => "Got 10",
-  |20< => "Not 10, but less than 20",
-  _ => "Don't know what number"
-}
-
-[1, 2, 3, 4] #match: {
-  @[_, 2, 3, _] => "This will match",
-  @[_, 2, _] => "This would also match",
-  @[_] => "Also match",
-  :Number+ => "Also match",
-  :Number~ => "Also match",
-  ~>list: Number+ => {$list 5 +}
-}
-
-## Similar concept with tuples
+define x(:Number) {3}
+define x(:Number) {4}
+5 x #: 4
+#: Not 3.
 ```
 
-### `#for`
 
-Valiance does not allow `for` loops that modify the stack, as they would make the stack size and types unknowable. However, Valiance draws inspiration from Scala where `for` loops are used purely for iteration with side effects. The key reason for a `#for` loop is for updating variables in the current scope without the troubles of operating in a function scope.
+# 14. Objects
 
-For example, a for loop could sum the numbers in a list:
+- Structs like C or Rust, rather than classes 
 
 ```
-0 ~> sum
-10 one-range #for: {(:Number) =>
-  $sum: +
+object[Generics] Name implements [Traits] {
+  ...
 }
 ```
 
-(Don't do that in practice. Use `sum` or `fold: +`)
-
-## Extension Methods
-
-At this stage, Valiance has enough defined features to solve every programming problem solvable with a programming language. However, this is different to suitability for use in an actual production environment. It can get things done, but it can't do so in a very organised manner. A few more features are needed to boost Valiance from being a fun little toy to workplace ready. 
-
-The first of these features is extension methods. So far, all elements have been pre-defined, and functions have been the main way to bundle user-defined code into a single reusable unit. Extension methods allow for elements to have new overloads added, and for functions to be turned into user-defined keywords. 
-
-Fundamentally, an extension method is more of a compiler directive than a runtime directive. It either adds functionality to an existing element, or creates a new element. 
-
-An extension method requires two things:
-
-1. An element to extend (or create)
-2. A new function to perform
-
-Extensions are defined with the `#define` keyword, followed by the name of the element, a colon, and the function to add:
-
-    #define name: {
-	  %%%
-	}
-
-This adds the function as an overload of the element. Extension methods must follow the same prefix rules as normal function overloads. 
-
-Existing overloads can be overwritten. For example, to make addition actually perform subtraction:
-
-    #define +: {(:Number, :Number) => -}
-
-This will replace the existing definition of `+` when given two numbers. To retrieve the original definition of a built-in element, prefix it with `#@`. 
-
-## Stack Elements
-
-Sometimes, an element cannot be expressed in terms of a function with fixed inputs and outputs. For example, higher-order functions requiring variadic stack manipulation are impossible to represent, with function overloads only able to cover a finite subset of use-cases.
-
-Take for example the `dip` higher-order function. `dip` takes a function, stashes the top of the stack, performs that function, and then pushes the stashed top back to the stack. 
-
-Consider first an implementation of `dip` for monads:
+- Objects have associated members, but don't own any methods.
+- 3 levels of member visibility:
+1. Public (open write, open read)
+2. Readable (internal write, open read)
+3. Private (internal write, internal read)
+- Members are set like
 
 ```
-#define dip: {
- ([T, U, V] f: 𝔽[T -> U], top: V, :T) ->
- (:U, :V) =>
-    `f` $top
-}
+public $name = value
+readable $name = value
+private $name = value
 ```
 
-This could be extended to dyads as:
-
+- Elements defined inside the object are called "object friendly elements". These elements can read and write all members.
+- Elements outside can read and write public members, but can only read readable members and have no access to private members.
+- `define ObjectName` inside an element defines an overload for the constructor
+- Constructor parameters can specify members inline
+- All constructors must set all members from all other constructors. This avoids null items. Members declared outside a constructor don't need to be set.
+- The above requirement can either be in parameters or in the constructor body.
+- Inline style members are like `define Name(access name: Type)`. Parameters without an access level are just normal parameters.
+- Object friendly elements do not receive a copy of the object in the stack, but can retrieve the object in its current state with `self`. That'll push an object with all the current values for each member.
+- The `@self` annotation can be used to make an object friendly element automatically add `self` as a returned value. It'll be on the top of the stack after any other returned value
+- Members can be accessed in 2 ways
+1. From a variable using `$name.member`
+2. From the top of the stack using `$.member`
+- Some examples
 ```
-#define dip: {
- ([T, U, V, W] f: 𝔽[T, U -> V], top: W, :T, :U) ->
- (:V, :W) =>
-    `f` $top
-}
-```
-
-And triads as:
-
-```
-#define dip: {
- ([T, U, V, W, X] f: 𝔽[T, U, V -> W], top: X, :T, :U, :V) ->
- (:W, :X) =>
-    `f` $top
-}
-```
-
-Evidently, this pattern quickly grows unruly. Additionally, these definitions only work for input functions with multiplicity 1 - different multiplicities would require even more overloads.
-
-To this end, elements can have a `#stack` annotation added to indicate that the element definition will operate on whatever is the stack when the element is called. For example, `dip` becomes:
-
-```
-#define #stack dip: {(f: 𝔽) =>
-  ~>temp
-  `f`
-  $temp
-}
-```
-
-When a stack element is called, the element code is type checked against the current stack state. In this way, stack elements are kind of like macros. However, variables defined within a stack element are local to that element, and do not persist after the element is finished.
-
-Some other examples of stack elements include:
-
-```
-#define #stack both: {(func: 𝔽) =>
-  `@f` ~> temp
-  `f` $temp detuple
-}
-
-#define #stack fork: {(first: 𝔽, second: 𝔽) =>
-  @($first) #peek ~> firstRes
-  `@second` ~> secondRes
-  $firstRes $secondRes both: detuple
-}
-
-#define #stack correspond: {(first: 𝔽, second: 𝔽) =>
-  `@first` ~> temp
-  `@second` $temp \ both: detuple
-}
-```
-
-## Object Oriented Programming
-
-Object oriented programming is integrated into Valiance through the usage of record-like objects and multiple dispatch.
-
-Objects can have any number of "members" - attributes specific to that object. Each member has a visibility, which is either readable or private. 
-
-A readable member can be publicly read (ie in any context), but can only be privately written. A private member can only be read and written in a private context (ie inside an extension defined inside the object). 
-
-Objects are defined with the `#object` keyword, and follow this syntax:
-
-    #object Name[Generics] implements [Traits]: {constructor}
-
-(More about generics and traits will be explained in later sections). 
-
-The constructor is just a function with a few key differences:
-
-- Variables set in the constructor are considered members of the object.
-  - Normal variables are considered readable
-  - Constant variables are considered private
-- Function named arguments can be prefixed with `$` to automatically make it a readable member, or `!` to automatically make it a private member.
-- No return type can be given to the constructor
-
-Additional constructors can be specified with the `#init` keyword. However, these constructors can only set members defined in the original constructor, and failing to set any non-optional member will result in a compiler error.
-
-For a concrete example, consider a Dog object:
-
-    #object Dog: {($name: String, !ownerName: String, age: Number) =>
-	  $age 7 * ~>!age
-	  "unknown" ~> breed
-	}
-	
-	#init Dog: {($name: String, !ownerName: String, @(age: Number, breed: String) =>
-	  $age 7 * ~>!age
-      $breed ~> breed
-	}
-
-This creates two constructors for the `Dog` object. One that takes `String, String, Number` and one that takes `String, String, @(Number, String)`. Constructor overloads must follow the same rules as function overloads.
-
-Creating an instance of an object uses the same syntax as calling a function:
-
-    "Fido" "Joe" 5 `Dog`
-	"Barker" "Human" 3 $Dog !()
-	"Dog" "Non-dog" 1 $Dog call
-	
-Members can be retrieved by:
-
-- `$variableName.member` or
-- `$.member` if the object is on the stack
-
-So far, objects can be created and have multiple constructors, but there hasn't yet been a way to define methods for objects. In Valiance, objects do not own their methods. Rather, elements own extension methods which may be "friendly" (having full read/write access) to objects. To make an extension method friendly to an object, simply include it inside the object definition. For example, consider a rectangle object with private side size attributes:
-
-    #object Rectangle: {(!sides: Number+<4>) =>
-	  #define getPerimeter: {() -> (:Number) =>
-	    $sides sum
-	  }
-	}
-	#define errorPerimeter: {(:Rectangle) -> (:Number) =>
-	  ## $.sides ## Error: Can't access sides
-	  sum
-	}
-
-The `getPerimeter` extension method is able to read the `sides` list, even though `errorPerimeter` cannot.
-
-Note that inside a friendly extension method, members do not need to be accessed with `$.`.
-
-Friendly extension methods are called just like any other extension method:
-
-    [1, 5, 6, 2] `Rectangle` ~> rectangle
-	$rectangle getPerimeter ## 14
-
-If an extension method needs to mutate an object, it needs to make sure it returns the updated object along with any other needed information.
-
-### Function Object Members
-
-_This would have gone in the section on functions, but object members hadn't been discussed yet._
-
-Functions, being objects, have some members of their own:
-
-- `$.arity` - Gets the number of parameters a function takes
-- `$.multy` - Gets the number of values returned from a function
-- `$.in` - A tuple of all types in the function's parameters
-- `$.out` - A tuple of all types in the function's return values
-
-The last two are intended for usage in specifying types. For example:
-
-```
-#define #stack both: {(func: 𝔽) -> ($func.out, $func.out) =>
-  `@f` ~> temp
-  `f` $temp detuple
-}
-```
-
-The `.out` member will automatically be detupled, as would any references to `.in`.
-
-## Generics
-
-Valiance supports generic types to allow functions and objects to work on any kind of object. For example, consider an element that finds the position of a number in a list of numbers:
-
-```
-#define find: {
- (haystack: ℕ+, needle: ℕ) ->
- (:ℕ?) =>
-    $haystack zipIndices filter: {
-      head $needle ==
-    } first last
-}
-```
-
-Performance issues aside, this performs the desired search. However, it only works with a list of numbers. To make the find element work with strings, a new overload would need to be added:
-
-```
-#define find: {
- (haystack: String+, needle: String) ->
- (:ℕ?) =>
-    $haystack zipIndices filter: {
-      head $needle ==
-    } first last
-}
-```
-
-Notably, the body is the exact same as the numbers overload. Extending this pattern for all desired types would lead to massive codebase sizes and lots of code duplication.
-
-Generic types act as a way to define an algorithm for "some type" to be specified later. Think of it like algebra but instead of substituting numbers, you substitute types.
-
-Functions (and by extension, extension methods) and objects can use generic types. Within functions, generics are declared within the parameter list:
-
-```
-{|generics| (arguments) -> (return types) => ...}
-```
-
-A generic version of `find` from before would look like:
-
-```
-#define find: { |T|
- (haystack: T+, needle: T) ->
- (:ℕ?) =>
-    $haystack zipIndices filter: {
-      head $needle ==
-    } first last
-}
-```
-
-Generics can also be used in the parameter list. 
-
-For objects, generics come after the object name:
-
-```
-#object List[T]: {() =>
-  [] ~> items: (T|T+)+
-  0 ~> size
-}
-```
-
-### Generics and List Types
-
-The type represented by `T` will be one rank lower than the input type.
-
-For example, given the following function:
-
-```
-{|T| (list: T+) -> (:Number+) =>
-  [] ~> seen: T+
-  $list #foreach: {(item: T) =>
-    $seen $item contains not #if: {$item $seen:append}
+object Counter {
+  readable $count = 0
+  define Counter() {}
+  define Counter(initial: Number) {$count = $initial}
+  define @self increment() {
+    $count: {1+}
   }
-  $seen
-} ~> uniquify
+  define decrement() {
+    $count: {1-}
+    self
+  }
+  define @self reset() {$count = 0}
+  define toString() {$"Counter(count=$count)"}
+  define +(:Number) -> Counter {
+    
+  }
+}
+
+define CounterFrom0() {
+  Counter[]()
+}
+define doubleCounter(:Counter) {
+  Counter($.count 2 *) 
+}
+
+Counter(5) increment increment
+$c = ^
+$c.count println
 ```
 
-If `uniquify` is passed `Number+`, then `T` will be `Number`. However, if it is
-passed `Number++`, then `T` will be `Number+`.
-
-### Indexed Generics
-
-In the parameter list of a function, numbers can be used to specify taking a certain number of items from the stack. Under the hood, the popped items are automatically assigned generic types to allow for this generic behaviour. However, it may be desirable to explicitly reference the generic type of an automatically assigned generic. Therefore, `^n` will refer to the type of argument `n`. 
-
-### Other Notes
-
-- There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
-- For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
-
-## Traits
+# 15. Traits
 
 Valiance has no object inheritance, meaning that subtyping is mostly impossible (lists can be considered a subtype of a base type, but that's more vectorising than subtyping).
 
 However, allowing one type to be accepted where another is expected is a desirable feature of OOP. Therefore, Valiance includes a "trait" system, allowing objects to declare that they implement a specific set of methods. This enables any object that implements a trait to be passed where that trait is expected, granting access to all trait-defined methods and members.
 
-A trait is defined with the `#trait` keyword. The syntax is otherwise (mostly) the same as an object definition:
+A trait is defined with the `trait` keyword. The syntax is otherwise (mostly) the same as an object definition:
 
 ```
-#trait Name[Generics] implements [OtherTraits]: {
-  ## Members and required extensions go here
+trait Name[Generics] implements Traits {
+  #: Members and required extensions go here
 }
 ```
 
-Notably, the trait body does _not_ have a constructor. 
+Notably, the trait body does not have a constructor.
 
-Only extensions and members defined within the body of the trait need to be implemented by objects implenting the trait. Extensions outside of the trait body will be considered to apply to any object implementing the trait.
+Only extensions defined within the body of the trait need to be implemented by objects implenting the trait. Extensions outside of the trait body will be considered to apply to any object implementing the trait.
 
 Within the trait body, extensions may have a non-empty function body to provide a default implementation. However, all extensions must declare a set of function parameters and return types.
 
 To declare an extension that needs to be implemented:
 
 ```
-#define #required Name : {(Parameters) -> (Returns)}
+define @required Name(parameters) -> returns {...}
 ```
-
-A default implementation needs no `#required`.
+A default implementation needs no #required.
 
 To provide a concrete example of traits:
 
 ```
-#trait Comparable[T]: {
-  #define #required ===: {(this: T, other: T) -> (:Number)}
-  #define ===: {|U| (this: T, other: U) -> (:Number) => 0}
+trait Comparable[T] {
+  define @required compareTo(other: T) -> Number {}
 
-  #define #required <: {(this: T, other: T) -> (:Number)}
-  #define >: {(this: T, other: T) ->
-    $this $other 
-    fork: === <
-    both: not
-    and
+  define ===(other: T) {
+    self compareTo($other)
+    0 ===
+  }
+
+  define <(other: T) {
+    self compareTo($other)
+    -1 ===
+  }
+
+  define >(other: T) {
+    self compareTo($other)
+    1 ===
   }
 }
 
-#object Person implements [Comparable[Person]]: {($name: String, $age: Number) =>
-  #define ===: {(:Person, :Person) => both: {fork: $.name $.age pair} ===}
-  #define <: {(:Person, :Person) => both: $.age <}
+object Person implements Comparable[Person] {
+  define Person(
+    readable name: String,
+    readable age: Number
+  ) {}
+
+  define compareTo(other: Person) {
+    $age $other.age compareTo
+  }
 }
 ```
 
@@ -982,139 +1189,94 @@ When an object implements multiple traits, there may be function signature confl
 For example:
 
 ```
-#trait A: {
-  #define foo: {(:ℕ) -> (:ℕ) => 10}
+trait A: {
+  define foo(:Number) -> Number {10}
 }
 
-#trait B: {
-  #define foo: {(:𝕊) -> (:𝕊) => "Text"}
+trait B: {
+  define foo(:Number) -> Number {20}
 }
 ```
 
-An object implementing both `A` and `B` will have two clashing definitions of `foo` (`𝔽[ℕ -> ℕ]` vs `𝔽[𝕊 -> 𝕊]`). To resolve this conflict, an object has to specify an overload for each non-default-implementation extension method. The syntax for doing so is:
+An object implementing both `A` and `B `will have two clashing definitions of `foo`. To resolve this conflict, an object has to specify an overload for each non-default-implementation extension method. The syntax for doing so is:
 
 ```
-#define ~TraitName.methodName: ...
+define TraitName.methodName(...){...}
 ```
-
-Where `...` is the definition.
 
 For example:
 
 ```
-#trait A: {
-  #define #required foo: {() -> (:Number)}
+trait A: {
+  define @required foo() -> Number {} 
 }
 
-#trait B: {
-  #define #required foo: {() -> (:String)}
+trait B: {
+  define @required foo() -> String {}
 }
 
-#object MultiTrait implements [A, B]: {() =>
-  #define ~A.foo: {() -> (:Number) => 30}
-  #define ~B.foo: {() -> (:String) => "text"}
+object MultiTrait implements A, B {
+  define A.foo {30}
+  define B.foo {20}
 }
 
-`MultiTrait` ~> baz
+$baz = MultiTrait()
 
-{(:A) => foo} ~> f1
-{(:B) => foo} ~> f2
+$f1 = fn (:A) {foo}
+$f2 = fn (:B) {foo}
 
-$baz `f1` ## Returns 30 - `baz` is passed in an `A` context
-$baz `f2` ## Returns "text" - `baz` is passed in a `B` context
+$baz $f1() #: Returns 30 - `baz` is passed in an `A` context
+$baz $f2() #: Returns 20 - `baz` is passed in a `B` context
 ```
 
-If default implementations are provided, they will be automatically added to the object:
+If default implementations are provided, they will be automatically added to the object.
 
-```
-#trait A: {
-  #define foo: {() -> (:Number) => 10}
-}
-
-#trait B: {
-  #define foo: {() -> (:String) => "Text"}
-}
-
-#object DefaultTraits implements [A, B]: {() =>}
-`DefaultTraits` ~> bar
-
-{(:A) => foo} ~> f1
-{(:B) => foo} ~> f2
-
-$bar `f1` ## 10
-$bar `f2` ## "Text"
-```
-
-A similar principle applies to conflicting members:
-
-```
-#trait X: {
-  "Text" ~> foo
-}
-
-#trait Y: {
-  20 ~> foo
-}
-
-#object MultiTrait implements [X, Y]: {() =>
-  "Hello" ~> ~X.foo
-  30 ~> ~Y.foo
-}
-
-#object DefaultTraits implements [A, B]: {() =>}
-
-`MultiTrait` ~> mt
-`DefaultTraits` ~> dt
-
-{(:X) => $.foo} ~> f1
-{(:Y) => $.foo} ~> f2
-
-mt `f1` ## "Hello"
-mt `f2` ## 30
-
-dt `f1` ## "Text"
-dt `f2` ## 20
-```
-## Variants
+# 16. Variants
 
 Objects and traits provide enough object-oriented support for comfortable OOPing. However, OOP support can be taken one step further with variants (what might be called `enum`s, `sealed` classes, or sum types in other programming languages). 
 
 Variants allow for subtyping without losing guarantees of exhaustive pattern matching. In other words, a variant is like a trait which has a finite, non-extendable, number of objects implementing the trait.
 
-Variants are defined with the `#variant` keyword, and behave almost exactly the same as `#trait`s. The key difference is that `#object`s defined inside the `#variant` block will be considered subtypes of the variant.
+Variants are defined with the `variant` keyword, and behave almost exactly the same as `trait`s. The key difference is that `object`s defined inside the `#variant` block will be considered subtypes of the variant.
 
 To best illustrate the benefit of variants, compare a trait-based system for describing `Shape`s to a variant-based system:
 
 ```
-#trait Shape: {
-  #define #required area: {() -> (:Number)}
+trait Shape {
+  define @required area() -> Number {}
 }
 
-#object Circle implements [Shape]: {
-  (!radius: Number) =>
-  #define area: {$radius square 3.14 *}
+object Circle implements Shape {
+  define Circle(readable radius: Number) {}
+  define area {$radius square 3.14 *}
 }
 
-#object Rectangle implements [Shape]: {
-  (!width: Number, !height: Number) =>
-  #define area: {$width $height *}
+object Rectangle implements Shape: {
+  define Rectangle(
+    readable width: Number,
+    readable height: Number
+  ) {}
+  define area {$width $height *}
 }
 ```
 
 vs
 
 ```
-#variant Shape: {
-  #define #required area: {() -> (:Number)}
+variant Shape {
+  define @required area() -> Number {}
 
-  #object Circle implements [Shape]: {
-    (!radius: Number) =>
-    #define area: {$radius square 3.14 *}
+  object Circle {
+    define Circle(readable radius: Number) {}
+    define area {$radius square 3.14 *}
   }
 
-  #object Rectangle implements [Shape]: {
-    (!width: Number, !height: Number) =>
-    #define area: {$width $height *}
+  object Rectangle {
+    define Rectangle(
+      readable width: Number,
+      readable height: Number
+    ) {}
+    define area {$width $height *}
   }
 }
 ```
@@ -1122,198 +1284,157 @@ vs
 While there may not seem like much difference, the variant can be pattern matched without a default case:
 
 ```
-## Assuming the trait definition
+#: Assuming the trait definition
 
-#define typeOf: {(:Shape) =>
-  #match {
-    :Rectangle => "Got a rectangle",
-    :Circle => "Got a circle",
-    _ => "Huh???"
-    ## If a Triangle object were defined, there
-    ## would be no compiler error to indicate a
-    ## change is needed.
+define typeOf(:Shape) {
+  match {
+    as :Rectangle -> "Got a Rectangle",
+    as :Circle    -> "Got a Circle",
+    default       -> "Huh"??? 
   }
+  #: If a Triangle object were defined, there
+  #: would be no compiler error to indicate a
+  #: change is needed.
 }
 ```
 
 vs
 
 ```
-## Assuming the variant definition
+#: Assuming the variant definition
 
-#define typeOf: {(:Shape) =>
-  #match {
-    :Rectangle => "Got a rectangle",
-    :Circle => "Got a circle",
-    ## No need for default case
-    ## Adding a Triangle object to the variant
-    ## will raise an exhausivity error, indicating
-    ## changes are needed
+#define typeOf(:Shape) {
+  match {
+    as :Rectangle -> "Got a Rectangle",
+    as :Circle    -> "Got a Circle",
   }
+  #: No need for default case
+  #: Adding a Triangle object to the variant
+  #: will raise an exhausivity error, indicating
+  #: changes are needed
 }
 ```
 
-## Modules
+# 17. Generics
 
-The final key to making Valiance production-usable is to have a way for code to be reused between files. Modules, much like in most other programming languages, allow for code in one file to be wrapped in a nice importable unit easily accessed from other files.
-
-By default, each file is a module, and can be imported from other Valiance files. For example:
+Consider a `find` element that returns the first index of a certain `Number` in a list of `Number`s:
 
 ```
-## └── MathLib.vlnc
-
-#define abs: {(:Number) =>
-  #match: {
-    0 < => negate,
-    _ => dup
-  }
-}
-
-## Imagine there are other functions here
-```
-
-```
-## └── main.vlnc
-#import MathLib
--4 MathLib.abs
-```
-
-The name of a module is, by default, the file name with non-keyword characters removed. However, an explicit module name can be provided with the `#module` keyword. This name _must_ be the top statement, and there can only be one `#module` keyword in a file. The module name can only contain keyword characters.
-
-For example:
-
-```
-## └── SomeRandomFile.vlnc
-#module MathLib
-
-#define abs: {(:Number) =>
-  #match: {
-    0 < => negate,
-    _ => dup
-  }
+define find(haystack: Number+, needle: Number) {
+  $haystack $needle ==
+  truthyIndices
+  first getOrElse: -1 
 }
 ```
 
-(`main.vlnc` would remain unchanged)
-
-Modules can be nested by nesting the parent directories of the target file. For example:
+This works fine. But what if you wanted `find` to work with `String+` and `String`? You'd need to add a `(String+, String)` overload:
 
 ```
-## └── utils/math/operations.vlnc
-#module Operations
-```
-
-```
-## └── main.vlnc
-#import utils.math.Operations
-```
-
-### Import Specifics
-
-- `#import Name` will import the _namespace_ `Name`. All objects, traits, variants, and elements have to be accessed as `Name.<name>`
-- `#import Name: Alias` is the same as `#import Name`, but all references will need to be `Alias` instead.
-- `#import Name{attr1, attr2, ..., attrN}` will import `attr1`, `attr2`, etc, for usage without needing `Name.attr`
-- Valiance prevents circular dependencies between modules. If module A imports module B, then module B cannot import module A, either directly or through any chain of imports.
-- Attempting to import conflicting names without disambiguation will result in a compile-time error.
-
-### Module Path Resolution
-
-Valiance resolves module paths as follows:
-
-1. **Relative imports**: Paths starting with `./` or `../` are resolved relative to the importing file's location.
-   ```
-   #import ./utils  # Imports utils.vlnc from the same directory
-   #import ../common/helpers  # Goes up one directory then into common/helpers.vlnc
-   ```
-
-2. **Absolute imports**: Paths without leading `.` are resolved from project root or standard library locations.
-   ```
-   #import math.Operations  # Searches for math/Operations.vlnc in project and standard locations
-   ```
-
-3. **Search path order**:
-   - Current package directory
-   - Project root directory
-   - Standard library locations
-   - Additional directories specified in project configuration
-
-Module files must have the `.vlnc` extension, but this is omitted when importing.
-
-### Other Notes
-
-- Modules are initialised at import time, executing all top-level code in the module when the `#import` statement is processed. This ensures that any side effects (like registering handlers or initializing resources) happen predictably during program startup.
-
-## Function Annotations
-
-Just like `#define` has support for annotations like `#stack` and `#required`, functions have support for their own annotations:
-
-### `#recursive`
-
-The `#recursive` annotation allows for easier recursion within a function. The `#this` element will call the nearest scoped function with a `#recursive` annotation. For example:
-
-```
-{(:Number) #recursive =>
-  #match: {
-    0 => 1,
-    _ => {1 - #this *}
-  }
-} ~> factorial
-```
-
-Is a recursive definition of the factorial function without needing to name the function. Another example is the recursive definition of the fibonacci sequence:
-
-```
-{(:Number) #recursive =>
-  #match: {
-    | [0, 1] contains => 1,
-    _ => {fork: {1-} {2-} both: #this +}
-  }
+define find(haystack: String+, needle: String){
+  $haystack $needle ==
+  truthyIndices
+  first getOrElse: -1 
 }
 ```
 
-To call a `#recursive` function outside of the currently executing recursive function, `#this[n]` will jump `n` functions up. This should be rarely needed, as it most likely is a sign something needs refactoring.
+Note that the entire definition is the same, except for the parameter types. Also note that this apporach to extending `find` would lead to an unruly number of lines of code.
 
-### `#where`
+Generic types act as a way to define an algorithm for "some type" to be specified later. Think of it like algebra but instead of substituting numbers, you substitute types.
 
-The `#where` annotation allows for type constraints to be placed on input parameters. This is useful for cases like:
+Functions, element definitions, objects, traits, and variants can use generic types. The generic types that can be used by a generic-usable context typically come after the keyword:
+
+```
+fn[Types] (params) -> returns {}
+define[Types] name(params) -> returns {}
+object[Types] Name implements Traits {}
+trait[Types] Name implements Traits {}
+variant[Types] Name implements Traits {}
+```
+
+The `find` example from earlier would become:
+
+```
+define[T] find(haystack: T+, needle: T) {
+  $haystack $needle ==
+  truthyIndices
+  first getOrElse: -1 
+}
+```
+
+While only the types have changed, this definition of find works for any type of list and compatible needle type.
+
+## 17.1. Generics and List Types
+
+The type represented by `T` will be one rank lower than the input type.
+
+For example, given the following function:
+
+```
+$uniquify = fn[T] (list: T+) -> T+ {
+  $seen = [] as T+
+  $list foreach ($item) {
+    if ($seen contains($item)) {
+      $seen: append($item)
+    }
+  }
+  $seen
+}
+```
+
+If `uniquify` is passed `Number+`, then `T` will be `Number`. However, if it is passed `Number++`, then `T` will be `Number+`.
+
+## 17.2. Indexed Generics
+
+In the parameter list of a function, numbers can be used to specify taking a certain number of items from the stack. Under the hood, the popped items are automatically assigned generic types to allow for this generic behaviour. However, it may be desirable to explicitly reference the generic type of an automatically assigned generic. Therefore, `^n` will refer to the type of argument `n`. 
+
+## 17.3. Other Notes
+
+- There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
+- For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
+
+# 18. The `where` clause
+
+The `where` part of functions and element definitions allows for type constraints to be placed on input parameters. This is useful for cases like:
 
 - Ensuring function arities are the same while supporting variable arities
 - Specifying that a minimum rank list is `n` ranks lower than another minimum rank list
 - Calculating return types based on numerical properties of inputs
 
-If present, the `#where` must come after the return list. The annotation is followed by a `:` and a `{}` wrapped block of constraints. Each condition is separated by a comma (`,`)
+If present, the `where` must come after the return list. Each condition is separated by a comma (`,`). All conditions must be true for the function to be called. 
 
 For example:
 
 ```
-#define #stack if: {
-  (condition: Number, true: Function, false: Function)
-  -> ($true.out / $false.out)
-  #where: {
-    $true.arity $false.arity ==,
-    $true.multy $false.multy ==
-  }
-  =>
-  [$true, $false] condition index call
+define @stack ternary(
+  condition: Number,
+  onTrue: Function,
+  onFalse: Function
+) -> ($onTrue.out | $onFalse.out) where (
+  $onTrue.arity $onFalse.arity ==,
+  $onTrue.multy $onFalse.multy ==
+) {
+  [$onTrue, $onFalse]#[condition] call
 }
 ```
 
-In this example, the arity of `$true` and `$false` are guaranteed to be the same. This guarantee cannot be easily made with generics or other data types.
+In this example, the arity of `onTrue` and `onFalse` are guaranteed to be the same. This guarantee cannot be easily made with generics or other data types.
 
 Constraints can also specify properties of types. For example:
 
 ```
-#define reshape: {|T|
-  (list: T~, shape: @(Number...)) -> (:T+$n) #where: {
-    $shape length ~> n
-  } =>
-  ## Body of reshape here
+define[T] reshape(
+  xs: T~,
+  shape: (Number...)
+) -> T+$n where (
+  $n = $shape length
+) {
+  #: reshape implementation here
 }
 ```
 
-In this example the return type, an exact-rank list, is set based upon how many arguments are in the `$shape` argument. As a tuple will always have a fixed length at compile time, this constraint can be checked and utilised at compile time.
+In this example the return type, an exact-rank list, is set based upon how many arguments are in the `shape` argument. As a tuple will always have a fixed length at compile time, this constraint can be checked and utilised at compile time. These conditions will always return true.
 
-Operations allowed in the `#where` annotation are:
+Operations allowed in the `where` clause are:
 
 - Basic math (`+`, `-`, `*`, `/`)
 - `dup` / `^`
@@ -1328,116 +1449,445 @@ Operations allowed in the `#where` annotation are:
 
 This list may be expanded in the future.
 
-#### Dynamic Types
+## 18.1. Dynamic Types
 
 In the above examples, there were some unusal return types:
 
-- `$true.out / $false.out`
+- `$onTrue.out | $onFalse.out`
 - `T+$n`
 
 These types are dynamic in that they are not known when writing the types. They are in fact known at compile time.
 
-`$` followed by a variable name and potentially a member access will make the variable value part of the type. The value must fit in the context of the type: `T+$true.out` would cause a compile error, because a function's outputs are not a number. `$n / $false.out` would cause a compile error, because a number is not a type.
+`$` followed by a variable name and potentially a member access will make the variable value part of the type. The value must fit in the context of the type: `T+$true.out` would cause a compile error, because a function's outputs are not a number. `$n | $false.out` would cause a compile error, because a number is not a type.
 
-## Advanced Tuple Destructuring
+## 18.2. A Note on Variadic  Tuples
 
-Valiance makes it easy to work with structured data — for example, lists of records or tuples.
-Many languages require explicit loops to pull data out of records. In Valiance, this happens automatically through tuple destructuring.
+In the `reshape` example, the `shape` parameter has type `(Number...)`. This accepts a tuple of any length to be passed to `shape`.
 
-### Destructuring a Single Tuple
+Generally speaking, `(T...)` is a tuple of any number of `T`s, and is called a 'varadaic tuple'.
 
-You can destructure a tuple in a function parameter like this:
+A variadic  tuple will always contain a finite number of items, but that number will be unknown to most compile time contexts. The only exception is the `where` clause, which can determine properties like tuple length from the functions arguments. However, a `where` clause, when given a variadic tuple where a variadic tuple is expected, will not be able to determine the length of the tuple, and will return a compiler error.
 
-```
-{(@(x: Number, y: Number)) => $x $y }
-```
+# 19.  Annotations
+## 19.1. `@recursive`
 
-If this function receives a tuple such as:
+The `@recursive` annotation allows for easier recursion within a function. The `this` element will call the nearest scoped function with a `@recursive` annotation. For example, this is a recursive factorial program:
 
 ```
-(x: 3.5, y: 7.2)
+$factorial = fn @recursive (:Number) -> Number {
+  match {
+    exactly 0 -> 1,
+    default   -> this(1 -) *
+  }
+}
 ```
 
-then `x` and `y` will be available as local variables with those values.
-
-
-### Destructuring Lists of Tuples
-
-More commonly, you will want to process a list of tuples — for example:
+This is a recursive fibonacci element:
 
 ```
-[(x: 1, y: 10), (x: 2, y: 20), (x: 3, y: 30)]
+define @recursive fib(:Number) -> Number {
+  match {
+    if [0 1] contains -> 1,
+    default -> fork: decrement {2-}
+               both: this()
+               +
+  }
+}
 ```
 
-You can write:
+Note that using `this` outside of a `@recursive` function/element is a compile error.
+
+If you need to recurse to a function outside the current recursive scope, you'll need to capture it by quoting `this` and storing it in a variable:
 
 ```
-{(@(x: Number, y: Number)+) => ... }
+fn @recursive (:Number) {
+  $outer = 'this
+  fn @recursive (:Number) {
+    $outer()
+  }
+}
 ```
 
-The result is that `x` and `y` will each be a list of values:
+However, such recursion is usually an indicator that something has gone wrong.
+
+## 19.2. `@stack`
+
+Sometimes, an element cannot be expressed in terms of a function with fixed inputs and outputs. For example, higher-order functions requiring variadic stack manipulation are impossible to represent, with function overloads only able to cover a finite subset of use-cases.
+
+Take for example the `dip` higher-order function. `dip` takes a function, stashes the top of the stack, performs that function, and then pushes the stashed top back to the stack.
+
+Consider first an implementation of `dip` for monads:
 
 ```
-x = [1, 2, 3]
-y = [10, 20, 30]
+define[T, U, V] dip(
+  :T,
+  top: V,
+  fn: Function[T -> U]
+) -> U, V {
+  $fn() $top
+}
 ```
 
-This lets you easily pull out "columns" from a list of records — with no loops, no iteration.
-
-
-### Higher-Rank Lists of Tuples
-
-If your data is nested — e.g. lists of lists of tuples — you can use ++:
+This could be extended to dyads as:
 
 ```
-{(@(x: Number)++) => $x }
+define[T, U, V, W] dip(
+  :T, :U,
+  top: W,
+  fn: Function[T, U -> V],
+) -> V, W {
+  $fn() $top
+}
 ```
 
-This will extract an array of the same shape as the input — a list of lists of the `x` field.
+And triads as:
 
+```
+define[T, U, V, W, X] dip(
+  :T, :U, :V,
+  top: X,
+  fn: Function[T, U, V-> W]  
+) -> W, X {
+  $fn() $top
+}
+```
 
+Evidently, this pattern quickly grows unruly. Additionally, these definitions only work for input functions with multiplicity 1 - different multiplicities would require even more overloads.
 
-## Named Dimensions
+One solution might be to use a `where` clause:
+
+```
+define[T] dip(
+  args: $in,
+  ignore: T,
+  func: Function
+) -> T, $func.out
+) where (
+  $in = $func.in
+) {
+  $top = \
+  $func()
+  $top \
+}
+```
+
+But that's horribly verbose, and requires a lot of forethought, more so than explicit ceremony makes useful. 
+
+To this end, elements can have a `@stack` annotation added to indicate that the element definition will operate on whatever is the stack when the element is called. For example, `dip` becomes:
+
+```
+define @stack dip(fn: Function) {
+  $temp = ^
+  $fn()
+  $temp
+}
+```
+
+When a stack element is called, the element code is type checked against the current stack state. In this way, stack elements are kind of like macros. However, variables defined within a stack element are local to that element, and do not persist after the element is finished.
+
+Some important notes:
+
+- Unlike normal functions and elements, `@stack` functions/elements do _not_ push named arguments to the stack. This design decision reduces the number of `pop`s needed in stack functions/elements.
+- The return of a `@stack` function/element is the state of the stack.
+- A `@stack` function/element is type-checked at call site, rather than at definition site.
+- When an argument is a `Function`, it need not have its type parameters specified.
+
+Some other examples of potential `@stack` elements include:
+
+```
+#:{
+  x y both: F --> F(x) F(y)
+}:#
+define @stack both(fn: Function) {
+  $temp = @tupled $fn() #: Store results of fn in tuple instead of pushing all to stack
+  $fn() $temp detuple
+}
+
+#:{
+  x y fork: F G --> F(...) G(...)
+}:#
+define @stack fork(f: Function, g: Function){
+  $res1 = peek: @tupled $f()
+  $res2 = @tupled $second()
+  merge($res1, $res2)
+  detuple
+}
+
+#:{
+  x y correspond: F G --> F(x) G(y)
+}:#
+define correspond(f: Function, g: Function) {
+  $temp = @tupled $f()
+  @tupled $g()
+  $temp \
+  both: detuple
+}
+```
+
+## 19.3. `@tupled`
+
+In the `@stack` annotation examples, there was a new annotation: `@tupled`.
+
+This annotation makes the next operation return its results in a tuple, rather than on the stack. This is primarily useful for operations that may return more than 1 value.
+
+For example:
+
+```
+define foo() -> Number, Number {
+  6 7
+}
+
+foo #: Just pushes 6 7 to the stack
+@tupled foo #: Pushes (6, 7)
+```
+
+The neat thing is that the length of the tuple is known at compile time because it's just what would have been pushed to the stack, something which is _always_ known.
+
+`@tupled` on an element that does not return anything pushes an empty tuple (`()`).
+
+# 20. Modules
+
+An important tenet of modern software engineering is code reuse. Write an element once, use it everywhere. Valiance's module system enables organising code across multiple files while maintaining clarity and type safety.
+
+## 20.1. Basic Example
+
+Consider a simple greeting module:
+
+```valiance
+#: in file "greetings.vlnc"
+
+define greet(name: String) {
+  println($"Hello, $name!")
+}
+```
+
+To use this module in another file:
+
+```valiance
+#: in file "main.vlnc"
+
+import greetings
+
+greetings.greet("Joe") #: Prints "Hello, Joe!"
+```
+
+The module name is derived directly from the filename. The file `greetings.vlnc` becomes the module `greetings`.
+
+## 20.2. Import Types
+
+Valiance supports four distinct import styles, each serving different organisational needs.
+
+### 20.2.1. Namespace Import
+
+The most straightforward import style brings an entire module into scope. All items from the module must be accessed through the module's namespace:
+
+```valiance
+import collections
+
+collections.Stack()
+collections.HashMap()
+collections.find([1, 2, 3], 2)
+```
+
+This approach keeps the origin of each element clear and avoids naming conflicts.
+
+**Note:** If `find` were a `Stack`-friendly element (defined within the `Stack` object's scope), it would be available without the namespace prefix after importing. Object-friendly elements automatically follow their objects into scope. See section 20.4 for details.
+
+### 20.2.2. Aliased Namespace Import
+
+When a module name is long or conflicts with existing names, an alias provides a shorter reference:
+
+```valiance
+import andesite as ands
+
+ands.Router()
+ands.serve(8080)
+```
+
+The alias replaces the module name entirely — the original name becomes unavailable.
+
+### 20.2.3. Specific Import
+
+For frequently-used elements, specific imports eliminate the need for namespace prefixes:
+
+```valiance
+import collections: Stack, find, contains
+
+Stack()                           #: No prefix needed
+find([1, 2, 3], 2)               #: No prefix needed
+collections.other()              #: Other items still namespaced
+```
+
+Multiple items can be imported by separating them with commas. Items not listed in the import must still use the namespace prefix.
+
+### 20.2.4. Parsed Import
+
+_This feature will be a long-term goal. It needs more planning and idea-testing. It's listed here for completness and conceptual brainstorming._
+
+Valiance extends imports beyond `.vlnc` files through parsed imports. A parsed import statically loads and transforms a file at compile time using a specified parser module:
+
+```valiance
+import "config.json" as Config using json
+import "words.txt" as WORDS using files.textlines
+import "layout.gnite" as layout using granite
+```
+
+The `using` clause specifies a module that implements the parsing logic. The parser transforms the file's contents into typed Valiance values during compilation, providing full type safety without runtime parsing overhead.
+
+For example, `using json` might transform a JSON file into a `Dictionary`, while `using files.textlines` reads a text file as `String+`. The exact type depends on the parser's implementation.
+
+Parsed imports enable embedding configuration, data, and even domain-specific languages directly into Valiance programs with compile-time validation.
+
+## 20.3. Import Syntax
+
+The formal syntax for imports is:
+
+```ebnf
+ImportStatement = "import" (ModuleImport | ParserImport)
+ModuleImport = Name [("as" Name) | (":" Name {COMMA Name})]
+ParserImport = StringLiteral "as" Name "using" Name
+```
+
+Import statements occupy a single line and must appear before any other code in the file.
+
+Examples:
+
+```valiance
+import random
+import andesite as ands
+import collections: Stack, find
+import json
+import "config.json" as Config using json
+import "data.csv" as DATA using csv.parse
+```
+
+## 20.4. Object Imports and Automatic Element Inclusion
+
+When importing an object, all object-friendly elements (those defined within the object's scope) are automatically included in the importing file's overload table. This happens regardless of import style — namespace, aliased, or specific imports all trigger this behavior.
+
+```valiance
+import collections
+
+collections.Stack()      #: Constructor needs namespace
+$stack = collections.Stack()
+push($stack, 5)         #: Object-friendly element - no namespace!
+pop($stack)             #: Also no namespace needed
+
+collections.find([1, 2, 3], 2)  #: Not Stack-friendly, needs namespace
+```
+
+The key distinction: object-friendly elements are those defined *within* the object's definition block. Regular module elements remain namespaced.
+
+```valiance
+#: In collections.vlnc
+object Stack {
+  define push(s: Stack, item: T) { ... }  #: Object-friendly
+  define pop(s: Stack) { ... }            #: Object-friendly
+}
+
+define find(list: T+, item: T) { ... }    #: Not object-friendly, just in module
+```
+
+This behavior keeps object methods and the objects themselves conceptually unified. There's no need to separately import each method — they follow the object naturally, while unrelated module elements stay namespaced.
+
+## 20.5. Restrictions
+
+**Circular Imports:** Valiance does not support circular imports. If module A imports module B, module B cannot import module A. This restriction encourages better module design and clearer dependency hierarchies.
+
+**No Wildcard Imports:** Valiance intentionally omits an "import all" feature. Every import must be explicit — either through namespace imports or specific element lists. This prevents namespace pollution and keeps dependencies clear.
+
+**Module Names from Filenames:** A module's name is always its filename (without the `.vlnc` extension). There is no mechanism to override this within the file. To change a module name, rename the file. This constraint ensures file structure and import statements stay synchronized.
+
+## 20.6. Practical Guidelines
+
+When organising a project:
+- Use namespace imports by default to keep origins clear
+- Use specific imports for frequently-used utilities
+- Use aliased imports when module names are unwieldy
+- Use parsed imports for embedding configuration and data files
+- Structure directories to reflect logical module groupings
+
+For example, a project might have:
+```
+src/
+  main.vlnc
+  utils/
+    math.vlnc
+    string.vlnc
+  data/
+    models.vlnc
+  config.json
+```
+
+And `main.vlnc` might import:
+```valiance
+import utils.math: sin, cos
+import utils.string as str
+import data.models
+import "config.json" as Config using json
+```
+
+The module system balances explicitness with convenience, ensuring that code reuse never comes at the cost of clarity.
+
+# 21. Named Dimensions
+
+_For justification of why this exists, https://nlp.seas.harvard.edu/NamedTensor.html and https://math.tali.link/rainbow-array-algebra/ serve as good reading. After all, the ideas presented in both are the foundation for this concept_
+
+_Also, this will probably be implemented a long way down the line. It'll need a lot of refinement. It's presented here to give an idea of direction._
 
 When working with multidimensional data — images, time series, or higher-rank arrays — it’s helpful to label each dimension by name.
 
 Valiance lets you do this with named dimensions.
 
-### Syntax
+## 21.1. Syntax
 
 You can give names to dimensions using this type syntax:
+
+```
+T@[dimension]
+T@[dimension: [subcomponent1, subcomponent2]]
+```
+
+For example:
 
 ```
 Number@[x, y]
 ```
 
-This represents a 2D array of numbers with dimensions named `x` and `y`.
+Creates a rank-2 list with dimensions `x` and `y`.
 
-### Destructured Dimensions
+You can type-cast to named dimensions:
+
+```
+random.sample(size = (3, 100, 100))
+$image = ^ as Number@[channel: [R, G, B], height, width]
+```
+
+## 21.2. Destructured Dimensions
 
 You can destructure a dimension to give names to its parts:
 
 ```
-Number@[channel: [R, G, B], width, height]
+fn (image: Number@[channel: [R, G, B], width, height]) {
+}
 ```
 
 Here:
 
-```
-channel is a dimension of size 3
-
-The parts of channel are named R, G, B
-```
+- `channel` is a dimension of size 3
+- The parts of channel are named R, G, B
 
 Now you can refer to these parts by name in your code:
 
 ```
-$R  ## equivalent to $.image.channel.R
+$R  #: equivalent to $image.channel.R
 $G
 $B
 ```
 
-### Working with Dimensions
+Accessing a dimension will push a reference to that dimension.
+
+## 21.3. Working with Dimensions
 
 Named dimensions are first-class properties of the value — you can access them:
 
@@ -1449,24 +1899,26 @@ $image.width
 You can also perform dimension-aware operations:
 
 ```
-#import dimensions
+import dimensions
 
-{(image: Number@[channel: [R, G, B], width, height]) =>
+fn (image: Number@[channel: [R, G, B], width, height]) {
   $image dimensions.over: {$image.channel} {max}
-  ## returns a [width, height] list of max value per channel
+  #: returns a [width, height] list of max value per channel
 }
 ```
 
 Or:
 
 ```
-{(data: Number@[location, time]) =>
+import dimensions
+
+fn (data: Number@[location, time]) {
   $data dimensions.over: {$data.time} {avg}
-  ## returns average per location
+  #: returns average per location
 }
 ```
 
-### Rank and Compatibility
+## 21.4.  Rank and Compatibility
 
 Using named dimensions is equivalent to specifying an exact rank:
 
@@ -1478,4 +1930,103 @@ is exactly like `Number++`.
 
 If you pass a higher-rank array, the function will vectorize over the extra dimensions.
 
-You can’t mix named dimensions with tuple destructuring — they apply to different shapes.
+When passing an a value with already named dimensions to a function specifying dimension names, it will match the dimensions by structure.
+
+```
+import dimensions
+
+#: Imagine there's something pushing data to the stack here
+$image = ^ as Number@[ch: [R, G, B], h, w]
+
+define grayscale(img: Number@[channel: [R, G, B], height, width]) -> Number@[height, width] {
+  dimensions.over($channel): {
+    [0.2989, 0.5870, 0.1140] dotProduct
+  }
+}
+
+grayscale($image) #: channel = ch, height = h, width = w
+```
+
+# 22. Conclusion
+
+Valiance, as outlined in this language overview, shows how array languages can be presented as mainstream software. By striving to look like normal every-day production code, Valiance positions itself for integration into codebases of all kinds.
+
+While this overview is not complete - sections need to be exapnded, the grammar needs to be formalised, and the implementation details are non-existant - it gives a pretty good insight into the design direction and planned features of Valiance.
+
+Some day soon, this document will need to be rewritten to account for the finished state of the language. See you then :)
+
+# Appendix A. Epilogue - Design Philosophy
+
+_But wait...there's more!_
+
+As mentioned in the introduction, the fundamental tenet of Valiance is that it should be a tool of *doing* rather than a tool of *thought*.
+
+A long time ago, a man named Kenneth Iverson laid the foundations for modern-day array programming. Seeing that programming languages of his time were "decidedly inferior" to mathematical notation in providing clarity of thought, he devised a new programming notation. A programming notation that encompassed the expressiveness and economy of mathematics while still serving as an unambiguous and precise means of computing.
+
+Thus, array programming, and APL were created. The primary idea was to forgo the ceremony of programming boilerplate in favour of expressing programs in their rawest form - as if they were mathematical formulas. Where a conventional programming language might take 6 _lines_ of code to express a function, APL could do it in 6 _characters_ of code. 
+
+This new style of programming allowed thoughts to be expressed without the fuss of pleasing language compilers and interpreters with needless syntax constructs. The ability to communicate complex concepts in an ultra-minimalistic manner was revolutionary.
+
+Yet this revolution never seeped into mainstream software development. Certainly, it found an outlet in array programming libraries like NumPy and programming languags with excellent array support like Julia. But the world is not using dedicated array languages for critical software applications.
+
+Iverson's vision succeeded brilliantly at its intended purpose: making computational thinking clearer and more concise. But it prioritised exploration over execution, elegance over engineering. Array languages became temples of thought rather than tools of work.
+
+Indeed, what Iverson — and much of academia — overlooked is that software isn’t just _programs_. It’s systems, users, integrations, and change. It lives in deployment pipelines and user interfaces, not just in proofs and REPLs. Mathematicians and computer scientists may have treated programs as abstract artefacts of reasoning; the rest of us have to ship them, maintain them, and share them with other software developers. Realisitically, software requires more than the thought of a program — it requires a notation that supports _doing_.
+
+That's where Valiance steps in. It relaxes some of the thought-centric language design features of traditional array languages and reintroduces mainstream programming constructs familiar to the average software developer.
+
+## A.1. Specific Design Rationales
+
+### A.1.1. Words Instead of Glyphs
+
+A common outsider critique of array languages is that they are "line noise" languages, write-only and terribly unreadable. One look at a typical array language program should reveal from where this complaint stems: the multitude of squiggles and glyphs comprising the primitives of the language. It would not be unreasonable for, say, an APL program to be mistaken for a malformed hex dump. 
+
+Of course, as any array language user will correctly tell you, this critique is completely ignorant of the fact that readability is fully subjective. Over time, the random squiggles become just as meaningful as words. 
+
+Yet dismissing such critiques as wholly ignorant is itself an act of ignorance. While they may be based in a refusal to explore new concepts at a greater depth, syntax based exclusively on glyphs (the non-word kind) isn't necessarily a good thing. 
+
+For example, almost any software engineer who's ever studied the tenets of maintainability knows that single-letter variable names are a major code smell. The moment the context of each variable is forgotten, understanding the true meaning of a greater program becomes a time-sinking puzzle. 
+
+Admittedly, primitives have an automatic external context rarely granted to variables. There is a single unified reference for what each glyph means, reducing the amount of time needed to figure out what each symbol does. But why make things more difficult than they need to be. Sacrificing total brevity for a little more readability isn't a totally bad thing. 
+
+### A.1.2. List Model Instead of Rectangular Array Model 
+
+I'm not going to sugarcoat the real reason Valiance uses a list model: lists are easy.
+
+Easy to work with, easy to conceptualise, and easy for people coming from mainstream programming languages.
+
+Fun fact: a large fraction of developers report using JavaScript, which defaults to lists. While not perfectly representative of all developers, it’s a strong indicator that lists are familiar to many programmers
+
+People know lists. People know the fundamentals of append, remove, and index. That's it. There's no worrying about a mapped operation returning arrays of different lengths, no need to have weird overlap between true rectangular arrays and rugged arrays, and no need to be concerned about the otherwise hidden shape-type system.
+
+That last point is an interesting one. What a lot of people probably don't realise is that array shape is a (commonly de facto) type system. Much like a type system, operations error if the input shapes are not compatible. And like a normal type system, static annotations greatly increases software quality by decreasing the chances for unexpected type bugs, and by increasing the maintainability of the software.
+
+However, shape is hard to statically annotate - dynamic shape is immensely useful but impossible to specify at compile time. Languages like Futhark, Remora, and Dex all focus on shape as a compile-time type, but they all decrease the ease of writing versatile functions.
+
+A list model avoids the shape problem by just, well, _not_ having shape. Lists don't care if all items have different lengths. They only care about rank. 
+
+And in a way, that's more array-programming-esque than arrays. The major draw of array programming is its heavy emphasis on rank-polymorphism. With arrays, one has to juggle both rank and shape, detracting from a rank-only experience. Lists inherently simplify the whole process.
+
+Need I _list_ any more reasons why Valiance is a list-model language?
+
+# Appendix B - Reserved Keywords 
+
+```
+define
+match
+object
+trait
+variant
+import
+as
+while
+foreach
+if
+this
+fn
+call
+self
+public
+private
+readable
+```

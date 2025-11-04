@@ -1,12 +1,22 @@
 # The Valiance Programming Language
 
-Array languages are cool, but horribly unoptimised for mainstream usage.
-Valiance rectifies this by providing a stack-based array language
-that has been designed with mainstream appeal in mind.
+Valiance is a stack-based array language that moves beyond the traditional "notation as a tool of thought" dogma into "notation as a tool of _doing_". More specifically, Valiance takes the aspects of Iversonian array languages that provide such beautiful clarity of thought and balances them with practicality.
 
-It is boring compared to other array languages, but that's the point. We don't
-need production code to look like a hex dump experiment, nor does it need to
-be something that is an "adventure". It just needs to work. Valiance does that.
+The defining features of Valiance are that it:
+
+- Provides an inherently integrated interface to the array programming paradigm, while still being useful for software development.
+- Favours conceptual brevity over literal brevity.
+- Intentionally incorperates other programming paradigms like Object-Oriented and Functional Programming, rather than tacking them on as afterthoughts.
+- Comes with a large suite of pre-made built-ins, rather than forcing users to build from a limited set of primitives.
+- Strives to be accessible to more than just mathematicians and array-language fanatics.
+
+Ultimately, Valiance acts to elevate array languages beyond rough sketches and algorithmatic prototypes. Valiance brings array languages to the software development table.
+
+For more information, check out the [Language Overview](docs/overview.md).
+
+## But Where's the Exact Specification?
+
+That, unfortunately, does not yet exist. I only just finished the rewrite of the language overview. I need time to actually write the specs.
 
 ## But Where's the Code?
 

@@ -1,7 +1,0 @@
-- Variables are set with `=name`
-- There can be any number of spaces between the equal sign and name, so long as the next non whitespace character is a letter
-- Variable values are retrieved with `$name`
-- Local variables only, no globals 
-- Locals from outer scopes can be read, but not written
-- Types of variables inferred upon assignment. Once a variable has a type, it is an error to assign a non compatible type.
-- Type can also be specified upon assignment, `=name: T`. The colon indicates that the type name is next. 
