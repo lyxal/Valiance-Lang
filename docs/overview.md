@@ -179,20 +179,19 @@ Attempting to retrieve a key that is not present in a dictionary is a runtime er
 The syntax for dictionaries is:
 
 ```
-DictionaryStructure := "#{" [
-  Value EQUAL Value {Value} {COMMA Value EQUAL Value {Value}}
-] R_PAREN
+DictionaryStructure := "[" [
+  Value EQUAL Value {Value} {COMMA Value EQUAL Value {Value}
+] "]"
 ```
 
 Valid examples of dictionaries include:
 
 ```
-#{}
-#{
+[
   "name" = "Joe",
   (10, 20) = [1, 2, 3],
   "x" "y" + = 3 4 +
-}
+]
 ```
 
 # 4. Types 
@@ -229,7 +228,7 @@ The distinction is straightforward: `+` describes an exact shape, while `*` desc
 
 Irregular, or “ragged,” lists are represented using the tilde operator (`~`). A `T~` value can contain `T`, or lists of `T`, or any further combinations thereof. Basically, items of `T~` are `T|T~`. Multiple tildes (`T~~`, `T~3`, etc.) extend the level of nesting. These notations allow ragged and regular data to share the same conceptual framework.
 
-To explicitly mark something as *not* a list, Valiance uses the `!` operator. `T!` denotes a strictly atomic `T` — a single value that will never be treated as a list. For specifying bounded complexity, `T<m, n>` represents any value between depths `m` and `n` inclusive.
+To explicitly mark something as *not* a list, Valiance uses the `!` operator. `T!` denotes a strictly atomic `T` — a single value that will never be treated as a list.
 
 The absolute base type of a list can be represented as `T_`.
 
@@ -876,7 +875,7 @@ Note that it removes the initial copies of the stack pattern. This makes the `_`
 
 ```
 fn (ns: Number+, target: Number) -> :Number+ {
-  $ns filter: {<` $target}
+  $ns filter: {$target <}
 }
 ```
 
@@ -971,7 +970,7 @@ fn validateNumberFromString(num: String) {
   $num parseInt
   assert {^ notNone} else {"Input not numeric"}
   $parsed = unwrap #: Number, but safe
-  assert {$parsed >` 0} else {"Negative number"}
+  assert {$parsed 0 >} else {"Negative number"}
   $parsed
 }
 ```

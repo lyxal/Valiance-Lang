@@ -1,0 +1,297 @@
+Program
+    = { Statement };
+
+Statement
+    = { VariableAssignment
+    | ConstantAssignment
+    | AugmentAssignment
+    | Expression
+    | DefineStatement
+    | ObjectStatement
+    | TraitStatement
+    | VariantStatement
+    | ImportStatement
+    | SingleLineComment
+    | MultiLineComment };
+
+SingleLineComment
+    = "#:", { ?Any char except newline? }, "\n";
+
+MultiLineComment
+    = "#:{", { ?Any char except '}:#'? }, "}:#";
+
+VariableAssignment
+    = "$", Identifier, "=", Expression, { Expression }, "\n";
+
+ConstantAssignment
+    = "const", VariableAssignment;
+
+AugmentAssignment
+    = "$", Identifier, ":", ( Element
+    | ( "{", { Statement }, "}" ) );
+
+Expression
+    = { NumericLiteral
+    | StringLiteral
+    | [ "@tupled" ], Element, [ Generics ], [ ElementCall ], [ Modifier ]
+    | Function
+    | List
+    | Tuple
+    | VariableReference
+    | Duplicate
+    | Swap
+    | IfExpression
+    | MatchExpression
+    | BranchExpression
+    | Assert
+    | ForeachExpression
+    | WhileExpression
+    | TemplateString
+    | AsExpression
+    | QuickFunction };
+
+Identifier
+    = ( Letter
+    | "_" ), { Letter
+    | Digit
+    | "_" };
+
+Letter
+    = ?A-Z?
+    | ?a-z?;
+
+Digit
+    = ?0-9?;
+
+NumericLiteral
+    = Decimal, [ "i", Decimal ];
+
+Decimal
+    = [ "-" ], Number, [ ".", Number ];
+
+Number
+    = "0"
+    | ( ( ?1-9? ), { ?0-9? } );
+
+StringLiteral
+    = '"', { ?Non double quote?
+    | '\"' }, '"';
+
+Element
+    = ElementFirstChar, { ElementChar };
+
+ElementFirstChar
+    = ?A-Z?
+    | ?a-z?
+    | "-"
+    | "+"
+    | "*"
+    | "%"
+    | "!"
+    | "?"
+    | "="
+    | "/"
+    | "&"
+    | "<"
+    | ">";
+
+ElementChar
+    = ElementFirstChar
+    | ?0-9?;
+
+ElementCall
+    = "(", [ ElementCallArgument, { ",", ElementCallArgument } ], ")";
+
+ElementCallArgument
+    = ( [ Identifier, "=" ], { Expression } )
+    | "_"
+    | "#";
+
+Modifier
+    = ":"
+    | "~";
+
+Duplicate
+    = "^", [ StackShuffle ];
+
+Swap
+    = "\\", [ StackShuffle ];
+
+StackShuffle
+    = "[", ( Identifier
+    | "_" ), { ",", ( Identifier
+    | "_" ) }, "->", [ Identifier, { ",", Identifier } ], "]";
+
+QuickFunction
+    = "'", Element;
+
+Function
+    = "fn", [ Generics ], [ Annotations ], [ "(", [ Identifier ], ":", FunctionTypeParam, { ",", [ Identifier ], ":", FunctionTypeParam }, ")" ], [ "->", [ FunctionTypeParam, { ",", FunctionTypeParam } ] ], [ WhereClause ], "{", { Statement }, "}";
+
+WhereClause
+    = "where", "(", Expression, { ",", Expression }, ")";
+
+FunctionTypeParam
+    = Type, [ "*", Number ];
+
+Generics
+    = "[", [ Identifier, { ",", Identifier } ], "]";
+
+List
+    = "[", [ { Expression }, { ",", { Expression } } ], "]";
+
+Tuple
+    = "(", [ { Expression }, { ",", { Expression } } ], ")";
+
+VariableReference
+    = "$", ( Identifier, [ ".", Identifier, { ".", Identifier } ] )
+    | ( ".", Identifier, { ".", Identifier } );
+
+Type
+    = UnionType;
+
+UnionType
+    = IntersectionType, { "|", IntersectionType };
+
+IntersectionType
+    = PrimaryType, { "&", PrimaryType };
+
+PrimaryType
+    = ( SimpleType
+    | GenericType
+    | TupleType ), [ TypeModifiers
+    | NamedDimensionType ]
+    | "(", Type, ")";
+
+NamedDimensionType
+    = "@[", NamedDimensions, "]";
+
+NamedDimensions
+    = Identifier, { ",", Identifier }, [ ":", "[", Identifier, { ",", Identifier }, "]", { ",", Identifier } ];
+
+TupleType
+    = "(", [ Type, { ",", Type }, [ "..." ] ], ")";
+
+SimpleType
+    = Identifier;
+
+GenericType
+    = SimpleType, "[", Type, { ",", Type }, "]";
+
+TypeModifiers
+    = RankModifier, { "?" }, [ NonListModifier ];
+
+RankModifier
+    = ( "+"
+    | "~"
+    | "*" ), { "+"
+    | "~"
+    | "*" }, [ Number ];
+
+NonListModifier
+    = "!"
+    | "_";
+
+MatchExpression
+    = "match", "{", [ MatchCase, { ",", MatchCase } ], "}";
+
+MatchCase
+    = ( ( MatchBranchType, { Expression } )
+    | MatchAsBranch
+    | MatchPatternBranch ), "->", Program;
+
+MatchBranchType
+    = "exactly"
+    | "if"
+    | "default";
+
+MatchAsBranch
+    = "as", ( VariableReference, [ ":", Type ] )
+    | ( ":", Type );
+
+MatchPatternBranch
+    = "pattern", TemplateString
+    | PatternList
+    | PatternTuple;
+
+TemplateString
+    = "$", StringLiteral;
+
+PatternList
+    = "[", [ PatternElement, { ",", PatternElement } ], "]";
+
+PatternTuple
+    = "(", [ PatternElement, { ",", PatternElement } ], ")";
+
+PatternElement
+    = ( Expression
+    | [ VariableReference, "=", ( "_"
+    | "..." ) ]
+    | "_"
+    | "..." );
+
+Assert
+    = "assert", "{", { Expression }, "}", [ AssertElse ];
+
+AssertElse
+    = "else", "{", { Expression }, "}";
+
+IfExpression
+    = "if", "(", { Expression }, ")", "{", { Statement }, "}";
+
+BranchExpression
+    = "branch", "(", { Expression }, ")", "{", { Statement }, "}", "{", { Statement }, "}";
+
+ForeachExpression
+    = "foreach", "(", VariableReference, ")", "{", { Statement }, "}";
+
+WhileExpression
+    = "while", "(", { Expression }, ")", "{", { Statement }, "}";
+
+DefineStatement
+    = "define", [ Generics ], [ Annotations ], { Identifier, "." }, Identifier, "(", [ Identifier, ":", FunctionTypeParam, { ",", Identifier, ":", FunctionTypeParam } ], ")", [ "->", [ FunctionTypeParam, { ",", FunctionTypeParam } ] ], [ WhereClause ], "{", { Statement }, "}";
+
+ObjectStatement
+    = "object", [ Generics ], Identifier, [ "implements", Traits ], "{", { ObjectMember
+    | ObjectConstructor
+    | Statement }, "}";
+
+ObjectMember
+    = AccessModifier, VariableAssignment;
+
+AccessModifier
+    = "public"
+    | "private"
+    | "readable";
+
+ObjectConstructor
+    = "define", Identifier, "(", [ [ AccessModifier ], Identifier, ":", FunctionTypeParam, { ",", [ AccessModifier ], Identifier, ":", FunctionTypeParam } ], ")", "{", { Statement }, "}";
+
+TraitStatement
+    = "trait", [ Generics ], Identifier, [ "implements", Traits ], "{", { Statement }, "}";
+
+Traits
+    = Identifier, { ",", Identifier };
+
+VariantStatement
+    = "variant", Identifier, "{", { Statement }, "}";
+
+ImportStatement
+    = "import", ( ModuleImport
+    | ParserImport );
+
+ModuleImport
+    = Identifier, [ ( "as", Identifier )
+    | ( ":", Identifier, { ",", Identifier } ) ];
+
+ParserImport
+    = StringLiteral, "as", Identifier, "using", Identifier;
+
+Annotations
+    = { Annotation };
+
+Annotation
+    = "@", Identifier;
+
+AsExpression
+    = "as", Type;
