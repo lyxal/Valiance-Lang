@@ -76,12 +76,12 @@ A single line comment begins with `#:` and continues until the next newline char
 
 ### 3.2.2. Multiple Line Comments
 
-A multiple-line comment starts with `#:{` and continues until a matching `}:#` is reached. 
+A multiple-line comment starts with `#{` and continues until a matching `}#` is reached. 
 
 ```
-#:{ This is a comment
+#{ This is a comment
 that continues over
-multiple lines. }:#
+multiple lines. }#
 ```
 
 ## 3.3. Numbers
