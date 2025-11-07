@@ -99,7 +99,9 @@ ElementFirstChar
 
 ElementChar
     = ElementFirstChar
-    | ?0-9?;
+    | ?0-9?
+    | "~"
+    | "?";
 
 ElementCall
     = "(", [ ElementCallArgument, { ",", ElementCallArgument } ], ")";

@@ -2009,21 +2009,23 @@ Need I _list_ any more reasons why Valiance is a list-model language?
 # Appendix B - Reserved Keywords 
 
 ```
-define
-match
-object
-trait
-variant
-import
 as
-while
+call
+define
+fn
 foreach
 if
-this
-fn
-call
-self
-public
+implements
+import
+match
+object
 private
+public
 readable
+self
+this
+trait
+variant
+where
+while
 ```
