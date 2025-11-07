@@ -18,7 +18,7 @@ SingleLineComment
     = "#:", { ?Any char except newline? }, "\n";
 
 MultiLineComment
-    = "#:{", { ?Any char except '}:#'? }, "}:#";
+    = "#{", { ?Any char except '}:#'? }, "}#";
 
 VariableAssignment
     = "$", Identifier, "=", Expression, { Expression }, "\n";
