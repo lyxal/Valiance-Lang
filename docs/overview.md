@@ -1388,6 +1388,7 @@ In the parameter list of a function, numbers can be used to specify taking a cer
 
 - There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
 - For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
+- When they are added, `define [above T]` will be contravariance (any type above or equal to T) and `define [any T]` will be covariance (any type of T). 
 
 # 18. The `where` clause
 
@@ -2009,6 +2010,8 @@ Need I _list_ any more reasons why Valiance is a list-model language?
 # Appendix B - Reserved Keywords 
 
 ```
+above
+any
 as
 call
 define
