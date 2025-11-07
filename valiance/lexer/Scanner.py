@@ -9,6 +9,8 @@ ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%&^!/=<>"
 ELEMENT_CHARS = ELEMENT_FIRST_CHARS + string.digits + "~?"
 
 RESERVED_WORDS = (
+    "above", 
+    "any",
     "as",
     "call",
     "define",
@@ -197,23 +199,22 @@ class Scanner:
                 case ":":
                     self.add_token(TokenType.COLON, ":")
                 case _ if self._head_equals("#:"):
-                    # Comment, discard until newline
-                    if self._head_equals("#:{"):
-                        # Multiline comment
-                        start_line, start_column = self.line, self.column
-                        while self.characters and not self._head_equals("}:#"):
+                    # Comment, discard until newline
+                    while self.characters and self.characters[0] != "\n":
                             self._discard()
-                        # Discard the closing sequence
-                        if self._head_equals("}:#"):
-                            self._discard(3)
-                        else:
-                            raise ValueError(
+                    # Newline will be handled in the next iteration
+                case _ if self._head_equals("#{"):
+                    # Multiline comment
+                    start_line, start_column = self.line, self.column
+                    while self.characters and not self._head_equals("}#"):
+                        self._discard()
+                    # Discard the closing sequence
+                    if self._head_equals("}#"):
+                        self._discard(3)
+                    else:
+                        raise ValueError(
                                 f"Unterminated multiline comment starting at line {start_line}, column {start_column}"
                             )
-                    else:
-                        while self.characters and self.characters[0] != "\n":
-                            self._discard()
-                        # Newline will be handled in the next iteration
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
