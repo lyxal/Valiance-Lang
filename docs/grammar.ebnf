@@ -78,7 +78,9 @@ StringLiteral
     | '\"' }, '"';
 
 Element
-    = ElementFirstChar, { ElementChar };
+    = ElementName, {".", ElementName};
+
+ElementName = ElementFirstChar, { ElementChar };
 
 ElementFirstChar
     = ?A-Z?
@@ -249,7 +251,7 @@ WhileExpression
     = "while", "(", { Expression }, ")", "{", { Statement }, "}";
 
 DefineStatement
-    = "define", [ Generics ], [ Annotations ], { Identifier, "." }, Identifier, "(", [ Identifier, ":", FunctionTypeParam, { ",", Identifier, ":", FunctionTypeParam } ], ")", [ "->", [ FunctionTypeParam, { ",", FunctionTypeParam } ] ], [ WhereClause ], "{", { Statement }, "}";
+    = "define", [ Generics ], [ Annotations ], Element, "(", [ Identifier, ":", FunctionTypeParam, { ",", Identifier, ":", FunctionTypeParam } ], ")", [ "->", [ FunctionTypeParam, { ",", FunctionTypeParam } ] ], [ WhereClause ], "{", { Statement }, "}";
 
 ObjectStatement
     = "object", [ Generics ], Identifier, [ "implements", Traits ], "{", { ObjectMember
