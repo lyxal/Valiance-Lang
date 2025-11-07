@@ -228,8 +228,6 @@ The distinction is straightforward: `+` describes an exact shape, while `*` desc
 
 Irregular, or “ragged,” lists are represented using the tilde operator (`~`). A `T~` value can contain `T`, or lists of `T`, or any further combinations thereof. Basically, items of `T~` are `T|T~`. Multiple tildes (`T~~`, `T~3`, etc.) extend the level of nesting. These notations allow ragged and regular data to share the same conceptual framework.
 
-To explicitly mark something as *not* a list, Valiance uses the `!` operator. `T!` denotes a strictly atomic `T` — a single value that will never be treated as a list.
-
 The absolute base type of a list can be represented as `T_`.
 
 Parentheses may also be used to control grouping and operator precedence within complex type expressions. This allows for explicit composition of type operations — for example, `(Number|Number+)+` represents a list whose elements may be either individual numbers or lists of numbers. Grouping ensures that nested type structures remain unambiguous even when combining multiple operations.
