@@ -6,13 +6,16 @@ import string
 T = TypeVar("T")
 
 ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%&^!/=<>"
-ELEMENT_CHARS = ELEMENT_FIRST_CHARS + string.digits + "~?"
+ELEMENT_CHARS = ELEMENT_FIRST_CHARS + "_." + string.digits + "~?"
 
 RESERVED_WORDS = (
     "above",
     "any",
     "as",
+    "async",
+    "await",
     "call",
+    "concurrent",
     "define",
     "fn",
     "foreach",
@@ -21,10 +24,12 @@ RESERVED_WORDS = (
     "import",
     "match",
     "object",
+    "parallel",
     "private",
     "public",
     "readable",
     "self",
+    "spawn",
     "this",
     "trait",
     "variant",
@@ -216,6 +221,9 @@ class Scanner:
                         raise ValueError(
                             f"Unterminated multiline comment starting at line {start_line}, column {start_column}"
                         )
+                case '"':
+                    # String literal
+                    self.scan_string()
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
@@ -258,6 +266,12 @@ class Scanner:
         if self._head_equals("."):
             value += self.advance()
             value += self.scan_integer(separate_zeros=False)
+
+        if value.endswith("."):
+            raise ValueError(
+                f"Invalid number format at line {self.line}, column {self.column}"
+            )
+
         return value
 
     def scan_integer(self, separate_zeros: bool) -> str:
@@ -270,7 +284,7 @@ class Scanner:
         if separate_zeros and self._head_equals("0"):
             value += self.advance()
             return value
-        while unwrap_and_test(self._peek(), lambda c: c.isdecimal()):
+        while unwrap_and_test(self._peek(), lambda c: c in string.digits):
             value += self.advance()
         return value
 
@@ -300,6 +314,12 @@ class Scanner:
 
         self._discard()  # Discard the '$' character
         value = self.scan_identifier()
+
+        # Allow for an arbitrary number of sub-variable accesses using dots.
+        while self._head_equals("."):
+            value += self.advance()  # Add the dot
+            value += self.scan_identifier()
+
         self._add_token(TokenType.VARIABLE, value, start_line, start_column)
 
     def scan_identifier(self) -> str:
@@ -319,3 +339,48 @@ class Scanner:
         ):
             value += self.advance()
         return value
+
+    def scan_string(self):
+        """
+        Scan a string literal from the character list.
+        :return: None
+        """
+        start_line, start_column = self.line, self.column
+
+        value = ""
+        self._discard()  # Discard the opening quote
+
+        while self.characters and not self._head_equals('"'):
+            HEAD = self.characters[0]
+            if HEAD == "\\":
+                self._discard()
+                if not self.characters:
+                    raise ValueError(
+                        f"Unterminated string literal starting at line {start_line}, column {start_column}"
+                    )
+                ESCAPE_CHAR = self.advance()
+                match ESCAPE_CHAR:
+                    case "n":
+                        value += "\n"
+                    case "t":
+                        value += "\t"
+                    case "r":
+                        value += "\r"
+                    case '"':
+                        value += '"'
+                    case "\\":
+                        value += "\\"
+                    case _:
+                        raise ValueError(
+                            f"Invalid escape sequence '\\{ESCAPE_CHAR}' at line {self.line}, column {self.column}"
+                        )
+            else:
+                value += self.advance()
+
+        if not self.characters:
+            raise ValueError(
+                f"Unterminated string literal starting at line {start_line}, column {start_column}"
+            )
+
+        self._discard()  # Discard the closing quote
+        self._add_token(TokenType.STRING, value, start_line, start_column)

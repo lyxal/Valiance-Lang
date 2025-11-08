@@ -2,7 +2,7 @@ from valiance.lexer.Scanner import Scanner
 
 
 def main():
-    program = """$x = 5"""
+    program = """0...5"""
     scanner = Scanner(program)
     tokens = scanner.scan_tokens()
     print(tokens)

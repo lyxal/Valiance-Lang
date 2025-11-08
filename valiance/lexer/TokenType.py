@@ -29,6 +29,15 @@ class TokenType(enum.Enum):
     READABLE = "READABLE"
     IMPLEMENTS = "IMPLEMENTS"
     WHERE = "WHERE"
+    ABOVE = "ABOVE"
+    ANY = "ANY"
+
+    # Reserved Concurency Keywords
+    SPAWN = "SPAWN"
+    AWAIT = "AWAIT"
+    ASYNC = "ASYNC"
+    PARALLEL = "PARALLEL"
+    CONCURRENT = "CONCURRENT"
 
     # Special Symbols
     DUPLICATE = "DUPLICATE"
