@@ -1,8 +1,72 @@
-# Python bytecode files
-*.pyc
-*.pyo
-*.pyd
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
 
-out/*
-Valiance.drawio
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheelhouse/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+venv.bak/
+
+# Environment files
+.env
+.env.*    # e.g. .env.local, .env.test
+
+# Test artifacts
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Type checkers / caches
+.mypy_cache/
+.pyre/
+
+# Logs
+*.log
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Wheels / eggs
+*.egg
+*.whl
+
+# Packaging metadata
+*.egg-info/
+dist/
+build/
+
+# Local python version managers
+.python-version
+
+# Optional: ignore typical Uvicorn/Gunicorn runtime files
+*.pid
+*.sock
