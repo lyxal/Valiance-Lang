@@ -1,4 +1,4 @@
-from lexer.Scanner import Scanner
+from valiance.lexer.Scanner import Scanner
 
 
 def main():

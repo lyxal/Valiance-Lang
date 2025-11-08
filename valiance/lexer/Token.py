@@ -1,4 +1,4 @@
-from lexer.TokenType import TokenType
+from valiance.lexer.TokenType import TokenType
 
 
 class Token:
@@ -10,3 +10,13 @@ class Token:
 
     def __repr__(self):
         return f"Token({self.type}, {self.value}, {self.line}, {self.column})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Token):
+            return NotImplemented
+        return (
+            self.type == other.type
+            and self.value == other.value
+            and self.line == other.line
+            and self.column == other.column
+        )

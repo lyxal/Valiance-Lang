@@ -1,6 +1,6 @@
 from typing import Callable, TypeVar
-from lexer.Token import Token
-from lexer.TokenType import TokenType
+from valiance.lexer.Token import Token
+from valiance.lexer.TokenType import TokenType
 import string
 
 T = TypeVar("T")
@@ -9,7 +9,7 @@ ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%&^!/=<>"
 ELEMENT_CHARS = ELEMENT_FIRST_CHARS + string.digits + "~?"
 
 RESERVED_WORDS = (
-    "above", 
+    "above",
     "any",
     "as",
     "call",
@@ -199,9 +199,10 @@ class Scanner:
                 case ":":
                     self.add_token(TokenType.COLON, ":")
                 case _ if self._head_equals("#:"):
-                    # Comment, discard until newline
+                    # Comment, discard until newline
+
                     while self.characters and self.characters[0] != "\n":
-                            self._discard()
+                        self._discard()
                     # Newline will be handled in the next iteration
                 case _ if self._head_equals("#{"):
                     # Multiline comment
@@ -213,8 +214,8 @@ class Scanner:
                         self._discard(3)
                     else:
                         raise ValueError(
-                                f"Unterminated multiline comment starting at line {start_line}, column {start_column}"
-                            )
+                            f"Unterminated multiline comment starting at line {start_line}, column {start_column}"
+                        )
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
