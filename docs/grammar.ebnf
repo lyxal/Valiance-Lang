@@ -165,7 +165,7 @@ PrimaryType
     | GenericType
     | TupleType ), [ TypeModifiers
     | NamedDimensionType ]
-    | "(", Type, ")";
+    | "{", Type, "}";
 
 NamedDimensionType
     = "@[", NamedDimensions, "]";
