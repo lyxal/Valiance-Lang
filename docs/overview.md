@@ -230,7 +230,7 @@ Irregular, or “ragged,” lists are represented using the tilde operator (`~`)
 
 The absolute base type of a list can be represented as `T_`.
 
-Parentheses may also be used to control grouping and operator precedence within complex type expressions. This allows for explicit composition of type operations — for example, `(Number|Number+)+` represents a list whose elements may be either individual numbers or lists of numbers. Grouping ensures that nested type structures remain unambiguous even when combining multiple operations.
+Curly brackets may also be used to control grouping and operator precedence within complex type expressions. This allows for explicit composition of type operations — for example, `{Number|Number+}+` represents a list whose elements may be either individual numbers or lists of numbers. Grouping ensures that nested type structures remain unambiguous even when combining multiple operations.
 
 Through these operations, Valiance’s type system treats structure and dimension as first-class ideas, making arrays, lists, and nested data all part of one coherent model.
 
@@ -288,13 +288,13 @@ is also a `Number++`. The differing sublist lengths do not affect rank, because 
 [[1, 2], 3, [4]]
 ```
 
-has the type `(Number|Number+)+` — a rank-1 list whose items may be either numbers or rank-1 lists of numbers.
+has the type `{Number|Number+}+` — a rank-1 list whose items may be either numbers or rank-1 lists of numbers.
 
 ```
 [[1, 2], 3, [[4]]]
 ```
 
-has the type `(Number|Number+|Number++)+`, again a rank-1 list. Despite the deeper nesting in one item, the outer list adds only one level of rank.
+has the type `{Number|Number+|Number++}+`, again a rank-1 list. Despite the deeper nesting in one item, the outer list adds only one level of rank.
 
 This generalises neatly:
 
@@ -305,7 +305,7 @@ This generalises neatly:
 ]
 ```
 
-has the type `(Number|Number+)+2` — a rank-2 list whose items may be numbers or rank-1 lists of numbers.
+has the type `{Number|Number+}+2` — a rank-2 list whose items may be numbers or rank-1 lists of numbers.
 
 This type-based definition of rank extends naturally to irregular or ragged data structures. It allows operations that depend on rank — such as broadcasting or reduction — to apply consistently without special-casing. In essence, rank describes type depth, not geometric uniformity.
 
