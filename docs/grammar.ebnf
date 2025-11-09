@@ -48,7 +48,8 @@ Expression
     | WhileExpression
     | TemplateString
     | AsExpression
-    | QuickFunction };
+    | QuickFunction
+    | AtExpression };
 
 Identifier
     = ( Letter
@@ -299,3 +300,6 @@ Annotation
 
 AsExpression
     = "as", Type;
+
+AtExpression = "at", "(", AtLevel, { ",", AtLevel }, ")";
+AtLevel = Identifier, { "+" };

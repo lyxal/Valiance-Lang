@@ -231,3 +231,10 @@ class ForNode(ASTNode):
     def __init__(self, iterator: str, body: GroupNode):
         self.iterator = iterator
         self.body = body
+
+
+class AtNode(ASTNode):
+    """Represents an at expression with levels"""
+
+    def __init__(self, levels: list[Tuple[str, int]]):
+        self.levels = levels

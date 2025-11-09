@@ -1027,6 +1027,35 @@ range(1, 10) foreach ($n) {$sum: +}
 #: returns 0
 ```
 
+## 12.7. `at`
+
+- A way to control vectorisation, applying a function `at` certain depths
+- `at (levels) {code}`
+- `levels`  is a list of names (i.e. variable identifiers), followed by an optional arbitrary number of `+`s
+- Each name corresponds to an argument, and specifies when to stop digging down when vectorising.
+- For example:
+
+```
+[[1, 2], [3, 4]] [5, 6]
+at (list+, item) {append}
+#: Gives
+#: [[1, 2, 5], [3, 4, 6]]
+```
+
+- In the example, `append` is applied for every list in `[[1, 2], [3, 4]]` zipped with every item in `[5, 6]`
+- While `append[Number+, Number]` would work, what if it weren't as easy to specify the type?
+- `at` makes it so that you do not have to worry about the type.
+- Another example:
+
+```
+[[[1, None, "s"], ["h", 5, None]]] #: {String|Number}?+3
+#: You _could_ write
+getOrElse[{String|Number}?](0)
+#: Or, simply
+at (_) {getOrElse(0)}
+```
+
+
 # 13. The `define` structure
 
 - Important enough to have its own section.
@@ -2013,6 +2042,7 @@ Need I _list_ any more reasons why Valiance is a list-model language?
 above
 any
 as
+at
 call
 define
 fn
