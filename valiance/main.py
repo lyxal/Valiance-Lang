@@ -3,7 +3,7 @@ from valiance.lexer.Scanner import Scanner
 
 
 def main():
-    program = """[1, 2, [3, 4, 5], "[6, 7, 8]"]"""
+    program = """$x: {2}"""
     scanner = Scanner(program)
     tokens = scanner.scan_tokens()
 

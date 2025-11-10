@@ -3,6 +3,7 @@ from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
 from valiance.parser.AST import (
     ASTNode,
+    AugmentedVariableSetNode,
     GroupNode,
     ListNode,
     LiteralNode,
@@ -88,6 +89,16 @@ class Parser:
                         else:
                             raise Exception(
                                 f"Expected value after '=' for variable '{token.value}' at line {token.line}, column {token.column}"
+                            )
+                    elif self.head_equals(TokenType.COLON):
+                        # Augmented assignment
+                        self.discard()  # Discard the COLON token
+                        fn = self.parse_next()
+                        if fn is not None:
+                            return AugmentedVariableSetNode(token.value, fn)
+                        else:
+                            raise Exception(
+                                f"Expected function after ':' for augmented variable '{token.value}' at line {token.line}, column {token.column}"
                             )
                 case TokenType.EOF:
                     break

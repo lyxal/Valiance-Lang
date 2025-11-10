@@ -119,6 +119,14 @@ class VariableSetNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class AugmentedVariableSetNode(ASTNode):
+    """Represents an augmented variable assignment"""
+
+    name: str
+    function: ASTNode
+
+
+@dataclass(frozen=True)
 class DuplicateNode(ASTNode):
     """Represents the dup operation, labels optional"""
 
