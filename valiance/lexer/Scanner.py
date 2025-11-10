@@ -229,7 +229,7 @@ class Scanner:
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
                     )
 
-        return self.tokens
+        return self.tokens + [Token(TokenType.EOF, "", self.line, self.column)]
 
     def scan_number(self):
         """

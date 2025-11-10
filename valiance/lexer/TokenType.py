@@ -7,6 +7,7 @@ class TokenType(enum.Enum):
     NUMBER = "NUMBER"
     STRING = "STRING"
     NEWLINE = "NEWLINE"
+    EOF = "EOF"
 
     # Keywords
 
