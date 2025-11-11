@@ -1,6 +1,6 @@
+from abc import ABC
 from dataclasses import dataclass
 from typing import Sequence, Tuple
-from abc import ABC
 
 from valiance.vtypes.VTypes import VType
 

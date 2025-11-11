@@ -1,7 +1,8 @@
+import string
 from typing import Callable, TypeVar
+
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
-import string
 
 T = TypeVar("T")
 

@@ -1,8 +1,8 @@
-from valiance.lexer.TokenType import TokenType
+import pytest
+
 import valiance.lexer.Scanner as Scanner
 import valiance.lexer.Token as Token
-
-import pytest
+from valiance.lexer.TokenType import TokenType
 
 
 def scan(source: str) -> list[Token.Token]:

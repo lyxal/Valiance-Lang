@@ -1,18 +1,11 @@
 from typing import Callable, Tuple, TypeVar
+
+import valiance.vtypes.VTypes as VTypes
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
-from valiance.parser.AST import (
-    ASTNode,
-    AugmentedVariableSetNode,
-    ElementNode,
-    GroupNode,
-    ListNode,
-    LiteralNode,
-    TupleNode,
-    VariableGetNode,
-    VariableSetNode,
-)
-import valiance.vtypes.VTypes as VTypes
+from valiance.parser.AST import (ASTNode, AugmentedVariableSetNode,
+                                 ElementNode, GroupNode, ListNode, LiteralNode,
+                                 TupleNode, VariableGetNode, VariableSetNode)
 
 T = TypeVar("T")
 

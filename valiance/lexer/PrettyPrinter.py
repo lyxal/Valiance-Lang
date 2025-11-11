@@ -5,15 +5,16 @@ for debugging and visualization purposes.
 """
 
 from typing import Sequence
+
 from valiance.lexer.Token import Token
 
 
 def pretty_print_token(token: Token) -> str:
     """Format a single token with its type, value, and position information.
-    
+
     Args:
         token: The token to format
-        
+
     Returns:
         A formatted string representation of the token
     """
@@ -24,29 +25,26 @@ def pretty_print_token(token: Token) -> str:
 
 def pretty_print_tokens(tokens: Sequence[Token], compact: bool = False) -> str:
     """Format a list of tokens in a tabular format.
-    
+
     Args:
         tokens: The list of tokens to format
         compact: If True, use a more compact output format
-        
+
     Returns:
         A formatted string representation of all tokens
     """
     if not tokens:
         return "No tokens to display"
-    
+
     if compact:
         # Compact format: one line per token without header
         lines = [pretty_print_token(token) for token in tokens]
         return "\n".join(lines)
-    
+
     # Full tabular format with header
-    lines = [
-        "TOKEN TYPE      VALUE                POSITION",
-        "-" * 60
-    ]
-    
+    lines = ["TOKEN TYPE      VALUE                POSITION", "-" * 60]
+
     for token in tokens:
         lines.append(pretty_print_token(token))
-    
+
     return "\n".join(lines)
