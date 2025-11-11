@@ -6,7 +6,7 @@ from valiance.lexer.TokenType import TokenType
 
 T = TypeVar("T")
 
-ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%&^!/=<>"
+ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%^!/=<>"
 ELEMENT_CHARS = ELEMENT_FIRST_CHARS + "_." + string.digits + "~?"
 
 RESERVED_WORDS = (
