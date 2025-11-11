@@ -53,6 +53,7 @@ class TokenType(enum.Enum):
     RIGHT_BRACE = "RIGHT_BRACE"
     COMMA = "COMMA"
     PIPE = "PIPE"
+    AMPERSAND = "AMPERSAND"
     COLON = "COLON"
     DOT = "DOT"
     ARROW = "ARROW"
