@@ -203,6 +203,8 @@ class Scanner:
                     self.add_token(TokenType.ARROW, "->")
                 case ":":
                     self.add_token(TokenType.COLON, ":")
+                case "@":
+                    self.scan_annotation()
                 case _ if self._head_equals("#:"):
                     # Comment, discard until newline
 
@@ -384,3 +386,16 @@ class Scanner:
 
         self._discard()  # Discard the closing quote
         self._add_token(TokenType.STRING, value, start_line, start_column)
+
+    def scan_annotation(self):
+        """
+        Scan an annotation token from the character list.
+        :return: None
+        """
+        start_line, start_column = self.line, self.column
+
+        self._discard()  # Discard the '@' character
+
+        value = self.scan_identifier()
+
+        self._add_token(TokenType.ANNOTATION, value, start_line, start_column)

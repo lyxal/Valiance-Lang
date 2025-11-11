@@ -282,3 +282,16 @@ def test_recognise_reserved_keywords():
             (TokenType.EOF, ""),
         ],
     )
+
+
+def test_annotation_token():
+    assert tokens_equal(
+        scan("@tupled $fn()"),
+        [
+            (TokenType.ANNOTATION, "@tupled"),
+            (TokenType.VARIABLE, "fn"),
+            (TokenType.LEFT_PAREN, "("),
+            (TokenType.RIGHT_PAREN, ")"),
+            (TokenType.EOF, ""),
+        ],
+    )

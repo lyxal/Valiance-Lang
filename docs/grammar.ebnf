@@ -33,7 +33,8 @@ AugmentAssignment
 Expression
     = { NumericLiteral
     | StringLiteral
-    | [ "@tupled" ], Element, [ Generics ], [ ElementCall ], [ Modifier ]
+    | Annotation
+    | Element, [ Generics ], [ ElementCall ], [ Modifier ]
     | Function
     | List
     | Tuple

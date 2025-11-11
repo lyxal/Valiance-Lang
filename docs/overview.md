@@ -1990,7 +1990,7 @@ As mentioned in the introduction, the fundamental tenet of Valiance is that it s
 
 A long time ago, a man named Kenneth Iverson laid the foundations for modern-day array programming. Seeing that programming languages of his time were "decidedly inferior" to mathematical notation in providing clarity of thought, he devised a new programming notation. A programming notation that encompassed the expressiveness and economy of mathematics while still serving as an unambiguous and precise means of computing.
 
-Thus, array programming, and APL were created. The primary idea was to forgo the ceremony of programming boilerplate in favour of expressing programs in their rawest form - as if they were mathematical formulas. Where a conventional programming language might take 6 _lines_ of code to express a function, APL could do it in 6 _characters_ of code. 
+Thus, array programming, and APL were created. The primary idea was to forgo the ceremony of programming boilerplate in favour of expressing programs in their rawest form - as if they were mathematical formulas. Where a conventional programming language might take ~6-7 _lines_ of code to express a function, APL could do it in ~6-7 _characters_ of code. 
 
 This new style of programming allowed thoughts to be expressed without the fuss of pleasing language compilers and interpreters with needless syntax constructs. The ability to communicate complex concepts in an ultra-minimalistic manner was revolutionary.
 

@@ -8,6 +8,7 @@ from valiance.parser.AST import (
     ListNode,
     LiteralNode,
     TupleNode,
+    VariableGetNode,
     VariableSetNode,
 )
 from valiance.vtypes.VTypes import VType
@@ -100,6 +101,10 @@ class Parser:
                             raise Exception(
                                 f"Expected function after ':' for augmented variable '{token.value}' at line {token.line}, column {token.column}"
                             )
+                    else:
+                        return VariableGetNode(token.value)
+                case TokenType.WORD:
+                    pass
                 case TokenType.EOF:
                     break
                 case _:

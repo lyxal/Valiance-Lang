@@ -8,6 +8,7 @@ class TokenType(enum.Enum):
     STRING = "STRING"
     NEWLINE = "NEWLINE"
     EOF = "EOF"
+    ANNOTATION = "ANNOTATION"
 
     # Keywords
 
