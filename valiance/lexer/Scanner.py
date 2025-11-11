@@ -208,7 +208,7 @@ class Scanner:
                     self.add_token(TokenType.COLON, ":")
                 case "@":
                     self.scan_annotation()
-                case _ if self._head_matches("#[a-zA-Z]+"): self.scan_tag()
+                case _ if self._head_matches("#!?[a-zA-Z]+"): self.scan_tag()
                 case _ if self._head_equals("#:"):
                     # Comment, discard until newline
 
