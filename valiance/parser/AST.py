@@ -24,6 +24,8 @@ class ElementNode(ASTNode):
     """Represents a normal element"""
 
     element_name: str
+    generics: list[VType]
+    args: list[Tuple[str, ASTNode]]
     modified: bool = False
 
 

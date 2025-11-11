@@ -3,13 +3,20 @@ from valiance.lexer.Scanner import Scanner
 
 
 def main():
-    program = """$x: {2}"""
-    scanner = Scanner(program)
-    tokens = scanner.scan_tokens()
+    while True:
+        try:
+            source = input(">> ")
+        except EOFError:
+            break
 
-    parser = Parser(tokens)
-    asts = parser.parse()
-    print(asts)
+        scanner = Scanner(source)
+        tokens = scanner.scan_tokens()
+
+        parser = Parser(tokens)
+        asts = parser.parse()
+
+        for ast in asts:
+            print(ast)
 
 
 if __name__ == "__main__":
