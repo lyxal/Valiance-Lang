@@ -468,7 +468,7 @@ The syntax for an element is:
 
 ```
 Element := ElementFirstChar {ElementChar}
-ElementFirstChar := <A-Z>|<a-z>|"-"|"+"|"*"|"%"|"!"|"?"|"="|"/"|"&"|"<"|">"
+ElementFirstChar := <A-Z>|<a-z>|"-"|"+"|"*"|"%"|"!"|"?"|"="|"/"|"<"|">"
 ElementChar := ElementFirstChar | <0-9>
 ```
 
