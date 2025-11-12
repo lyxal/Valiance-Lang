@@ -1172,7 +1172,7 @@ Within the trait body, extensions may have a non-empty function body to provide 
 To declare an extension that needs to be implemented:
 
 ```
-define @required Name(parameters) -> returns {...}
+@required define Name(parameters) -> returns {...}
 ```
 A default implementation needs no #required.
 
@@ -1180,7 +1180,7 @@ To provide a concrete example of traits:
 
 ```
 trait Comparable[T] {
-  define @required compareTo(other: T) -> Number {}
+  @required define compareTo(other: T) -> Number {}
 
   define ===(other: T) {
     self compareTo($other)
@@ -1234,11 +1234,11 @@ For example:
 
 ```
 trait A: {
-  define @required foo() -> Number {} 
+  @required define foo() -> Number {} 
 }
 
 trait B: {
-  define @required foo() -> String {}
+  @required define foo() -> String {}
 }
 
 object MultiTrait implements A, B {
@@ -1269,7 +1269,7 @@ To best illustrate the benefit of variants, compare a trait-based system for des
 
 ```
 trait Shape {
-  define @required area() -> Number {}
+  @required define area() -> Number {}
 }
 
 object Circle implements Shape {
@@ -1290,7 +1290,7 @@ vs
 
 ```
 variant Shape {
-  define @required area() -> Number {}
+  @required define area() -> Number {}
 
   object Circle {
     define Circle(readable radius: Number) {}
@@ -1432,7 +1432,7 @@ If present, the `where` must come after the return list. Each condition is separ
 For example:
 
 ```
-define @stack ternary(
+@stack define ternary(
   condition: Number,
   onTrue: Function,
   onFalse: Function
