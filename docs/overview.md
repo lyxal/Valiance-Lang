@@ -513,7 +513,7 @@ split(item = "This is a string", " ")
 
 And more are all equivalent.
 
-`_`
+`_` can be used in element call syntax to indicate an argument should be taken from the stack rather than provided inline.
 
 ## 7.5 Overload Disambiguation 
 
