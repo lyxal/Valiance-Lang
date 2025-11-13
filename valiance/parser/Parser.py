@@ -356,6 +356,7 @@ class Parser:
             elements: list[ASTNode] = []
             if self.head_equals(TokenType.WORD):
                 temp_token = self.tokenStream.pop(0)
+                self.numch_whitespace()
                 if self.head_equals(TokenType.EQUALS):
                     arg_name_token = temp_token
                     arg_name = arg_name_token.value
