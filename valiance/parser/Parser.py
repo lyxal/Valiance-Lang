@@ -32,6 +32,7 @@ def is_element_token(token: Token) -> bool:
         TokenType.LESS_THAN,
         TokenType.GREATER_THAN,
         TokenType.QUESTION,
+        TokenType.UNDERSCORE,
     )
 
 

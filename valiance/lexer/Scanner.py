@@ -266,6 +266,8 @@ class Scanner:
                     self.add_token(TokenType.WORD, "===")
                 case _ if self._head_matches("=="):
                     self.add_token(TokenType.WORD, "==")
+                case "_":
+                    self.add_token(TokenType.UNDERSCORE, HEAD)
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
