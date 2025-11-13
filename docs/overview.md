@@ -1495,49 +1495,72 @@ Generally speaking, `(T...)` is a tuple of any number of `T`s, and is called a '
 
 A variadic  tuple will always contain a finite number of items, but that number will be unknown to most compile time contexts. The only exception is the `where` clause, which can determine properties like tuple length from the functions arguments. However, a `where` clause, when given a variadic tuple where a variadic tuple is expected, will not be able to determine the length of the tuple, and will return a compiler error.
 
-# 19.  Annotations
-## 19.1. `@recursive`
+# 19. Annotations
+Sometimes, it is desirable to modify program behaviour in a way that requires more than higher-order functions and the `:` modifier can handle. Even though Valiance aims to be fairly flexible, there are still important semantic limitations, such as functions not being able to write to variables in outer scopes. Though necessary for simplifying compiler behaviour, these restrictions can sometimes get in the way of more "natural" programming expressions.
 
-The `@recursive` annotation allows for easier recursion within a function. The `this` element will call the nearest scoped function with a `@recursive` annotation. For example, this is a recursive factorial program:
+Annotations act as a statically-safe escape hatch from these limitations. They enable functionality otherwise impossible to replicate. 
+
+Annotations can be thought of semantic modifiers. Where `:` modifies functions, annotations modify program behaviour. 
+
+Typically, an annotation precedes a structure or syntax element, much like how `:` precedes the element(s) it modifies.
+
+An annotation is a `@` followed by an identifier.
+
+Some key annotations are presented below.
+
+## 19.1. The `@required` Annotation
+
+Within this language overview, annotations have already been silently introduced. More specifically, `@required` was shown in the sections on traits and variants.
+
+This annotation indicates that a definition must be defined by all objects implementing a trait or variant. In return, it allows the function body to be empty, even if there's a return type. 
+
+## 19.2. The `@recursive` Annotation
+
+Recursion within a defined element or a function stored in a variable is fairly straightforward: simply use the name of the target function. But what about unnamed functions? Or what if tacit recursion is desired? 
+
+An element or function with the `@recursive` annotation can be called using the `this` element. `this` calls the closest-scoped function with a `@recursive` annotation. 
+
+For example:
 
 ```
-$factorial = fn @recursive (:Number) -> Number {
+#: Tacit, unnamed function for
+#: recursive factorial
+@recursive fn (:Number) {
   match {
     exactly 0 -> 1,
-    default   -> this(1 -) *
+    default   -> this(1-) *
   }
 }
 ```
 
-This is a recursive fibonacci element:
+To call a recursive function at a higher level than the nearest recursive function, its `this` must be captured in a variable:
 
 ```
-define @recursive fib(:Number) -> Number {
-  match {
-    if [0 1] contains -> 1,
-    default -> fork: decrement {2-}
-               both: this()
-               +
+@recurisve fn (:Number) {
+  $recur = 'this
+  @recurisve fn (:String) {
+    #: `this` refers to the function taking a string
+    #: To call the function taking a number:
+    $recur(...)
   }
+} 
+```
+
+Note that `this` is captured from the definition location, rather than the call location. 
+
+For example:
+
+```
+@recursive define F (fn: Function[...]) {
+  ...
+}
+
+@recursive define G (...) {
+  F: {this()} # this refers to G, not to F
 }
 ```
 
-Note that using `this` outside of a `@recursive` function/element is a compile error.
-
-If you need to recurse to a function outside the current recursive scope, you'll need to capture it by quoting `this` and storing it in a variable:
-
-```
-fn @recursive (:Number) {
-  $outer = 'this
-  fn @recursive (:Number) {
-    $outer()
-  }
-}
-```
-
-However, such recursion is usually an indicator that something has gone wrong.
-
-## 19.2. `@stack`
+## 19.3. The `@stack` Annotation
 
 Sometimes, an element cannot be expressed in terms of a function with fixed inputs and outputs. For example, higher-order functions requiring variadic stack manipulation are impossible to represent, with function overloads only able to cover a finite subset of use-cases.
 
@@ -1581,29 +1604,10 @@ define[T, U, V, W, X] dip(
 
 Evidently, this pattern quickly grows unruly. Additionally, these definitions only work for input functions with multiplicity 1 - different multiplicities would require even more overloads.
 
-One solution might be to use a `where` clause:
-
-```
-define[T] dip(
-  args: $in,
-  ignore: T,
-  func: Function
-) -> T, $func.out
-) where (
-  $in = $func.in
-) {
-  $top = \
-  $func()
-  $top \
-}
-```
-
-But that's horribly verbose, and requires a lot of forethought, more so than explicit ceremony makes useful. 
-
 To this end, elements can have a `@stack` annotation added to indicate that the element definition will operate on whatever is the stack when the element is called. For example, `dip` becomes:
 
 ```
-define @stack dip(fn: Function) {
+@stack define dip(fn: Function) {
   $temp = ^
   $fn()
   $temp
@@ -1625,7 +1629,7 @@ Some other examples of potential `@stack` elements include:
 #:{
   x y both: F --> F(x) F(y)
 }:#
-define @stack both(fn: Function) {
+@stack define both(fn: Function) {
   $temp = @tupled $fn() #: Store results of fn in tuple instead of pushing all to stack
   $fn() $temp detuple
 }
@@ -1633,7 +1637,7 @@ define @stack both(fn: Function) {
 #:{
   x y fork: F G --> F(...) G(...)
 }:#
-define @stack fork(f: Function, g: Function){
+stack define fork(f: Function, g: Function){
   $res1 = peek: @tupled $f()
   $res2 = @tupled $second()
   merge($res1, $res2)
@@ -1643,7 +1647,7 @@ define @stack fork(f: Function, g: Function){
 #:{
   x y correspond: F G --> F(x) G(y)
 }:#
-define correspond(f: Function, g: Function) {
+@stack define correspond(f: Function, g: Function) {
   $temp = @tupled $f()
   @tupled $g()
   $temp \
@@ -1651,7 +1655,7 @@ define correspond(f: Function, g: Function) {
 }
 ```
 
-## 19.3. `@tupled`
+## 19.4. The `@tupled` Annotation
 
 In the `@stack` annotation examples, there was a new annotation: `@tupled`.
 
