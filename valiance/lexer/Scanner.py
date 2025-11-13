@@ -6,9 +6,6 @@ from valiance.lexer.TokenType import TokenType
 
 T = TypeVar("T")
 
-ELEMENT_FIRST_CHARS = string.ascii_letters + "-+*%^!/=<>"
-ELEMENT_CHARS = ELEMENT_FIRST_CHARS + "_." + string.digits + "~?"
-
 RESERVED_WORDS = (
     "above",
     "any",
@@ -31,6 +28,7 @@ RESERVED_WORDS = (
     "readable",
     "self",
     "spawn",
+    "tag",
     "this",
     "trait",
     "variant",
@@ -172,6 +170,7 @@ class Scanner:
             HEAD = self.characters[0]
             match HEAD:
                 case " " | "\r" | "\t":
+                    self._add_token(TokenType.WHITESPACE, HEAD, self.line, self.column)
                     self._discard()
                     self.column += 1
                 case "\n":
@@ -182,7 +181,7 @@ class Scanner:
                     self.scan_number()
                 case "=" if not self._head_equals("=="):
                     self.add_token(TokenType.EQUALS, "=")
-                case _ if HEAD in ELEMENT_FIRST_CHARS:
+                case _ if HEAD in string.ascii_letters:
                     self.scan_element()
                 case "$":
                     self.scan_variable()
@@ -198,8 +197,10 @@ class Scanner:
                     self.add_token(TokenType.LEFT_BRACE, HEAD)
                 case "}":
                     self.add_token(TokenType.RIGHT_BRACE, HEAD)
-                case "|": self.add_token(TokenType.PIPE, HEAD)
-                case "&": self.add_token(TokenType.AMPERSAND, HEAD)
+                case "|":
+                    self.add_token(TokenType.PIPE, HEAD)
+                case "&":
+                    self.add_token(TokenType.AMPERSAND, HEAD)
                 case ",":
                     self.add_token(TokenType.COMMA, HEAD)
                 case _ if self._head_equals("->"):
@@ -208,10 +209,12 @@ class Scanner:
                     self.add_token(TokenType.COLON, ":")
                 case "@":
                     self.scan_annotation()
-                case _ if self._head_matches("#!?[a-zA-Z]+"): self.scan_tag()
+                case _ if self._head_matches("#!?[a-zA-Z]+"):
+                    self.column += 1
+                    self._discard()  # Discard the '#'
+                    self.scan_tag()
                 case _ if self._head_equals("#:"):
                     # Comment, discard until newline
-
                     while self.characters and self.characters[0] != "\n":
                         self._discard()
                     # Newline will be handled in the next iteration
@@ -220,6 +223,11 @@ class Scanner:
                     start_line, start_column = self.line, self.column
                     while self.characters and not self._head_equals("}#"):
                         self._discard()
+                        if self.characters and self.characters[0] == "\n":
+                            self.line += 1
+                            self.column = 1
+                        else:
+                            self.column += 1
                     # Discard the closing sequence
                     if self._head_equals("}#"):
                         self._discard(3)
@@ -230,6 +238,34 @@ class Scanner:
                 case '"':
                     # String literal
                     self.scan_string()
+                case "+":
+                    self.add_token(TokenType.PLUS, HEAD)
+                case "-":
+                    self.add_token(TokenType.MINUS, HEAD)
+                case "*":
+                    self.add_token(TokenType.STAR, HEAD)
+                case "/":
+                    self.add_token(TokenType.SLASH, HEAD)
+                case "%":
+                    self.add_token(TokenType.PERCENT, HEAD)
+                case "!":
+                    self.add_token(TokenType.EXCLAMATION, HEAD)
+                case "<":
+                    self.add_token(TokenType.LESS_THAN, HEAD)
+                case ">":
+                    self.add_token(TokenType.GREATER_THAN, HEAD)
+                case "^":
+                    self.add_token(TokenType.DUPLICATE, HEAD)
+                case "?":
+                    self.add_token(TokenType.QUESTION, HEAD)
+                case "~":
+                    self.add_token(TokenType.TILDE, HEAD)
+                case "\\":
+                    self.add_token(TokenType.SWAP, HEAD)
+                case _ if self._head_matches("==="):
+                    self.add_token(TokenType.WORD, "===")
+                case _ if self._head_matches("=="):
+                    self.add_token(TokenType.WORD, "==")
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
@@ -302,7 +338,9 @@ class Scanner:
         start_line, start_column = self.line, self.column
 
         value = ""
-        while unwrap_and_test(self._peek(), lambda c: c in ELEMENT_CHARS):
+        while unwrap_and_test(
+            self._peek(), lambda c: c in string.ascii_letters + string.digits
+        ):
             value += self.advance()
 
         token_category = (
@@ -403,3 +441,19 @@ class Scanner:
         value = self.scan_identifier()
 
         self._add_token(TokenType.ANNOTATION, value, start_line, start_column)
+
+    def scan_tag(self):
+        """
+        Scan a tag token from the character list.
+        :return: None
+        """
+        start_line, start_column = self.line, self.column
+
+        value = ""
+        while unwrap_and_test(
+            self._peek(),
+            lambda c: c in string.ascii_letters + string.digits + "_",
+        ):
+            value += self.advance()
+
+        self._add_token(TokenType.TAG_TOKEN, value, start_line, start_column)

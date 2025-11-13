@@ -11,6 +11,7 @@ def scan(source: str) -> list[Token.Token]:
 
 
 def tokens_equal(t1: list[Token.Token], t2: list[tuple[TokenType, str]]) -> bool:
+    t1 = [token for token in t1 if token.type != TokenType.WHITESPACE]
     if len(t1) != len(t2):
         return False
     for token1, token2 in zip(t1, t2):
@@ -222,12 +223,6 @@ def test_equals_sign():
     assert tokens_equal(
         scan("="),
         [(TokenType.EQUALS, "="), (TokenType.EOF, "")],
-    )
-
-    # == isn't a special token, it's a single WORD token
-    assert tokens_equal(
-        scan("=="),
-        [(TokenType.WORD, "=="), (TokenType.EOF, "")],
     )
 
 

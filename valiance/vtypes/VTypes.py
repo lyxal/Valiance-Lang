@@ -21,12 +21,13 @@ class StringType(VType):
 @dataclass(frozen=True)
 class ListType(VType):
     element_type: VType
+    rank: int
 
 
 @dataclass(frozen=True)
 class MinimumRankType(ListType):
     element_type: VType
-    min_rank: int
+    rank: int
 
 
 @dataclass(frozen=True)
@@ -37,12 +38,14 @@ class ExactRankType(ListType):
 
 @dataclass(frozen=True)
 class UnionType(VType):
-    types: list[VType]
+    left: VType
+    right: VType
 
 
 @dataclass(frozen=True)
 class IntersectionType(VType):
-    types: list[VType]
+    left: VType
+    right: VType
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class FunctionType(VType):
 @dataclass(frozen=True)
 class CustomType(VType):
     name: str
+    type_parameters: list[VType] | None = None
 
 
 class TypeNames(enum.Enum):

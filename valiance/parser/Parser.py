@@ -1,3 +1,4 @@
+import itertools
 from typing import Callable, Tuple, TypeVar
 
 import valiance.vtypes.VTypes as VTypes
@@ -16,6 +17,22 @@ from valiance.parser.AST import (
 )
 
 T = TypeVar("T")
+
+
+def is_element_token(token: Token) -> bool:
+    return token.type in (
+        TokenType.WORD,
+        TokenType.MINUS,
+        TokenType.PLUS,
+        TokenType.AMPERSAND,
+        TokenType.STAR,
+        TokenType.SLASH,
+        TokenType.PERCENT,
+        TokenType.EXCLAMATION,
+        TokenType.LESS_THAN,
+        TokenType.GREATER_THAN,
+        TokenType.QUESTION,
+    )
 
 
 def unwrap_and_test(val: T | None, condition: Callable[[T], bool]) -> bool:
@@ -53,6 +70,16 @@ class Parser:
             return self.tokenStream[0].type == type_
         return False
 
+    def head_is_any_of(self, types: list[TokenType]) -> bool:
+        if self.tokenStream:
+            return self.tokenStream[0].type in types
+        return False
+
+    def numch_whitespace(self):
+        # Consume whitespace tokens at the head of the token stream
+        while self.head_equals(TokenType.WHITESPACE):
+            self.discard()
+
     def token_at_equals(self, index: int, type_: TokenType) -> bool:
         if len(self.tokenStream) > index:
             return self.tokenStream[index].type == type_
@@ -74,6 +101,8 @@ class Parser:
         while self.tokenStream:
             token = self.tokenStream.pop(0)
             match token.type:
+                case TokenType.WHITESPACE:
+                    continue
                 case TokenType.NUMBER:
                     return LiteralNode(token.value, VTypes.NumberType())
                 case TokenType.STRING:
@@ -93,7 +122,9 @@ class Parser:
                     tuple_elements = self.parse_tuple()
                     return TupleNode(tuple_elements)
                 case TokenType.VARIABLE:
-                    if self.head_equals(TokenType.EQUALS):
+                    if self.head_equals(TokenType.EQUALS) and not self.token_at_equals(
+                        1, TokenType.EQUALS
+                    ):
                         # Variable assignment
                         self.discard()  # Discard the EQUALS token
                         value = self.parse_next()
@@ -115,7 +146,7 @@ class Parser:
                             )
                     else:
                         return VariableGetNode(token.value)
-                case TokenType.WORD:
+                case _ if token.type == TokenType.WORD or is_element_token(token):
                     # Element parsing
                     return self.parse_element(token)
                 case TokenType.EOF:
@@ -129,19 +160,22 @@ class Parser:
     def parse_list(self) -> list[ASTNode]:
         elements: list[ASTNode] = []
         current_item: list[ASTNode] = []
-        while self.tokenStream and self.tokenStream[0].type != TokenType.RIGHT_SQUARE:
-            if self.tokenStream[0].type == TokenType.COMMA:
-                # End of current item
+        while not self.head_equals(TokenType.RIGHT_SQUARE):
+            self.numch_whitespace()
+            if self.head_equals(TokenType.COMMA):
+                if not current_item:
+                    raise Exception("Empty list item detected.")
                 elements.append(self.group_wrap(current_item))
                 current_item = []
-                self.tokenStream.pop(0)  # Remove the comma
-            else:
-                element = self.parse_next()
-                if element is not None:
-                    current_item.append(element)
+                self.discard()  # Remove the comma
+            element = self.parse_next()
+            if element is not None:
+                current_item.append(element)
+
         if current_item:
             elements.append(self.group_wrap(current_item))
-        self.tokenStream.pop(0)  # Remove the right square bracket
+
+        self.discard()  # Remove the right bracket
         return elements
 
     def parse_block(self) -> list[ASTNode]:
@@ -157,7 +191,10 @@ class Parser:
         elements: list[ASTNode] = []
         current_item: list[ASTNode] = []
         while not self.head_equals(TokenType.RIGHT_PAREN):
+            self.numch_whitespace()
             if self.head_equals(TokenType.COMMA):
+                if not current_item:
+                    raise Exception("Empty tuple item detected.")
                 elements.append(self.group_wrap(current_item))
                 current_item = []
                 self.discard()  # Remove the comma
@@ -165,73 +202,182 @@ class Parser:
             if element is not None:
                 current_item.append(element)
 
+        if current_item:
+            elements.append(self.group_wrap(current_item))
+
         self.discard()  # Remove the right parenthesis
         return elements
 
-    def parse_element(self, token: Token) -> ASTNode:
-        element_name = token.value
+    def parse_element(self, first_token: Token) -> ASTNode:
+        element_name = first_token.value
+
+        while self.tokenStream and (
+            is_element_token(self.tokenStream[0])
+            or self.tokenStream[0].type == TokenType.NUMBER
+        ):
+            element_name += self.tokenStream.pop(0).value
+
         generics: list[VTypes.VType] = []
-        element_call_args: list[Tuple[str, ASTNode]] = []
-        modified: bool = False
+        arguments: list[Tuple[str, ASTNode]] = []
 
         if self.head_equals(TokenType.LEFT_SQUARE):
-            temp_generics: list[list[ASTNode]] = []
-            current_generic: list[ASTNode] = []
-            self.discard()  # Discard the LEFT_SQUARE
-            while not self.head_equals(TokenType.RIGHT_SQUARE):
-                type_ = self.parse_next()
-                if type_ is not None:
-                    current_generic.append(type_)
-                if self.head_equals(TokenType.COMMA):
-                    temp_generics.append(current_generic)
-                    current_generic = []
-                    self.discard()  # Discard the COMMA
-            if current_generic:
-                temp_generics.append(current_generic)
-            generics += map(self.type_from_asts, temp_generics)
-            self.discard()  # Discard the RIGHT_SQUARE
+            generics = self.parse_type_parameters()
 
         if self.head_equals(TokenType.LEFT_PAREN):
-            arguments: list[Tuple[str, ASTNode]] = []
-            current_argument: list[ASTNode] = []
-            current_argument_name: str = "_"
-            self.discard()  # Discard the LEFT_PAREN
-            while not self.head_equals(TokenType.RIGHT_PAREN):
-                if self.head_equals(TokenType.COMMA):
-                    self.discard()  # Discard the COMMA
-                    if current_argument:
-                        arg_node = self.group_wrap(current_argument)
-                        arguments.append((current_argument_name, arg_node))
-                        current_argument = []
-                        current_argument_name = "_"
-                if self.token_at_equals(1, TokenType.EQUALS):
-                    if current_argument_name != "_":
-                        raise Exception(
-                            f"Unexpected equals sign in argument at line {token.line}, column {token.column}"
-                        )
-                    # Named argument
-                    current_argument_name = self.tokenStream.pop(0).value
-                    self.discard()  # Discard the EQUALS
-                else:
-                    value = self.parse_next()
-                    if value is not None:
-                        current_argument.append(value)
-            if current_argument:
-                arg_node = self.group_wrap(current_argument)
-                arguments.append((current_argument_name, arg_node))
-            element_call_args = arguments
-            self.discard()  # Discard the RIGHT_PAREN
+            arguments = self.parse_element_arguments()
 
+        modified = False
         if self.head_equals(TokenType.COLON):
             modified = True
-            self.discard()  # Discard the MODIFIER
+            self.discard()  # Remove the modifier token
 
-        return ElementNode(
-            element_name=element_name,
-            generics=generics,
-            args=element_call_args,
-            modified=modified,
-        )
+        return ElementNode(element_name, generics, arguments, modified)
 
-    def type_from_asts(self, asts: list[ASTNode]) -> VTypes.VType:
-        return VTypes.CustomType("Todo: Implement")
+    def parse_type_parameters(self) -> list[VTypes.VType]:
+        generics: list[VTypes.VType] = []
+        self.discard()  # Discard the LEFT_SQUARE
+
+        while not self.head_equals(TokenType.RIGHT_SQUARE):
+            self.numch_whitespace()
+            generics.append(self.parse_type())
+            self.numch_whitespace()
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard the COMMA
+            elif not self.head_equals(TokenType.RIGHT_SQUARE):
+                raise Exception("Expected comma in generic parameters but found none.")
+            else:
+                break
+
+        self.discard()  # Discard the RIGHT_SQUARE
+        return generics
+
+    def parse_type(self) -> VTypes.VType:
+        lhs = self.parse_union_type()
+        self.numch_whitespace()
+        if self.head_equals(TokenType.AMPERSAND):
+            self.discard()  # Discard the AMPERSAND
+            self.numch_whitespace()
+            rhs = self.parse_union_type()
+            return VTypes.IntersectionType(lhs, rhs)
+        return lhs
+
+    def parse_union_type(self) -> VTypes.VType:
+        lhs = self.parse_primary_type()
+        self.numch_whitespace()
+        if self.head_equals(TokenType.PIPE):
+            self.discard()  # Discard the PIPE
+            self.numch_whitespace()
+            rhs = self.parse_primary_type()
+            return VTypes.UnionType(lhs, rhs)
+        return lhs
+
+    def parse_primary_type(self) -> VTypes.VType:
+        # First, the base type
+        base_type: VTypes.VType = VTypes.VType()
+        if self.head_equals(TokenType.WORD):
+            type_token = self.tokenStream.pop(0)
+            match type_token.value:
+                case "Number":
+                    base_type = VTypes.NumberType()
+                case "String":
+                    base_type = VTypes.StringType()
+                case "Dictionary":
+                    if not self.head_equals(TokenType.LEFT_SQUARE):
+                        raise Exception(
+                            "Expected '[' after 'Dictionary' in type declaration."
+                        )
+                    self.discard()  # Discard LEFT_SQUARE
+                    self.numch_whitespace()
+                    key_type = self.parse_type()
+                    self.numch_whitespace()
+                    if not self.head_equals(TokenType.ARROW):
+                        raise Exception("Expected '->' in Dictionary type declaration.")
+                    self.discard()  # Discard the ARROW
+                    self.numch_whitespace()
+                    value_type = self.parse_type()
+                    base_type = VTypes.DictionaryType(key_type, value_type)
+                    self.numch_whitespace()
+                    if not self.head_equals(TokenType.RIGHT_SQUARE):
+                        raise Exception(
+                            "Expected ']' at the end of Dictionary type declaration."
+                        )
+                    self.discard()  # Discard RIGHT_SQUARE
+                case "Function":
+                    # TODO: suffering
+                    pass
+                case _:
+                    type_parameters: list[VTypes.VType] = []
+                    if self.head_equals(TokenType.LEFT_SQUARE):
+                        type_parameters = self.parse_type_parameters()
+                    base_type = VTypes.CustomType(type_token.value, type_parameters)
+        elif self.head_equals(TokenType.LEFT_PAREN):
+            self.discard()  # Discard LEFT_PAREN
+            element_types: list[VTypes.VType] = []
+            while not self.head_equals(TokenType.RIGHT_PAREN):
+                element_types.append(self.parse_type())
+                if self.head_equals(TokenType.COMMA):
+                    self.discard()  # Discard COMMA
+            self.discard()  # Discard RIGHT_PAREN
+            base_type = VTypes.TupleType(element_types)
+        else:
+            raise Exception("Expected type but found none.")
+
+        # Now, the type modifiers
+        modifiers: list[TokenType] = []
+        while self.head_is_any_of([TokenType.PLUS, TokenType.STAR, TokenType.TILDE]):
+            modifiers.append(self.tokenStream.pop(0).type)
+
+        grouped_modifiers = itertools.groupby(modifiers)
+        for modifier, group in grouped_modifiers:
+            count = len(list(group))
+            match modifier:
+                case TokenType.PLUS:
+                    base_type = VTypes.ExactRankType(base_type, count)
+                case TokenType.STAR:
+                    base_type = VTypes.MinimumRankType(base_type, count)
+                case TokenType.TILDE:
+                    base_type = VTypes.ListType(base_type, count)
+                case _:
+                    pass  # Will not happen
+
+        while self.head_equals(TokenType.QUESTION):
+            self.discard()  # Discard QUESTION
+            base_type = VTypes.OptionalType(base_type)
+
+        return base_type
+
+    def parse_element_arguments(self) -> list[Tuple[str, ASTNode]]:
+        arguments: list[Tuple[str, ASTNode]] = []
+        self.discard()  # Discard LEFT_PAREN
+
+        while not self.head_equals(TokenType.RIGHT_PAREN):
+            self.numch_whitespace()
+            arg_name = ""
+            elements: list[ASTNode] = []
+            if self.head_equals(TokenType.WORD):
+                temp_token = self.tokenStream.pop(0)
+                if self.head_equals(TokenType.EQUALS):
+                    arg_name_token = temp_token
+                    arg_name = arg_name_token.value
+                    self.discard()  # Discard EQUALS
+                else:
+                    elements.append(
+                        self.parse_element(temp_token)
+                    )  # The word was part of the element
+            while not self.head_equals(TokenType.COMMA) and not self.head_equals(
+                TokenType.RIGHT_PAREN
+            ):
+                element = self.parse_next()
+                if element is not None:
+                    elements.append(element)
+            arguments.append((arg_name, self.group_wrap(elements)))
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard COMMA
+            elif not self.head_equals(TokenType.RIGHT_PAREN):
+                raise Exception(
+                    "Expected comma or right parenthesis in element arguments."
+                )
+            else:
+                break
+        self.discard()  # Discard RIGHT_PAREN
+        return arguments
