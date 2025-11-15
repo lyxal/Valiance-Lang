@@ -1,5 +1,4 @@
 import itertools
-from string import whitespace
 from typing import Callable, Tuple, TypeVar
 
 import valiance.vtypes.VTypes as VTypes
