@@ -36,6 +36,14 @@ def DUMMY_WRAP_FN(x: list[T]) -> T:
 
 
 def is_element_token(token: Token) -> bool:
+    """
+    Test whether a token is a valid part of an element name.
+
+    :param token: The token to test
+    :type token: Token
+    :return: True if the token is a valid element token, False otherwise
+    :rtype: bool
+    """
     return token.type in (
         TokenType.WORD,
         TokenType.MINUS,
@@ -71,6 +79,15 @@ class Parser:
         self.asts: list[ASTNode] = []
 
     def add_node(self, node: ASTNode):
+        """
+        Add a node to the parser's AST list.
+
+        :param self: This Parser instance
+        :param node: The ASTNode to add
+        :type node: ASTNode
+        :return: None
+        :rtype: None
+        """
         self.asts.append(node)
 
     def discard(self, count: int = 1):
