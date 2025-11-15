@@ -352,7 +352,6 @@ class Parser:
             TokenType.ARROW, self.parse_type, conglomerate=False
         )
 
-        self.discard()  # Discard ARROW
         self.numch_whitespace()
         return_types: list[VTypes.VType] = self.parse_items(
             TokenType.RIGHT_SQUARE, self.parse_type, conglomerate=False
