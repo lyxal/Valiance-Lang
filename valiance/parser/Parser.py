@@ -7,10 +7,12 @@ from valiance.lexer.TokenType import TokenType
 from valiance.parser.AST import (
     ASTNode,
     AugmentedVariableSetNode,
+    DuplicateNode,
     ElementNode,
     GroupNode,
     ListNode,
     LiteralNode,
+    SwapNode,
     TupleNode,
     VariableGetNode,
     VariableSetNode,
@@ -155,6 +157,42 @@ class Parser:
                 case _ if token.type == TokenType.WORD or is_element_token(token):
                     # Element parsing
                     return self.parse_element(token)
+                case TokenType.DUPLICATE:
+                    if self.head_equals(TokenType.LEFT_SQUARE):
+                        # Labelled duplication
+                        self.discard()  # Discard LEFT_SQUARE
+                        pre_labels = self.parse_items(
+                            TokenType.ARROW,
+                            self.parse_identifier,
+                            conglomerate=False,
+                        )
+                        post_labels = self.parse_items(
+                            TokenType.RIGHT_SQUARE,
+                            self.parse_identifier,
+                            conglomerate=False,
+                        )
+                        return DuplicateNode(pre_labels, post_labels)
+                    else:
+                        # Unlabelled duplication
+                        return DuplicateNode([], [])
+                case TokenType.SWAP:
+                    if self.head_equals(TokenType.LEFT_SQUARE):
+                        # Labelled swap
+                        self.discard()  # Discard LEFT_SQUARE
+                        pre_labels = self.parse_items(
+                            TokenType.ARROW,
+                            self.parse_identifier,
+                            conglomerate=False,
+                        )
+                        post_labels = self.parse_items(
+                            TokenType.RIGHT_SQUARE,
+                            self.parse_identifier,
+                            conglomerate=False,
+                        )
+                        return SwapNode(pre_labels, post_labels)
+                    else:
+                        # Unlabelled swap
+                        return SwapNode([], [])
                 case TokenType.EOF:
                     break
                 case _:
@@ -162,6 +200,13 @@ class Parser:
                         f"Unexpected token {token.type} at line {token.line}, column {token.column}"
                     )
         return None
+
+    def parse_identifier(self) -> str:
+        if self.head_equals(TokenType.WORD):
+            token = self.tokenStream.pop(0)
+            return token.value
+        else:
+            raise Exception(f"Expected identifier but got {self.peek()}")
 
     def parse_list(self) -> list[ASTNode]:
         return self.parse_items(
@@ -412,9 +457,11 @@ class Parser:
             item = parse_fn()
             if item is not None:
                 current_item.append(item)
+            self.eat_whitespace()
         if conglomerate and current_item:
             items.append(wrap_fn(current_item))
         elif not conglomerate:
             items.extend(current_item)
+        self.eat_whitespace()
         self.discard()  # Discard the closing token
         return items
