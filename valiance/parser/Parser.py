@@ -228,6 +228,7 @@ class Parser:
             arguments = self.parse_element_arguments()
 
         modified = False
+        self.numch_whitespace()
         if self.head_equals(TokenType.COLON):
             modified = True
             self.discard()  # Remove the modifier token
@@ -304,7 +305,7 @@ class Parser:
                         )
                     self.discard()  # Discard RIGHT_SQUARE
                 case "Function":
-                    # TODO: suffering
+                    base_type = self.parse_function_type(function_token_skipped=True)
                     pass
                 case _:
                     type_parameters: list[VTypes.VType] = []
@@ -315,6 +316,7 @@ class Parser:
             self.discard()  # Discard LEFT_PAREN
             element_types: list[VTypes.VType] = []
             while not self.head_equals(TokenType.RIGHT_PAREN):
+                self.numch_whitespace()
                 element_types.append(self.parse_type())
                 if self.head_equals(TokenType.COMMA):
                     self.discard()  # Discard COMMA
@@ -346,6 +348,52 @@ class Parser:
             base_type = VTypes.OptionalType(base_type)
 
         return base_type
+
+    def parse_function_type(self, function_token_skipped: bool = False) -> VTypes.VType:
+        if not function_token_skipped:
+            self.discard()  # Discard FUNCTION token
+        self.numch_whitespace()
+        if not self.head_equals(TokenType.LEFT_SQUARE):
+            raise Exception("Expected '[' at the start of function type parameters.")
+
+        param_types: list[VTypes.VType] = []
+        self.discard()  # Discard LEFT_SQUARE
+        self.numch_whitespace()
+
+        if self.head_equals(TokenType.RIGHT_SQUARE):
+            # No parameters
+            self.discard()  # Discard RIGHT_SQUARE
+            self.numch_whitespace()
+            return VTypes.FunctionType(False, [], [], [], [])
+
+        while not self.head_equals(TokenType.ARROW):
+            param_types.append(self.parse_type())
+            self.numch_whitespace()
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard COMMA
+                self.numch_whitespace()
+            elif not self.head_equals(TokenType.ARROW):
+                raise Exception(
+                    "Expected comma or '->' in function type input parameters."
+                )
+            else:
+                break
+        self.discard()  # Discard ARROW
+        self.numch_whitespace()
+        return_types: list[VTypes.VType] = []
+        while not self.head_equals(TokenType.RIGHT_SQUARE):
+            return_types.append(self.parse_type())
+            self.numch_whitespace()
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard COMMA
+                self.numch_whitespace()
+            elif not self.head_equals(TokenType.RIGHT_SQUARE):
+                raise Exception("Expected comma or ']' in function type return types.")
+            else:
+                break
+        self.discard()  # Discard RIGHT_SQUARE
+        # TODO: Where clauses
+        return VTypes.FunctionType(True, [], param_types, return_types, [])
 
     def parse_element_arguments(self) -> list[Tuple[str, ASTNode]]:
         arguments: list[Tuple[str, ASTNode]] = []

@@ -66,9 +66,10 @@ class DictionaryType(VType):
 
 @dataclass(frozen=True)
 class FunctionType(VType):
+    fully_typed: bool
     generics: list[str]
     param_types: list[VType]
-    return_type: VType
+    return_types: list[VType]
     where_clauses: list[str]  # Placeholder for where clauses
 
 
