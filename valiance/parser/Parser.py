@@ -17,6 +17,11 @@ from valiance.parser.AST import (
 )
 
 T = TypeVar("T")
+U = TypeVar("U")
+
+
+def DUMMY_WRAP_FN(x: list[T]) -> T:
+    return x  # type: ignore
 
 
 def is_element_token(token: Token) -> bool:
@@ -159,55 +164,27 @@ class Parser:
         return None
 
     def parse_list(self) -> list[ASTNode]:
-        elements: list[ASTNode] = []
-        current_item: list[ASTNode] = []
-        while not self.head_equals(TokenType.RIGHT_SQUARE):
-            self.numch_whitespace()
-            if self.head_equals(TokenType.COMMA):
-                if not current_item:
-                    raise Exception("Empty list item detected.")
-                elements.append(self.group_wrap(current_item))
-                current_item = []
-                self.discard()  # Remove the comma
-            element = self.parse_next()
-            if element is not None:
-                current_item.append(element)
-
-        if current_item:
-            elements.append(self.group_wrap(current_item))
-
-        self.discard()  # Remove the right bracket
-        return elements
+        return self.parse_items(
+            TokenType.RIGHT_SQUARE,
+            self.parse_next,
+            conglomerate=True,
+            wrap_fn=self.group_wrap,
+            separator=TokenType.COMMA,
+        )
 
     def parse_block(self) -> list[ASTNode]:
-        elements: list[ASTNode] = []
-        while not self.head_equals(TokenType.RIGHT_BRACE):
-            element = self.parse_next()
-            if element is not None:
-                elements.append(element)
-        self.tokenStream.pop(0)  # Remove the right brace
-        return elements
+        return self.parse_items(
+            TokenType.RIGHT_BRACE, self.parse_next, wrap_fn=self.group_wrap
+        )
 
     def parse_tuple(self) -> list[ASTNode]:
-        elements: list[ASTNode] = []
-        current_item: list[ASTNode] = []
-        while not self.head_equals(TokenType.RIGHT_PAREN):
-            self.numch_whitespace()
-            if self.head_equals(TokenType.COMMA):
-                if not current_item:
-                    raise Exception("Empty tuple item detected.")
-                elements.append(self.group_wrap(current_item))
-                current_item = []
-                self.discard()  # Remove the comma
-            element = self.parse_next()
-            if element is not None:
-                current_item.append(element)
-
-        if current_item:
-            elements.append(self.group_wrap(current_item))
-
-        self.discard()  # Remove the right parenthesis
-        return elements
+        return self.parse_items(
+            TokenType.RIGHT_PAREN,
+            self.parse_next,
+            conglomerate=True,
+            wrap_fn=self.group_wrap,
+            separator=TokenType.COMMA,
+        )
 
     def parse_element(self, first_token: Token) -> ASTNode:
         element_name = first_token.value
@@ -238,7 +215,7 @@ class Parser:
     def parse_type_parameters(self) -> list[VTypes.VType]:
         generics: list[VTypes.VType] = []
         self.discard()  # Discard the LEFT_SQUARE
-
+        """
         while not self.head_equals(TokenType.RIGHT_SQUARE):
             self.numch_whitespace()
             generics.append(self.parse_type())
@@ -249,6 +226,14 @@ class Parser:
                 raise Exception("Expected comma in generic parameters but found none.")
             else:
                 break
+        """
+
+        generics = self.parse_items(
+            TokenType.RIGHT_SQUARE,
+            self.parse_type,
+            conglomerate=False,
+            separator=TokenType.COMMA,
+        )
 
         self.discard()  # Discard the RIGHT_SQUARE
         return generics
@@ -314,12 +299,9 @@ class Parser:
                     base_type = VTypes.CustomType(type_token.value, type_parameters)
         elif self.head_equals(TokenType.LEFT_PAREN):
             self.discard()  # Discard LEFT_PAREN
-            element_types: list[VTypes.VType] = []
-            while not self.head_equals(TokenType.RIGHT_PAREN):
-                self.numch_whitespace()
-                element_types.append(self.parse_type())
-                if self.head_equals(TokenType.COMMA):
-                    self.discard()  # Discard COMMA
+            element_types: list[VTypes.VType] = self.parse_items(
+                TokenType.RIGHT_PAREN, self.parse_type, conglomerate=False
+            )
             self.discard()  # Discard RIGHT_PAREN
             base_type = VTypes.TupleType(element_types)
         else:
@@ -366,32 +348,15 @@ class Parser:
             self.numch_whitespace()
             return VTypes.FunctionType(False, [], [], [], [])
 
-        while not self.head_equals(TokenType.ARROW):
-            param_types.append(self.parse_type())
-            self.numch_whitespace()
-            if self.head_equals(TokenType.COMMA):
-                self.discard()  # Discard COMMA
-                self.numch_whitespace()
-            elif not self.head_equals(TokenType.ARROW):
-                raise Exception(
-                    "Expected comma or '->' in function type input parameters."
-                )
-            else:
-                break
+        param_types = self.parse_items(
+            TokenType.ARROW, self.parse_type, conglomerate=False
+        )
+
         self.discard()  # Discard ARROW
         self.numch_whitespace()
-        return_types: list[VTypes.VType] = []
-        while not self.head_equals(TokenType.RIGHT_SQUARE):
-            return_types.append(self.parse_type())
-            self.numch_whitespace()
-            if self.head_equals(TokenType.COMMA):
-                self.discard()  # Discard COMMA
-                self.numch_whitespace()
-            elif not self.head_equals(TokenType.RIGHT_SQUARE):
-                raise Exception("Expected comma or ']' in function type return types.")
-            else:
-                break
-        self.discard()  # Discard RIGHT_SQUARE
+        return_types: list[VTypes.VType] = self.parse_items(
+            TokenType.RIGHT_SQUARE, self.parse_type, conglomerate=False
+        )
         # TODO: Where clauses
         return VTypes.FunctionType(True, [], param_types, return_types, [])
 
@@ -431,3 +396,37 @@ class Parser:
                 break
         self.discard()  # Discard RIGHT_PAREN
         return arguments
+
+    def parse_items(
+        self,
+        close_token: TokenType,
+        parse_fn: Callable[[], T | None],
+        conglomerate: bool = False,  # Whether to wrap items in a GroupNode if multiple
+        wrap_fn: Callable[
+            [list[T]], T
+        ] = DUMMY_WRAP_FN,  # Function to wrap conglomerate items
+        separator: TokenType = TokenType.COMMA,
+    ) -> list[T]:
+        items: list[T] = []
+        current_item: list[T] = []
+        while not self.head_equals(close_token):
+            self.numch_whitespace()
+            if self.head_equals(separator):
+                if conglomerate:
+                    if not current_item:
+                        raise Exception("Empty item detected.")
+                    items.append(wrap_fn(current_item))
+                else:
+                    items.extend(current_item)
+                current_item = []
+                self.discard()  # Remove the separator
+                self.numch_whitespace()
+            item = parse_fn()
+            if item is not None:
+                current_item.append(item)
+        if conglomerate and current_item:
+            items.append(wrap_fn(current_item))
+        elif not conglomerate:
+            items.extend(current_item)
+        self.discard()  # Discard the closing token
+        return items
