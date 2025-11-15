@@ -81,7 +81,7 @@ class Parser:
             return self.tokenStream[0].type in types
         return False
 
-    def numch_whitespace(self):
+    def eat_whitespace(self):
         # Consume whitespace tokens at the head of the token stream
         while self.head_equals(TokenType.WHITESPACE):
             self.discard()
@@ -205,7 +205,7 @@ class Parser:
             arguments = self.parse_element_arguments()
 
         modified = False
-        self.numch_whitespace()
+        self.eat_whitespace()
         if self.head_equals(TokenType.COLON):
             modified = True
             self.discard()  # Remove the modifier token
@@ -215,18 +215,6 @@ class Parser:
     def parse_type_parameters(self) -> list[VTypes.VType]:
         generics: list[VTypes.VType] = []
         self.discard()  # Discard the LEFT_SQUARE
-        """
-        while not self.head_equals(TokenType.RIGHT_SQUARE):
-            self.numch_whitespace()
-            generics.append(self.parse_type())
-            self.numch_whitespace()
-            if self.head_equals(TokenType.COMMA):
-                self.discard()  # Discard the COMMA
-            elif not self.head_equals(TokenType.RIGHT_SQUARE):
-                raise Exception("Expected comma in generic parameters but found none.")
-            else:
-                break
-        """
 
         generics = self.parse_items(
             TokenType.RIGHT_SQUARE,
@@ -240,20 +228,20 @@ class Parser:
 
     def parse_type(self) -> VTypes.VType:
         lhs = self.parse_union_type()
-        self.numch_whitespace()
+        self.eat_whitespace()
         if self.head_equals(TokenType.AMPERSAND):
             self.discard()  # Discard the AMPERSAND
-            self.numch_whitespace()
+            self.eat_whitespace()
             rhs = self.parse_union_type()
             return VTypes.IntersectionType(lhs, rhs)
         return lhs
 
     def parse_union_type(self) -> VTypes.VType:
         lhs = self.parse_primary_type()
-        self.numch_whitespace()
+        self.eat_whitespace()
         if self.head_equals(TokenType.PIPE):
             self.discard()  # Discard the PIPE
-            self.numch_whitespace()
+            self.eat_whitespace()
             rhs = self.parse_primary_type()
             return VTypes.UnionType(lhs, rhs)
         return lhs
@@ -274,16 +262,16 @@ class Parser:
                             "Expected '[' after 'Dictionary' in type declaration."
                         )
                     self.discard()  # Discard LEFT_SQUARE
-                    self.numch_whitespace()
+                    self.eat_whitespace()
                     key_type = self.parse_type()
-                    self.numch_whitespace()
+                    self.eat_whitespace()
                     if not self.head_equals(TokenType.ARROW):
                         raise Exception("Expected '->' in Dictionary type declaration.")
                     self.discard()  # Discard the ARROW
-                    self.numch_whitespace()
+                    self.eat_whitespace()
                     value_type = self.parse_type()
                     base_type = VTypes.DictionaryType(key_type, value_type)
-                    self.numch_whitespace()
+                    self.eat_whitespace()
                     if not self.head_equals(TokenType.RIGHT_SQUARE):
                         raise Exception(
                             "Expected ']' at the end of Dictionary type declaration."
@@ -334,25 +322,25 @@ class Parser:
     def parse_function_type(self, function_token_skipped: bool = False) -> VTypes.VType:
         if not function_token_skipped:
             self.discard()  # Discard FUNCTION token
-        self.numch_whitespace()
+        self.eat_whitespace()
         if not self.head_equals(TokenType.LEFT_SQUARE):
             raise Exception("Expected '[' at the start of function type parameters.")
 
         param_types: list[VTypes.VType] = []
         self.discard()  # Discard LEFT_SQUARE
-        self.numch_whitespace()
+        self.eat_whitespace()
 
         if self.head_equals(TokenType.RIGHT_SQUARE):
             # No parameters
             self.discard()  # Discard RIGHT_SQUARE
-            self.numch_whitespace()
+            self.eat_whitespace()
             return VTypes.FunctionType(False, [], [], [], [])
 
         param_types = self.parse_items(
             TokenType.ARROW, self.parse_type, conglomerate=False
         )
 
-        self.numch_whitespace()
+        self.eat_whitespace()
         return_types: list[VTypes.VType] = self.parse_items(
             TokenType.RIGHT_SQUARE, self.parse_type, conglomerate=False
         )
@@ -364,12 +352,12 @@ class Parser:
         self.discard()  # Discard LEFT_PAREN
 
         while not self.head_equals(TokenType.RIGHT_PAREN):
-            self.numch_whitespace()
+            self.eat_whitespace()
             arg_name = ""
             elements: list[ASTNode] = []
             if self.head_equals(TokenType.WORD):
                 temp_token = self.tokenStream.pop(0)
-                self.numch_whitespace()
+                self.eat_whitespace()
                 if self.head_equals(TokenType.EQUALS):
                     arg_name_token = temp_token
                     arg_name = arg_name_token.value
@@ -408,8 +396,9 @@ class Parser:
     ) -> list[T]:
         items: list[T] = []
         current_item: list[T] = []
+        self.eat_whitespace()
         while not self.head_equals(close_token):
-            self.numch_whitespace()
+            self.eat_whitespace()
             if self.head_equals(separator):
                 if conglomerate:
                     if not current_item:
@@ -419,7 +408,7 @@ class Parser:
                     items.extend(current_item)
                 current_item = []
                 self.discard()  # Remove the separator
-                self.numch_whitespace()
+                self.eat_whitespace()
             item = parse_fn()
             if item is not None:
                 current_item.append(item)
