@@ -1,0 +1,20 @@
+#: A quick little function to solve quadratic equations of the form ax^2 + bx + c = 0
+#: Uses the quadratic formula: x = (-b ± √(b² - 4ac)) / 2a
+fn (:Number * 3) {
+    ^[b, _ -> b] 2 **
+    ^[a, _, c, b_2 -> a, c] 4 * *
+    - sqrt
+    \[a, b, c, disc -> a, b, disc]
+      dip: negate
+      fork: + -
+      pair
+    \ double /
+
+}
+
+#: Or, if that's too tacit
+fn (a: Number, b: Number, c: Number) -> (Number, Number) {
+    $discriminant = {$b 2 **} {$a $c * 4 *} - sqrt
+    $roots = {$b negate} {$discriminant} fork: + - pair
+    $roots {$a 2 *} /
+}

@@ -1,0 +1,29 @@
+@recursive define recursiveFibonacci(n: Number) -> Number {
+    match {
+        exactly 0 -> 0,
+        exactly 1 -> 1,
+        default   -> [$n 1 -, $n 2 -] this sum
+    }
+}
+
+define generatorFibonacci(n: Number) -> Number {
+    unfold(seed = [0, 1]): fn (prev: Number+) {
+        $prev append($prev@[-1, -2] +)
+    }
+    #: Note: Will be marked as #infinite
+    $n index
+}
+
+define fibonacci(n: Number){
+    $x = 0
+    $y = 1
+    $temp = 1
+    $count = 0
+    while ($count $n <){
+        $temp = $x
+        $x = $y
+        $y: {$temp +}
+        $count: increment
+    }
+    $y
+}

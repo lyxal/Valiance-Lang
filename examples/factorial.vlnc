@@ -1,0 +1,28 @@
+@recursive define recursiveFactorial(:Number) -> Number {
+    #: Note: NOT tail-recursive
+    match {
+        exactly 0 -> 1,
+        default   -> this(--) *
+    }
+}
+
+define TCOFactorial(:Number) -> Number {
+    @recursive fn (x: Number, acc: Number) -> Number {
+        match {
+            exactly 0 -> $acc,
+            default   -> this($x 1 -, $acc $x *)
+        }
+    }
+    call($x, 1)
+}
+
+define imperativeFactorial(:Number) -> Number {
+    $result = 1
+    range(1, _) foreach ($n) {
+        $result: {$n *} #: Augment assignment
+    }
+    $result
+}
+
+#: The best way
+define niceFactorial(:Number) -> Number {range(1, _) reduce: *}
