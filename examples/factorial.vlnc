@@ -1,9 +1,18 @@
-@recursive define recursiveFactorial(:Number) -> Number {
+define recursiveFactorial(:Number) -> Number {
     #: Note: NOT tail-recursive
     match {
         exactly 0 -> 1,
-        default   -> this(--) *
+        default   -> recursiveFactorial(--) *
     }
+}
+
+#: If you want to _really_ get funky
+
+$fac = @recursive fn {
+  match {
+    exactly 0 -> 1,
+    default   -> this(--) *~ id
+  }
 }
 
 define TCOFactorial(:Number) -> Number {
@@ -26,3 +35,4 @@ define imperativeFactorial(:Number) -> Number {
 
 #: The best way
 define niceFactorial(:Number) -> Number {range(1, _) reduce: *}
+fn {range(1, _) product}
