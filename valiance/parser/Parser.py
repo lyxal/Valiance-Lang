@@ -1,5 +1,6 @@
 import itertools
 from typing import Callable, Tuple, TypeVar
+import functools
 
 import valiance.vtypes.VTypes as VTypes
 from valiance.lexer.Token import Token
@@ -279,9 +280,13 @@ class Parser:
                 if self.head_equals(TokenType.LEFT_SQUARE):
                     self.discard()  # Discard LEFT_SQUARE
                     # Collect pre-stack and post-stack labels
+                    # Allow _ in pre-labels for duplication
+                    # But not in post-labels, which must be valid identifiers
                     pre_labels = self.parse_items(
                         TokenType.ARROW,
-                        self.parse_identifier,
+                        functools.partial(
+                            self.parse_identifier, consider_underscore=True
+                        ),
                         conglomerate=False,
                     )
                     post_labels = self.parse_items(
@@ -302,9 +307,13 @@ class Parser:
                     self.discard()  # Discard LEFT_SQUARE
 
                     # Collect pre-stack and post-stack labels
+                    # Allow _ in pre-labels for swap
+                    # But not in post-labels, which must be valid identifiers
                     pre_labels = self.parse_items(
                         TokenType.ARROW,
-                        self.parse_identifier,
+                        functools.partial(
+                            self.parse_identifier, consider_underscore=True
+                        ),
                         conglomerate=False,
                     )
                     post_labels = self.parse_items(
@@ -324,7 +333,7 @@ class Parser:
                 )
         return None
 
-    def parse_identifier(self) -> str:
+    def parse_identifier(self, consider_underscore: bool = False) -> str:
         """
         Take the next word and just return its value as an identifier.
 
@@ -332,7 +341,9 @@ class Parser:
         :return: The identifier string
         :rtype: str
         """
-        if self.head_equals(TokenType.WORD):
+        if self.head_equals(TokenType.WORD) or (
+            consider_underscore and self.head_equals(TokenType.UNDERSCORE)
+        ):
             token = self.tokenStream.pop(0)
             return token.value
         else:
