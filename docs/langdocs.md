@@ -60,6 +60,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 	- Exact numbers. No `0.1 + 0.2 != 0.3` shenanigans.
 	- Able to store multiples of Pi, e, surds, etc.
 - Imaginary parts supported too.
+- Can also have `${x}e{$y}` for `x * 10 ** y`
 - One single number type - `Number`.
 	- Can be pattern matched for more specific traits, but stored as just `Number`.
 - Some example numbers:
@@ -74,6 +75,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 69i420
 -69i-420
 -420.69i-69
+6e7
 ```
  
 ## 3.2. Strings
