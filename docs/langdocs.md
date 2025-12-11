@@ -87,7 +87,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 - UTF-8 encoded
 - Support for string interpolation
 - Double quotes - normal string. `"Hello, World!"`
-- Can contain literal newlineas = no need for `\n`. Only quotes and backslashes need to be escaped.
+- Can contain literal newlines = no need for `\n`. Only quotes and backslashes need to be escaped.
 - Unterminated string = lexer error.
 - Type = `String`
 
