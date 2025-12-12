@@ -213,7 +213,7 @@ class Scanner:
                     self.column += 1
                     self._discard()  # Discard the '#'
                     self.scan_tag()
-                case _ if self._head_equals("#:"):
+                case _ if self._head_equals("#/"):
                     # Comment, discard until newline
                     while self.characters and self.characters[0] != "\n":
                         self._discard()
@@ -345,9 +345,10 @@ class Scanner:
         ):
             value += self.advance()
 
-        token_category = (
-            TokenType.WORD if value not in RESERVED_WORDS else TokenType[value.upper()]
-        )
+        try:
+            token_category = TokenType(value)
+        except ValueError:
+            token_category = TokenType.WORD
 
         self._add_token(token_category, value, start_line, start_column)
 

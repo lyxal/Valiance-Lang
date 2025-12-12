@@ -2205,7 +2205,7 @@ fn { #? Call this function A
 ## 20.3. `@tagdef`
 - A resolution convention annotation
 - As mentioned in tags, specifies that when resolving a tag import, all methods annotated `@tagdef` must be imported.
-- Can only be used on `define` and `stackdef`
+- Can only be used on `define`
 - `@tagdef(#${tagname})`
 
 ## 20.4. `@multi`
@@ -2216,8 +2216,6 @@ fn { #? Call this function A
 - A return convention annotation
 - Wraps the entire function return in a fixed-length tuple
 - Useful for when you want to capture the whole output into a tuple, but you don't know how many items will be returned
-	- Primarily seen with `stackdef` elements.
-	- More on that in the `stackdef` section
 - Tuple is determined by the function outputs.
 	- If a function returns `Number, Number`, then `@tupled` will return `(Number, Number)`
 
@@ -2235,7 +2233,7 @@ foo #? Pushes 6, 7
 
 ## 20.6. `@error`
 - An invocation convention annotation
-- Only usable on `define` and `stackdef`
+- Only usable on `define`
 - Marks an overload as a compile time error
 	- Element must return a string
 	- That string is the error message
@@ -2253,8 +2251,7 @@ foo #? Pushes 6, 7
 - Useful for when something isn't an error, but also isn't the best.
 	- Or, anything where you want to warn the user (perhaps performance etc)
 	- Basically a lot more applicable than `@error`
-- Only usable on `define` and `stackdef`
-- 
+- Only usable on `define`
 
 ```
 @warn("This function is experimental. Use with caution") define foo() {...}
@@ -2265,7 +2262,7 @@ foo #? Pushes 6, 7
 - A more specific `@warn` that doesn't require a full message.
 - Only requires the name of what should be used instead
 - Can also take `since` and `why` as parameters
-- Only usable on `define` and `stackdef`
+- Only usable on `define`
 
 ```
 @deprecated("bar") define foo() {...}
@@ -2477,12 +2474,12 @@ reshape [T] (xs: T~, shape: Number+) -> T | T*
 - The major problem is that list length (at least with Valiance's lack of dependent types) is unknowable at compile time.
 - One idea might be to use a variadic tuple for the shape and try and get the length
   - An improvement, but still no way to attach the property to the output.
-- That's where the `where` clause comes in. It is an optional component of `fn`s, `define`s, and `stackdef`s.
+- That's where the `where` clause comes in. It is an optional component of `fn`s and `define`s.
 - It allows for parameters and outputs to be specified and constrained in terms of compile time known information.
 - Syntax:
 
 ```
-${define/fn/stackdef} where (${conds}) {...}
+${define/fn} where (${conds}) {...}
 ```
 
 - `conds` is a coma separated list of conditions.
@@ -2733,10 +2730,6 @@ import sorted: #sorted
 # 26. Reserved Words
 
 ```
-Error
-OK
-Panic
-Result
 as
 as!
 assert
@@ -2753,7 +2746,12 @@ match
 multi
 object
 panic
+private
+public
+readable
+self
 spawn
+this
 trait
 try
 unfold
