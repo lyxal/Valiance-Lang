@@ -48,6 +48,13 @@ class TupleNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class DictionaryNode(ASTNode):
+    """Represents a dictionary of key-value pairs"""
+
+    entries: list[Tuple[ASTNode, ASTNode]]
+
+
+@dataclass(frozen=True)
 class TypeNode(ASTNode):
     """Represents a type"""
 

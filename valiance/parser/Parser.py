@@ -1,5 +1,6 @@
-from typing import Callable, TypeVar, List
+from typing import Callable, TypeVar, cast
 
+from parser.Errors import GenericParseError
 import valiance.vtypes.VTypes as VTypes
 
 from valiance.parser.AST import *
@@ -10,7 +11,7 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 
-def default_parse_items_wrap(x: List[T]) -> List[T]:
+def default_parse_items_wrap(x: list[T]) -> T:
     """
     A dummy wrap function that just returns the input as is.
     Useful for the default wrap parameter in parse_items.
@@ -194,6 +195,7 @@ class Parser:
             [list[T]], T
         ] = default_parse_items_wrap,  # Function to wrap conglomerate items
         separator: TokenType = TokenType.COMMA,
+        verify: Tuple[Callable[[list[T]], bool], str] | None = None,
     ) -> list[T]:
         """
         A generic-style item parser that can parse any number of separated items,
@@ -221,6 +223,8 @@ class Parser:
         :type wrap_fn: Callable[[list[T]], T]
         :param separator: The token type that separates items in the list
         :type separator: TokenType
+        :param verify: Optional function and error message to verify each parsed item. For example, a tuple may want to ensure items are expressionable.
+        :type verify: (Callable[[list[T]], bool], str) | None
         :return: The list of parsed items, possibly wrapped if conglomerate is True
         :rtype: list[T]
         """
@@ -236,6 +240,10 @@ class Parser:
                 if conglomerate:
                     if not current_item:
                         raise Exception("Empty item detected.")
+                    if verify is not None:
+                        condition, error_msg = verify
+                        if not condition(current_item):
+                            raise GenericParseError(error_msg)
                     items.append(wrap_fn(current_item))
                 else:
                     # If conglomerate is False, just extend the items list
@@ -264,6 +272,36 @@ class Parser:
         self.eat_whitespace()
         self.discard()  # Discard the closing token
         return items
+
+    def quick_items(
+        self,
+        close_token: TokenType,
+        verify: Tuple[Callable[[list[ASTNode]], bool], str] | None = None,
+    ) -> list[ASTNode]:
+        """
+        A simplified version of parse_items that specifically parses ASTNodes
+        until a specified closing token is encountered.
+
+        This method uses self.parse_next as the parsing function, conglomerates,
+        and wraps items using self.group_wrap.
+
+        Very useful for parsing lists, tuples, and similar structures where
+        you don't care about specialising.
+
+        :param self: This Parser instance
+        :param close_token: The token type that signifies the end of the item list
+        :type close_token: TokenType
+        :return: The list of parsed ASTNodes
+        :rtype: list[ASTNode]
+        """
+        return self.parse_items(
+            close_token,
+            self.parse_next,
+            conglomerate=True,
+            wrap_fn=self.group_wrap,
+            separator=TokenType.COMMA,
+            verify=verify,
+        )
 
     def parse_next(self) -> ASTNode | None:
         """
@@ -352,16 +390,20 @@ class Parser:
     # Specialised parse methods start here
 
     def parse_tuple(self) -> ASTNode:
-        tuple_items = self.parse_items(
+        tuple_items = self.quick_items(
             TokenType.RIGHT_PAREN,
-            self.parse_next,
-            conglomerate=True,
-            wrap_fn=self.group_wrap,
-            separator=TokenType.COMMA,
+            verify=(self.is_expressionable, "Tuple items must be expressionable."),
         )
         return TupleNode(tuple_items, len(tuple_items))
 
     def parse_list_or_dictionary(self) -> ASTNode:
+        items = self.quick_items(TokenType.RIGHT_SQUARE)
+
+        # See if any items were collected
+        if not items:
+            return ListNode([])  # This _will_ need to be disambiguated by the user
+
+        # Now determine if this is a dictionary or a list
         return NotImplementedError
 
     def parse_block(self) -> ASTNode:
@@ -449,3 +491,45 @@ class Parser:
         return NotImplementedError
 
     # Parsing helper methods
+    def is_expressionable(self, nodes: list[ASTNode]) -> bool:
+        """
+        Check whether all ASTNodes in the provided list are expressionable.
+
+        :param self: This Parser instance
+        :param nodes: List of ASTNodes to check
+        :type nodes: list[ASTNode]
+        :return: True if all nodes are expressionable, False otherwise
+        :rtype: bool
+        """
+
+        # Check if each node is an instance of a node that is expressionable
+        for node in nodes:
+            if isinstance(node, GroupNode):
+                for child in node.elements:
+                    if not self.is_expressionable([child]):
+                        return False
+            if not isinstance(
+                node,
+                (
+                    LiteralNode,
+                    ElementNode,
+                    FunctionNode,
+                    ListNode,
+                    TupleNode,
+                    DictionaryNode,
+                    VariableGetNode,
+                    DuplicateNode,
+                    SwapNode,
+                    PopNode,
+                    IfNode,
+                    MatchNode,
+                    WhileNode,
+                    ForNode,
+                    UnfoldNode,
+                    AssertNode,
+                    AssertElseNode,
+                    TypeCastNode,
+                ),
+            ):
+                return False
+        return True
