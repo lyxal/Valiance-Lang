@@ -12,7 +12,7 @@ The defining features of Valiance are that it:
 
 Ultimately, Valiance acts to elevate array languages beyond rough sketches and algorithmatic prototypes. Valiance brings array languages to the software development table.
 
-For more information, check out the [Language Overview](docs/overview.md).
+For more information, check out the [working docs](docs/langdocs.md).
 
 ## But Where's the Exact Specification?
 
