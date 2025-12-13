@@ -1,8 +1,8 @@
-_Note, this is${... NOT a tutorial, nor a presentation of any language design philosophy. If you want that, check out the (outdated) overview.md document._
+_Note, this is NOT a tutorial, nor a presentation of any language design philosophy. If you want that, check out the (outdated) overview.md document._
 
 This is a document outlining the key features of the Valiance programming language as a series of dot points, brief explanations, and code examples. It is not intended as a teaching resource, but rather an easy-to-write way of documenting language features.
 
-By the way, `}` in an example means "not actually part of the syntax, but to be replaced"
+By the way, `${...}` in an example means "not actually part of the syntax, but to be replaced"
 
 # 0. Overarching Design Directions
 
