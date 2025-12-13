@@ -1,292 +1,213 @@
+from typing import Any, Tuple, cast
 import pytest
 
 import valiance.lexer.Scanner as Scanner
 import valiance.lexer.Token as Token
 from valiance.lexer.TokenType import TokenType
 
-
-def scan(source: str) -> list[Token.Token]:
-    scanner = Scanner.Scanner(source)
-    return scanner.scan_tokens()
+NEWLINE_TOKEN = (TokenType.NEWLINE, "\n")
 
 
-def tokens_equal(t1: list[Token.Token], t2: list[tuple[TokenType, str]]) -> bool:
-    t1 = [token for token in t1 if token.type != TokenType.WHITESPACE]
-    if len(t1) != len(t2):
-        return False
-    for token1, token2 in zip(t1, t2):
-        # Just compare type and value for simplicity
-        # No need to compare line and column in this test
-        if token1.type != token2[0] or token1.value != token2[1]:
+class TokenStream:
+    def __init__(self, tokens: list[Token.Token] | list[Tuple[TokenType, str]]):
+        if not tokens:
+            self.tokens = []
+        elif isinstance(tokens[0], Token.Token):  # List of tokens
+            self.tokens = cast(list[Token.Token], tokens)
+            if self.tokens[-1].type == TokenType.EOF:
+                self.tokens.pop()  # Remove EOF token for testing
+        else:
+            raw_tokens = cast(list[Tuple[TokenType, str]], tokens)
+            self.tokens = [Token.Token(t, v, -1, -1) for (t, v) in raw_tokens]
+
+    def __eq__(self, otherStream: Any) -> bool:
+        if not isinstance(otherStream, TokenStream):
+            return NotImplemented
+        t1 = [token for token in self.tokens if token.type != TokenType.WHITESPACE]
+        t2 = otherStream.tokens
+        if len(t1) != len(t2):
             return False
-    return True
+        for token1, token2 in zip(t1, t2):
+            # Just compare type and value for simplicity
+            # No need to compare line and column in this test
+            if token1.type != token2.type or token1.value != token2.value:
+                return False
+        return True
+
+    def __repr__(self) -> str:
+        return f"{self.tokens}"
 
 
-def test_basic_number():
-    assert tokens_equal(scan("123"), [(TokenType.NUMBER, "123"), (TokenType.EOF, "")])
+def scan(source: str) -> TokenStream:
+    scanner = Scanner.Scanner(source)
+    return TokenStream(scanner.scan_tokens())
 
 
-def test_two_numbers():
-    assert tokens_equal(
-        scan("123 456"),
-        [(TokenType.NUMBER, "123"), (TokenType.NUMBER, "456"), (TokenType.EOF, "")],
+def test_simple_number():
+    assert scan("123") == TokenStream([(TokenType.NUMBER, "123")])
+
+
+def test_valid_decimal_number():
+    assert scan("6.7") == TokenStream([(TokenType.NUMBER, "6.7")])
+    assert scan("10.50") == TokenStream([(TokenType.NUMBER, "10.50")])
+
+
+def test_leading_zero_decimal():
+    assert scan("0.123") == TokenStream([(TokenType.NUMBER, "0.123")])
+    assert scan("0.0") == TokenStream([(TokenType.NUMBER, "0.0")])
+
+
+def test_invalid_decimal_number():
+    with pytest.raises(ValueError):
+        scan("123.")
+
+
+def test_leading_zero_integer():
+    assert scan("0123") == TokenStream(
+        [(TokenType.NUMBER, "0"), (TokenType.NUMBER, "123")]
     )
+    assert scan("0") == TokenStream([(TokenType.NUMBER, "0")])
 
 
-def test_basic_decimal_number():
-    assert tokens_equal(scan("1.23"), [(TokenType.NUMBER, "1.23"), (TokenType.EOF, "")])
+def test_valid_imaginary_number():
+    assert scan("3i1") == TokenStream([(TokenType.NUMBER, "3i1")])
+    assert scan("4.5i0") == TokenStream([(TokenType.NUMBER, "4.5i0")])
+    assert scan("0.123i5.3") == TokenStream([(TokenType.NUMBER, "0.123i5.3")])
 
 
-def test_basic_imaginary_number():
-    assert tokens_equal(
-        scan("12i34"), [(TokenType.NUMBER, "12i34"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(scan("5i0"), [(TokenType.NUMBER, "5i0"), (TokenType.EOF, "")])
-    assert tokens_equal(scan("0i5"), [(TokenType.NUMBER, "0i5"), (TokenType.EOF, "")])
+def test_invalid_imaginary_number():
+    with pytest.raises(ValueError):
+        scan("3i")
+    with pytest.raises(ValueError):
+        scan("4.5i")
+    with pytest.raises(ValueError):
+        scan("0.123i5.")
+
+
+def test_thing_that_look_imaginary_but_is_not():
+    # This should not be treated as an imaginary number
+    assert scan("i3") == TokenStream([(TokenType.WORD, "i3")])
+
+
+def test_valid_exponential_number():
+    assert scan("2e3") == TokenStream([(TokenType.NUMBER, "2e3")])
+    assert scan("5.5e-2") == TokenStream([(TokenType.NUMBER, "5.5e-2")])
+    assert scan("1.23e4.4") == TokenStream([(TokenType.NUMBER, "1.23e4.4")])
+
+
+def test_invalid_exponential_number():
+    with pytest.raises(ValueError):
+        scan("2e")
+    with pytest.raises(ValueError):
+        scan("5.5e")
+    with pytest.raises(ValueError):
+        scan("1.23e4.")
 
 
 def test_negative_number():
-    assert tokens_equal(scan("-69"), [(TokenType.NUMBER, "-69"), (TokenType.EOF, "")])
-    assert tokens_equal(
-        scan("-3.14"), [(TokenType.NUMBER, "-3.14"), (TokenType.EOF, "")]
-    )
+    assert scan("-123") == TokenStream([(TokenType.NUMBER, "-123")])
+    assert scan("-0.456") == TokenStream([(TokenType.NUMBER, "-0.456")])
+    assert scan("-3i2") == TokenStream([(TokenType.NUMBER, "-3i2")])
+    assert scan("-4.5e-6") == TokenStream([(TokenType.NUMBER, "-4.5e-6")])
+    assert scan("-0.0") == TokenStream([(TokenType.NUMBER, "-0.0")])
+    assert scan("6i-7") == TokenStream([(TokenType.NUMBER, "6i-7")])
+    assert scan("-2e-3") == TokenStream([(TokenType.NUMBER, "-2e-3")])
 
 
-def test_leading_0s():
-    assert tokens_equal(
-        scan("001"),
-        [
-            (TokenType.NUMBER, "0"),
-            (TokenType.NUMBER, "0"),
-            (TokenType.NUMBER, "1"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-
-def test_decimal_leading_0():
-    assert tokens_equal(scan("0.5"), [(TokenType.NUMBER, "0.5"), (TokenType.EOF, "")])
-
-
-def test_small_decimal_number():
-    assert tokens_equal(
-        scan("0.0005"), [(TokenType.NUMBER, "0.0005"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(scan("0.05"), [(TokenType.NUMBER, "0.05"), (TokenType.EOF, "")])
-
-
-def test_imaginary_with_negatives():
-    assert tokens_equal(
-        scan("-3i-4"), [(TokenType.NUMBER, "-3i-4"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(scan("5i-6"), [(TokenType.NUMBER, "5i-6"), (TokenType.EOF, "")])
-    assert tokens_equal(scan("-7i8"), [(TokenType.NUMBER, "-7i8"), (TokenType.EOF, "")])
-
-
-def test_imaginary_decimal():
-    assert tokens_equal(
-        scan("2.5i3.5"), [(TokenType.NUMBER, "2.5i3.5"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(
-        scan("-1.2i-3.4"), [(TokenType.NUMBER, "-1.2i-3.4"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(
-        scan("0.0i0.0"), [(TokenType.NUMBER, "0.0i0.0"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(
-        scan("3.14i-5.1"), [(TokenType.NUMBER, "3.14i-5.1"), (TokenType.EOF, "")]
-    )
-    assert tokens_equal(
-        scan("-0.5i2.5"), [(TokenType.NUMBER, "-0.5i2.5"), (TokenType.EOF, "")]
-    )
-
-
-def test_invalid_numbers():
+def test_invalid_negative_number():
     with pytest.raises(ValueError):
-        scan("12.34.56")  # Multiple decimal points
-
+        scan("-0.")
     with pytest.raises(ValueError):
-        scan("0...5")  # Ellipsis should not be part of the number
+        scan("-3i")
+    with pytest.raises(ValueError):
+        scan("-4.5e")
+    with pytest.raises(ValueError):
+        scan("-0.123i5.")
 
 
-def test_imaginary_followed_by_i():
-    assert tokens_equal(
-        scan("3i4i5"),
+def test_simple_string():
+    assert scan('"hello"') == TokenStream([(TokenType.STRING, "hello")])
+
+
+def test_string_with_escape():
+    assert scan(
+        '"I kid you not, he really said \\"6 7\\" and did the funny brainrot gesture"'
+    ) == TokenStream(
         [
-            (TokenType.NUMBER, "3i4"),
             (
-                TokenType.WORD,
-                "i5",
-            ),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-
-def test_negative_at_the_end():
-    assert tokens_equal(
-        scan("5-"),
-        [
-            (TokenType.NUMBER, "5"),
-            (TokenType.WORD, "-"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-    assert tokens_equal(
-        scan("3-4"),
-        [
-            (TokenType.NUMBER, "3"),
-            (TokenType.NUMBER, "-4"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-    assert tokens_equal(
-        scan("3- 4"),
-        [
-            (TokenType.NUMBER, "3"),
-            (TokenType.WORD, "-"),
-            (TokenType.NUMBER, "4"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-
-def test_decimal_at_the_end():
-    with pytest.raises(ValueError):
-        scan("5.")  # Decimal point without following digits
-
-
-def test_basic_string():
-    assert tokens_equal(
-        scan('"Hello, World!"'),
-        [(TokenType.STRING, "Hello, World!"), (TokenType.EOF, "")],
+                TokenType.STRING,
+                'I kid you not, he really said "6 7" and did the funny brainrot gesture',
+            )
+        ]
     )
 
 
 def test_unterminated_string():
     with pytest.raises(ValueError):
-        scan('"This string is not terminated')  # Unterminated string
+        scan('"This is an unterminated string')
 
 
-def test_string_with_escape_sequences():
-    assert tokens_equal(
-        scan(r'"Line1\nLine2\tTabbed\""'),
-        [(TokenType.STRING, 'Line1\nLine2\tTabbed"'), (TokenType.EOF, "")],
+def test_string_with_newline():
+    assert scan('"This is a string\nwith a newline"') == TokenStream(
+        [(TokenType.STRING, "This is a string\nwith a newline")]
     )
 
 
-def test_string_with_literal_newline():
-    assert tokens_equal(
-        scan('"This is a\nmulti-line string"'),
-        [(TokenType.STRING, "This is a\nmulti-line string"), (TokenType.EOF, "")],
+def test_comments_are_ignored():
+    assert scan("#? This is a comment") == TokenStream([])
+    assert scan("#?This is a comment\n123") == TokenStream(
+        [NEWLINE_TOKEN, (TokenType.NUMBER, "123")]
+    )
+    assert scan("123 #? This is a comment") == TokenStream([(TokenType.NUMBER, "123")])
+    assert scan("123\n#? Another comment") == TokenStream(
+        [(TokenType.NUMBER, "123"), NEWLINE_TOKEN]
+    )
+    assert scan("#? Comment\n#? Another comment\n456") == TokenStream(
+        [NEWLINE_TOKEN, NEWLINE_TOKEN, (TokenType.NUMBER, "456")]
     )
 
 
-def test_empty_string():
-    assert tokens_equal(scan('""'), [(TokenType.STRING, ""), (TokenType.EOF, "")])
+def test_multiline_comments():
+    assert scan("#{This\nComment\nSpans\nMultiple\nLines}#") == TokenStream([])
 
 
-def test_words():
-    assert tokens_equal(scan("hello"), [(TokenType.WORD, "hello"), (TokenType.EOF, "")])
-    assert tokens_equal(
-        scan("var_name123"), [(TokenType.WORD, "var_name123"), (TokenType.EOF, "")]
-    )
+def test_tag_token():
+    assert scan("#tag") == TokenStream([(TokenType.TAG_TOKEN, "tag")])
+    assert scan("#-tag") == TokenStream([(TokenType.TAG_TOKEN, "-tag")])
 
 
-def test_empty_variable_name():
+def test_invalid_tag_token():
     with pytest.raises(ValueError):
-        scan("$")  # Empty variable name
-
-
-def test_variable_assignment():
-    assert tokens_equal(
-        scan("$var = 10"),
-        [
-            (TokenType.VARIABLE, "var"),
-            (TokenType.EQUALS, "="),
-            (TokenType.NUMBER, "10"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-
-def test_variable_retrieval():
-    assert tokens_equal(
-        scan("$myVar"),
-        [(TokenType.VARIABLE, "myVar"), (TokenType.EOF, "")],
-    )
-
-
-def test_equals_sign():
-    assert tokens_equal(
-        scan("="),
-        [(TokenType.EQUALS, "="), (TokenType.EOF, "")],
-    )
-
-
-def test_variable_name_with_multiple_accessors():
-    assert tokens_equal(
-        scan("$obj.field.subfield"),
-        [(TokenType.VARIABLE, "obj.field.subfield"), (TokenType.EOF, "")],
-    )
-
-
-def test_variable_name_with_underscores_and_digits():
-    assert tokens_equal(
-        scan("$var_name_123"),
-        [(TokenType.VARIABLE, "var_name_123"), (TokenType.EOF, "")],
-    )
-
+        scan("#")  # Missing tag name
     with pytest.raises(ValueError):
-        scan("$67")  # Invalid variable name starting with a digit
+        scan("#-")  # Missing tag name after '-'
 
 
-def test_recognise_reserved_keywords():
-    assert tokens_equal(
-        scan("above async await parallel spawn concurrent"),
-        [
-            (TokenType.ABOVE, "above"),
-            (TokenType.ASYNC, "async"),
-            (TokenType.AWAIT, "await"),
-            (TokenType.PARALLEL, "parallel"),
-            (TokenType.SPAWN, "spawn"),
-            (TokenType.CONCURRENT, "concurrent"),
-            (TokenType.EOF, ""),
-        ],
-    )
-
-    assert tokens_equal(
-        scan(
-            "define fn import match object trait variant private public readable self this"
-        ),
-        [
-            (TokenType.DEFINE, "define"),
-            (TokenType.FN, "fn"),
-            (TokenType.IMPORT, "import"),
-            (TokenType.MATCH, "match"),
-            (TokenType.OBJECT, "object"),
-            (TokenType.TRAIT, "trait"),
-            (TokenType.VARIANT, "variant"),
-            (TokenType.PRIVATE, "private"),
-            (TokenType.PUBLIC, "public"),
-            (TokenType.READABLE, "readable"),
-            (TokenType.SELF, "self"),
-            (TokenType.THIS, "this"),
-            (TokenType.EOF, ""),
-        ],
+def test_word_tokens():
+    assert scan("variable_name") == TokenStream([(TokenType.WORD, "variable_name")])
+    assert scan("fn myFunction") == TokenStream(
+        [(TokenType.FN, "fn"), (TokenType.WORD, "myFunction")]
     )
 
 
-def test_annotation_token():
-    assert tokens_equal(
-        scan("@tupled $fn()"),
-        [
-            (TokenType.ANNOTATION, "tupled"),
-            (TokenType.VARIABLE, "fn"),
-            (TokenType.LEFT_PAREN, "("),
-            (TokenType.RIGHT_PAREN, ")"),
-            (TokenType.EOF, ""),
-        ],
+def test_variable_get():
+    assert scan("$variable") == TokenStream([(TokenType.VARIABLE, "variable")])
+    assert scan("$var123_name") == TokenStream([(TokenType.VARIABLE, "var123_name")])
+
+
+def test_invalid_variable_get():
+    with pytest.raises(ValueError):
+        scan("$")  # Missing variable name
+    with pytest.raises(ValueError):
+        scan("$123var")  # Invalid variable name starting with a digit
+
+
+def test_single_equals():
+    assert scan("=") == TokenStream([(TokenType.EQUALS, "=")])
+    assert scan("$x = $y") == TokenStream(
+        [(TokenType.VARIABLE, "x"), (TokenType.EQUALS, "="), (TokenType.VARIABLE, "y")]
     )
+
+
+def test_double_equals():
+    assert scan("==") == TokenStream([(TokenType.WORD, "==")])

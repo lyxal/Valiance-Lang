@@ -2734,6 +2734,7 @@ as
 as!
 assert
 at
+call
 concurrent
 define
 else
@@ -2751,6 +2752,7 @@ public
 readable
 self
 spawn
+tag
 this
 trait
 try

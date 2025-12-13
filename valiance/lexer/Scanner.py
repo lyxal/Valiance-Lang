@@ -6,35 +6,9 @@ from valiance.lexer.TokenType import TokenType
 
 T = TypeVar("T")
 
-RESERVED_WORDS = (
-    "above",
-    "any",
-    "as",
-    "async",
-    "await",
-    "call",
-    "concurrent",
-    "define",
-    "fn",
-    "foreach",
-    "if",
-    "implements",
-    "import",
-    "match",
-    "object",
-    "parallel",
-    "private",
-    "public",
-    "readable",
-    "self",
-    "spawn",
-    "tag",
-    "this",
-    "trait",
-    "variant",
-    "where",
-    "while",
-)
+SINGLE_LINE_COMMENT = "#?"
+MULTILINE_COMMENT_START = "#{"
+MULTILINE_COMMENT_END = "}#"
 
 
 def unwrap_and_test(val: T | None, condition: Callable[[T], bool]) -> bool:
@@ -181,6 +155,8 @@ class Scanner:
                     self.scan_number()
                 case "=" if not self._head_equals("=="):
                     self.add_token(TokenType.EQUALS, "=")
+                case _ if self._head_equals(TokenType.AS_UNSAFE.value):
+                    self.add_token(TokenType.AS_UNSAFE, TokenType.AS_UNSAFE.value)
                 case _ if HEAD in string.ascii_letters:
                     self.scan_element()
                 case "$":
@@ -209,19 +185,21 @@ class Scanner:
                     self.add_token(TokenType.COLON, ":")
                 case "@":
                     self.scan_annotation()
-                case _ if self._head_matches("#!?[a-zA-Z]+"):
+                case _ if self._head_matches("#(?!\\?)-?[a-zA-Z_]+"):
                     self.column += 1
                     self._discard()  # Discard the '#'
                     self.scan_tag()
-                case _ if self._head_equals("#/"):
+                case _ if self._head_equals(SINGLE_LINE_COMMENT):
                     # Comment, discard until newline
                     while self.characters and self.characters[0] != "\n":
                         self._discard()
                     # Newline will be handled in the next iteration
-                case _ if self._head_equals("#{"):
+                case _ if self._head_equals(MULTILINE_COMMENT_START):
                     # Multiline comment
                     start_line, start_column = self.line, self.column
-                    while self.characters and not self._head_equals("}#"):
+                    while self.characters and not self._head_equals(
+                        MULTILINE_COMMENT_END
+                    ):
                         self._discard()
                         if self.characters and self.characters[0] == "\n":
                             self.line += 1
@@ -229,8 +207,8 @@ class Scanner:
                         else:
                             self.column += 1
                     # Discard the closing sequence
-                    if self._head_equals("}#"):
-                        self._discard(3)
+                    if self._head_equals(MULTILINE_COMMENT_END):
+                        self._discard(len(MULTILINE_COMMENT_END))
                     else:
                         raise ValueError(
                             f"Unterminated multiline comment starting at line {start_line}, column {start_column}"
@@ -285,10 +263,15 @@ class Scanner:
         # Scan the real part of the number.
         value = self.scan_decimal()
 
-        # Scan the imaginary part of the number, if it exists.
-        if self._head_equals("i"):
+        # Scan the imaginary OR **10 part of the number, if it exists.
+        if self._head_equals("i") or self._head_equals("e"):
             value += self.advance()
-            value += self.scan_decimal()
+            part = self.scan_decimal()
+            if not part:
+                raise ValueError(
+                    f"Invalid number format at line {self.line}, column {self.column}"
+                )
+            value += part
 
         self._add_token(TokenType.NUMBER, value, start_line, start_column)
 
@@ -341,7 +324,7 @@ class Scanner:
 
         value = ""
         while unwrap_and_test(
-            self._peek(), lambda c: c in string.ascii_letters + string.digits
+            self._peek(), lambda c: c in string.ascii_letters + string.digits + "_"
         ):
             value += self.advance()
 
@@ -453,10 +436,17 @@ class Scanner:
         start_line, start_column = self.line, self.column
 
         value = ""
+        if self._head_equals("-"):  # Handle optional leading '-'
+            value += self.advance()
         while unwrap_and_test(
             self._peek(),
             lambda c: c in string.ascii_letters + string.digits + "_",
         ):
             value += self.advance()
-
+        if not value:
+            raise ValueError(f"Invalid tag at line {self.line}, column {self.column}")
+        if value == "-":
+            raise ValueError(
+                f"Missing tag name at line {self.line}, column {self.column}"
+            )
         self._add_token(TokenType.TAG_TOKEN, value, start_line, start_column)
