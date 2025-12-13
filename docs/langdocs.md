@@ -88,7 +88,15 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 	- No concern about string shape either.
 - UTF-8 encoded
 - Support for string interpolation
-- Double quotes - normal string. `"Hello, World!"`
+  - `$` followed by either an identifier or `{expression}` inside a double-quoted string replaces that part of the string with the string representation of the value.
+  - Example:
+
+```
+$brainrot = "6 7"
+"The 2025 word of the year was $brainrot"
+```
+
+- Double quotes - `"Hello, World!"`
 - Can contain literal newlines = no need for `\n`. Only quotes and backslashes need to be escaped.
 - Unterminated string = lexer error.
 - Type = `String`
@@ -1080,7 +1088,7 @@ match {
 #: Imagine some union type is on the stack
 match {
   as :Number -> "Got a Number",
-  as $str: String -> $"The string is $str",
+  as $str: String -> "The string is $str",
   as $def -> "The default case"
 }
 
@@ -1115,7 +1123,7 @@ define validateNumberFromString(num: String) {
 
 ```
 define[T] itemAt(xs: T+, ind: Number) {
-  assert {length($xs) $ind <}: $"Index ${$ind} not in bounds for list ${$xs errorFormat}"
+  assert {length($xs) $ind <}: "Index $ind not in bounds for list ${$xs errorFormat}"
   $xs[$ind]
 }
 ```
@@ -1251,7 +1259,7 @@ while (${condition}) {${body}}
 ```
 10
 while (0 >) {
- ^ println($"Counting down: ${id}")
+ ^ println("Counting down: ${id}")
  1 -
 }
 
@@ -2417,7 +2425,7 @@ try {
 } handle (err: String) {
   "Failed with a string"
 } handle (err: Number) {
-  $"The number was ${$err}"
+  "The number was $err"
 }
 ```
 
@@ -2672,11 +2680,11 @@ define fetchTimeout(url: String, ms: Number) -> Result[String, String] {
 ```
 #? In file: greeting.vlnc
 define greet(name: String) {
-  println($"Hello, ${name}!")
+  println("Hello, $name!")
 }
 
 define goodbye(name: String) {
-  println($"Bye for now, ${name}!")
+  println("Bye for now, $name!")
 }
 ```
 
