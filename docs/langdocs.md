@@ -37,7 +37,9 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 - Performance
 	- At this stage, left as an exercise for people interested in implementing language optmisations.
 - Tooling
-	- Good tooling is very important, but at this stage, given the language is still in planning, and that no one is even able to use it yet, tooling is left as an exercise fpr the community. One day though. Again, tooling = very important. 
+	- Good tooling is very important, but at this stage, given the language is still in planning, and that no one is even able to use it yet, tooling is left as an exercise fpr the community. One day though. Again, tooling = very important.
+- Lazy Evaluation by Default
+  - This one is more a nicety, as lazy evaluation for everything isn't strictly necessary (although, it is needed for infinite lists). However, making everything lazy with an opt-in system for forcing eager evaluation provides a nice balance of composability and practicality. 
 
 # 1. The Stack
 
@@ -2727,7 +2729,47 @@ import sorted: #sorted
 - `private` before a define, object, trait, variant, or enum, will make that thing unable to be imported.
 - Tags cannot be made import private, because that doesn't make sense.
 
-# 26. Reserved Words
+# 26. Eager Evaluation 
+
+- Sometimes, it's necessary to force evaluation of a list or other lazily evaluated object.
+- For example, consider:
+
+```
+[1, 2, 3] map: println
+```
+
+- In theory, this example would not print each item.
+- Instead, it would sit unevaluated until a forced evaluation context (like printing or a `foreach` loop) is encountered.
+- That's not ideal, because all of a sudden, your side effects from earlier are being exposed during a separate calculation:
+
+```
+[1, 2, 3] map: println
+#? Scenario 1: Printing that list
+println
+#{ Output = "[1
+1, 2
+2, 3
+3]"
+}#
+#? Scenario 2: Using a foreach
+foreach {...}
+#? This has the surprise of all of a sudden printing during execution
+```
+
+- Except...this isn't what happens. (pretend with me for a second that everything is implemented). Running `map: println` immediately prints each number. Further operations do not trigger the printing behaviour.
+- So then what's happening? Why isn't this mix of side effects and lazy evaluation ending in a mess?
+- Under the hood, println was defined as:
+
+```
+eager define[T] println(:T) -> () {...}
+```
+
+- The `eager` keyword makes it so that anything calling `println` forces eager evaluation of all of its arguments.
+- Eagerness propagates up. Anything calling an eager element becomes eager itself.
+  - Otherwise, you just have the same problem as before.
+- Thus, `map: println` itself is eager. The map, by process of calling an eager function, becomes eager.
+
+# Appendix. Reserved Words
 
 ```
 as
@@ -2737,6 +2779,7 @@ at
 call
 concurrent
 define
+eager
 else
 enum
 fn
