@@ -2,6 +2,8 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
+from valiance.compiler_common.Index import Index
+from valiance.compiler_common.TagCategories import TagCategory
 from valiance.vtypes.VTypes import VType
 
 
@@ -26,7 +28,7 @@ class ElementNode(ASTNode):
     element_name: str
     generics: list[VType]
     args: list[Tuple[str, ASTNode]]
-    modified: bool = False
+    modifier_args: list[ASTNode]
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,7 @@ class TupleNode(ASTNode):
     """Represents a tuple of elements"""
 
     elements: Sequence[ASTNode]
+    length: int
 
 
 @dataclass(frozen=True)
@@ -159,6 +162,18 @@ class SwapNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class PopNode(ASTNode):
+    """Represents the pop operation, labels optional"""
+
+    labels: list[str]
+
+    def __post_init__(self):
+        # Handle default values for empty lists
+        if not self.labels:
+            object.__setattr__(self, "labels", ["a"])
+
+
+@dataclass(frozen=True)
 class ModuleImportNode(ASTNode):
     """Represents a module import statement"""
 
@@ -187,6 +202,7 @@ class TypeCastNode(ASTNode):
     """Represents a type cast operation"""
 
     target_type: TypeNode
+    safe: bool
 
 
 @dataclass(frozen=True)
@@ -195,15 +211,7 @@ class IfNode(ASTNode):
 
     condition: GroupNode
     then_branch: GroupNode
-
-
-@dataclass(frozen=True)
-class BranchNode(ASTNode):
-    """Represents a branch operation - if with mandatory else"""
-
-    condition: GroupNode
-    then_branch: GroupNode
-    else_branch: GroupNode
+    else_branch: GroupNode | None
 
 
 @dataclass(frozen=True)
@@ -245,7 +253,98 @@ class ForNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class UnfoldNode(ASTNode):
+    """Represents an unfold operation"""
+
+    body: GroupNode
+
+
+@dataclass(frozen=True)
+class TryHandleNode(ASTNode):
+    """Represents a try-handle operation"""
+
+    try_block: GroupNode
+    handle_block: GroupNode
+
+
+@dataclass(frozen=True)
 class AtNode(ASTNode):
     """Represents an at expression with levels"""
 
     levels: list[Tuple[str, int]]
+
+
+@dataclass(frozen=True)
+class IndexNode(ASTNode):
+    """Represents an index dump operation"""
+
+    indices: list[Index]
+    dump: bool = False
+
+
+@dataclass(frozen=True)
+class TagDefinitionNode(ASTNode):
+    """Represents a tag definition"""
+
+    name: str
+    category: TagCategory
+
+
+@dataclass(frozen=True)
+class TagOverlayNode(ASTNode):
+    """Represents a tag overlay operation"""
+
+    name: str
+    # TODO: Figure out what goes here
+
+
+@dataclass(frozen=True)
+class TagDisjointNode(ASTNode):
+    """Represents a tag disjoint operation"""
+
+    parent_tag: str
+    child_tag: str
+
+
+@dataclass(frozen=True)
+class AnnotationNode(ASTNode):
+    """Represents an annotation operation"""
+
+    annotation: str
+    target: ASTNode
+
+
+@dataclass(frozen=True)
+class PanicNode(ASTNode):
+    """Represents a panic operation"""
+
+    message: ASTNode
+
+
+@dataclass(frozen=True)
+class SpawnNode(ASTNode):
+    """Represents a spawn operation"""
+
+    body: GroupNode
+
+
+@dataclass(frozen=True)
+class ConcurrentBlockNode(ASTNode):
+    """Represents a concurrent block operation"""
+
+    body: GroupNode
+
+
+@dataclass(frozen=True)
+class MatchChannelsNode(ASTNode):
+    """Represents a match-channels operation"""
+
+    branches: list[Tuple[GroupNode, GroupNode]]
+
+
+@dataclass(frozen=True)
+class EnumNode(ASTNode):
+    """Represents an enum definition"""
+
+    name: str
+    variants: list[Tuple[str, ASTNode]]

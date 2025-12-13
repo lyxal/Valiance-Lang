@@ -1,6 +1,5 @@
 import argparse
 
-import valiance.parser.PrettyPrinter
 from valiance.lexer.Scanner import Scanner
 from valiance.parser.Parser import Parser
 
@@ -30,8 +29,7 @@ def main():
         asts = parser_.parse()
 
         for ast in asts:
-            pretty = valiance.parser.PrettyPrinter.pretty_print_ast(ast)
-            print(pretty)
+            print(ast)
 
 
 if __name__ == "__main__":

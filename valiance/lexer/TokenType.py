@@ -3,6 +3,7 @@ import enum
 
 class TokenType(enum.Enum):
     VARIABLE = "VARIABLE"
+    MULTI_VARIABLE = "MULTI_VARIABLE"
     WORD = "WORD"
     NUMBER = "NUMBER"
     STRING = "STRING"
@@ -10,6 +11,7 @@ class TokenType(enum.Enum):
     EOF = "EOF"
     ANNOTATION = "ANNOTATION"
     TAG_TOKEN = "TAG_TOKEN"
+    PASS = "PASS"
 
     # Keywords
     AS = "as"
@@ -20,6 +22,7 @@ class TokenType(enum.Enum):
     CONCURRENT = "concurrent"
     DEFINE = "define"
     ELSE = "else"
+    ENUM = "enum"
     FN = "fn"
     FOREACH = "foreach"
     HANDLE = "handle"
@@ -61,11 +64,11 @@ class TokenType(enum.Enum):
     PERCENT = "PERCENT"
     PIPE = "PIPE"
     PLUS = "PLUS"
-    POP = "POP"
     QUESTION = "QUESTION"
     RIGHT_BRACE = "RIGHT_BRACE"
     RIGHT_PAREN = "RIGHT_PAREN"
     RIGHT_SQUARE = "RIGHT_SQUARE"
+    SINGLE_QUOTE = "SINGLE_QUOTE"
     SLASH = "SLASH"
     STAR = "STAR"
     SWAP = "SWAP"

@@ -159,8 +159,10 @@ class Scanner:
                     self.add_token(TokenType.AS_UNSAFE, TokenType.AS_UNSAFE.value)
                 case _ if HEAD in string.ascii_letters:
                     self.scan_element()
-                case "$":
+                case "$" if not self._head_equals("$("):
                     self.scan_variable()
+                case "$(":
+                    self.add_token(TokenType.MULTI_VARIABLE, "$(")
                 case "(":
                     self.add_token(TokenType.LEFT_PAREN, HEAD)
                 case ")":
@@ -246,6 +248,14 @@ class Scanner:
                     self.add_token(TokenType.WORD, "==")
                 case "_":
                     self.add_token(TokenType.UNDERSCORE, HEAD)
+                case "'":
+                    self.add_token(TokenType.SINGLE_QUOTE, HEAD)
+                case _ if self._head_equals("..."):
+                    self.add_token(TokenType.PASS, "...")
+                case ".":
+                    self.add_token(TokenType.DOT, HEAD)
+                case "~":
+                    self.add_token(TokenType.TILDE, HEAD)
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
@@ -343,12 +353,9 @@ class Scanner:
         start_line, start_column = self.line, self.column
 
         self._discard()  # Discard the '$' character
-        value = self.scan_identifier()
-
-        # Allow for an arbitrary number of sub-variable accesses using dots.
-        while self._head_equals("."):
-            value += self.advance()  # Add the dot
-            value += self.scan_identifier()
+        value = ""
+        if not (self._head_equals(".")):
+            value = self.scan_identifier()
 
         self._add_token(TokenType.VARIABLE, value, start_line, start_column)
 

@@ -2738,6 +2738,7 @@ call
 concurrent
 define
 else
+enum
 fn
 foreach
 handle
