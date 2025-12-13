@@ -1,12 +1,12 @@
 _Note, this is NOT a tutorial, nor a presentation of any language design philosophy. If you want that, check out the (outdated) overview.md document._
 
-This is a document outling the key features of the Valiance programming language as a series of dot points, brief explanations, and code examples. It is not intended as a teaching resource, but rather an easy-to-write way of documenting language features.
+This is a document outlining the key features of the Valiance programming language as a series of dot points, brief explanations, and code examples. It is not intended as a teaching resource, but rather an easy-to-write way of documenting language features.
 
 By the way, `${...}` in an example means "not actually part of the syntax, but to be replaced"
 
 # 0. Overarching Design Directions
 
-- Array proogramming language
+- Array programming language
 	- List model rather than rectangular array model
 	- Iversonian-style, rather than language with good array support.
  - Stack-based
@@ -21,13 +21,13 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 	 - Elegance isn't fully mutually exclusive with practicality, but it shouldn't get in the way of people wanting something that just works
 - Object-oriented by design
 	- No inheritance though - only composition and traits
-	- Intentional OO rather than an afterthought, or rather than soemthing designed to not give the OO experience of other big languages.
+	- Intentional OO rather than an afterthought, or rather than something designed to not give the OO experience of other big languages.
 - Functional programming
 	- First class functions, and first-class functions that are actually ergonomic to work with.
 - Memory safe without garbage collection nor manual memory management.
 	- While this sounds pretentious at first, there's some language restrictions that makes this easier than it sounds.
 - Extensibility and modularity
-	- Thee ability to add function overloads, and even multiple dispatch.
+	- The ability to add function overloads, and even multiple dispatch.
 - Built-in concurrency features, in the form of coroutines
 	- No async/await
 	- Concurrency intentionally designed,rather than tacked on afterwards.
@@ -35,9 +35,9 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 - Modern error handling/optional type handling.
 - Everything immutable by default. Even lists.
 - Performance
-	- At this stage, left as an exercise for people interested in implementing language optmisations.
+	- At this stage, left as an exercise for people interested in implementing language optimisations.
 - Tooling
-	- Good tooling is very important, but at this stage, given the language is still in planning, and that no one is even able to use it yet, tooling is left as an exercise fpr the community. One day though. Again, tooling = very important.
+	- Good tooling is very important, but at this stage, given the language is still in planning, and that no one is even able to use it yet, tooling is left as an exercise for the community. One day though. Again, tooling = very important.
 - Lazy Evaluation by Default
   - This one is more a nicety, as lazy evaluation for everything isn't strictly necessary (although, it is needed for infinite lists). However, making everything lazy with an opt-in system for forcing eager evaluation provides a nice balance of composability and practicality. 
 
@@ -45,7 +45,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 
 - Unbounded stack length (as much as the computer can handle)
 - Can have mixed types.
-- Stack underflow is a compile eror - stack size and contents known at all times.
+- Stack underflow is a compile error - stack size and contents known at all times.
 	- Well, the types of its contents. Not the exact values at compile time - obviously.
  - Programs all execute on a single top-level stack.
 	 - Functions can create their own stacks, but control-flow always returns to the top-level stack.
@@ -84,7 +84,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 
 - Objects, not lists of characters
 	- More convenient for string-focused operations
-	- No weird indexing pproblems arising from treating strings as a list of characters
+	- No weird indexing problems arising from treating strings as a list of characters
 	- No concern about string shape either.
 - UTF-8 encoded
 - Support for string interpolation
@@ -107,7 +107,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 ("Hello", 5) #? (String, Number)
 ```
 
-### 3.3.1. Varadaic Tuple Types
+### 3.3.1. Variadic Tuple Types
 
 - Sometimes, it's useful to accept an arbitrary length tuple as a parameter.
 - `(${type}...)` will accept any tuple with that type repeated 1 or more times.
@@ -132,7 +132,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 - Syntax = `[key = value]`
 
 ## 3.5. None
-- A value representing the abscence of any other values.
+- A value representing the absence of any other values.
 - Always has the type `None`
 - Can be used where an optional type is expected.
 
@@ -186,7 +186,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 
 - Traditionally, lists are expressed as a composition of generics.
 	- `List<Int>` or `List<List<String>>`
-- In Valiance, given the fundamentalness of lists, a list type is expressed as a functtion of the "base" type of the list
+- In Valiance, given the fundamentalness of lists, a list type is expressed as a function of the "base" type of the list
 - A list is a type, followed by the rank of the list.
 	- This makes the list type a baked-in feature, rather than an otherwise after-thought construct.
 - `+` after a type represents 1 level of rank
@@ -1043,7 +1043,7 @@ fn {<(_, #) filter}
 	- `as $name` -> named catchall
 	- `as` can be followed by an `if` to match only if certain properties are true.
 	- e.g. `as :Number if 5 >`
-	- The type-casted value is avaliable.
+	- The type-casted value is available.
 - `default` is just the default case.
 
 - Branch = `(type ...), (type ...) ... -> code,`. `->` separates, branch ends on `,`.
@@ -1232,7 +1232,7 @@ range(1, 10) foreach ($n) {
 ## 13.4. `while`
 
 - So far all looping has either been recursion-bound, or fixed length over a collection.
-- `while` loops allow for abtrirary looping without recursion
+- `while` loops allow for arbitrary looping without recursion
 - Of the form:
 
 ```
