@@ -502,9 +502,7 @@ class Parser:
             dict_entries: list[Tuple[ASTNode, ASTNode]] = []
             for item in items:
                 assert isinstance(item, GroupNode)
-                key_node = item.elements[0]
-                value_node = item.elements[1]
-                dict_entries.append((key_node, value_node))
+                dict_entries.append(self.extract_dict_items(item))
             return DictionaryNode(location_from_token(head_token), dict_entries)
         elif dict_check == DictCheckReturnValue.NO:
             # It's a list
@@ -737,3 +735,34 @@ class Parser:
             equals_token = self.tokenStream.pop(0)
             return AuxiliaryTokenNode(location_from_token(equals_token), equals_token)
         return self.parse_next()
+
+    def extract_dict_items(self, group_node: GroupNode) -> Tuple[ASTNode, ASTNode]:
+        """
+        Given a GroupNode that represents a dictionary item,
+        extract and return the key and value ASTNodes.
+
+        :param self: This Parser instance
+        :param group_node: The GroupNode representing the dictionary item
+        :type group_node: GroupNode
+        :return: A tuple containing the key and value ASTNodes
+        :rtype: Tuple[ASTNode, ASTNode]
+        """
+        nodes = group_node.elements[::]
+
+        key_nodes: list[ASTNode] = []
+        while nodes and self.is_expressionable([nodes[0]]):
+            key_nodes.append(nodes.pop(0))
+
+        key_node = self.group_wrap(key_nodes)
+
+        # Remove the "=" token
+        if nodes and isinstance(nodes[0], AuxiliaryTokenNode):
+            nodes.pop(0)
+
+        value_nodes: list[ASTNode] = []
+        while nodes:
+            value_nodes.append(nodes.pop(0))
+
+        value_node = self.group_wrap(value_nodes)
+
+        return (key_node, value_node)
