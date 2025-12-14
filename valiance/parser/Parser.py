@@ -449,6 +449,18 @@ class Parser:
         return TupleNode(location_from_token(head_token), tuple_items, len(tuple_items))
 
     def parse_list_or_dictionary(self, head_token: Token) -> ASTNode | None:
+        """
+        Parse either a list or a dictionary from the token stream,
+        depending on the structure of the items found within the brackets.
+
+        :param self: This Parser instance
+        :param head_token: The opening LEFT_SQUARE token
+        :return: A ListNode or DictionaryNode depending on the parsed structure, or None on error
+        :rtype: ASTNode | None
+        """
+
+        # Manually collect items because we need to disambiguate
+        # between lists and dictionaries
         items = self.parse_items(
             TokenType.RIGHT_SQUARE,
             self.parse_list_item,
@@ -463,7 +475,10 @@ class Parser:
                 location_from_token(head_token), []
             )  # This _will_ need to be disambiguated by the user
 
+        # Get the collection type of the first item
         dict_check = self.is_dictionary_item(items[0])
+        # If there's more than 1 item, ensure subsequent items are
+        # the same
         if len(items) > 1:
             for item in items[1:]:
                 next_check = self.is_dictionary_item(item)
@@ -480,6 +495,8 @@ class Parser:
                         )
                     dict_check = DictCheckReturnValue.ERROR
                     return None
+
+        # At this point, we know whether it's a list or dictionary
         if dict_check == DictCheckReturnValue.YES:
             # It's a dictionary
             dict_entries: list[Tuple[ASTNode, ASTNode]] = []
