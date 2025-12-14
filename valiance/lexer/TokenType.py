@@ -21,6 +21,7 @@ class TokenType(enum.Enum):
     CALL = "call"
     CONCURRENT = "concurrent"
     DEFINE = "define"
+    EAGER = "eager"
     ELSE = "else"
     ENUM = "enum"
     FN = "fn"

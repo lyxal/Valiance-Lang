@@ -1,6 +1,6 @@
 from typing import Callable, TypeVar, cast
 
-from parser.Errors import GenericParseError
+from valiance.parser.Errors import GenericParseError
 import valiance.vtypes.VTypes as VTypes
 
 from valiance.parser.AST import *
@@ -66,6 +66,7 @@ class Parser:
     def __init__(self, tokenStream: list[Token]):
         self.tokenStream = tokenStream
         self.asts: list[ASTNode] = []
+        self.errors: list[GenericParseError] = []
 
     def add_node(self, node: ASTNode):
         """
