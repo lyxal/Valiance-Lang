@@ -1,5 +1,6 @@
 import argparse
 
+from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
 from valiance.parser.Parser import Parser
 from valiance.parser.PrettyPrinter import pretty_print_ast
@@ -28,6 +29,12 @@ def main():
 
         parser_ = Parser(tokens)
         asts = parser_.parse()
+
+        if asts and isinstance(asts[0], GenericParseError):
+            print("Parsing errors:")
+            for error in asts:
+                print(error)
+            continue
 
         for ast in asts:
             print(pretty_print_ast(ast))

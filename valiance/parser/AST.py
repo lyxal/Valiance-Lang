@@ -2,23 +2,47 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
+from valiance.lexer.Token import Token
 from valiance.compiler_common.Index import Index
 from valiance.compiler_common.TagCategories import TagCategory
 from valiance.vtypes.VTypes import VType
+
+
+class Location:
+    """Represents a location in the source code"""
+
+    def __init__(self, line: int, column: int):
+        self.line = line
+        self.column = column
 
 
 @dataclass(frozen=True)
 class ASTNode(ABC):
     """Base class for all AST nodes. Sealed via explicit subclass enumeration."""
 
+    location: Location
     pass
+
+
+@dataclass(frozen=True)
+class AuxiliaryNode(ASTNode):
+    """Used for parsing purposes only; should not appear in final AST"""
+
+    pass
+
+
+@dataclass(frozen=True)
+class AuxiliaryTokenNode(AuxiliaryNode):
+    """Holds a single token for auxiliary purposes"""
+
+    token: Token
 
 
 @dataclass(frozen=True)
 class GroupNode(ASTNode):
     """Represents a group of elements"""
 
-    elements: Sequence[ASTNode]
+    elements: list[ASTNode]
 
 
 @dataclass(frozen=True)

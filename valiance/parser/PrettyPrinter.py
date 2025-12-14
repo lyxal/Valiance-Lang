@@ -1,281 +1,235 @@
+# valiance/parser/PrettyPrinter.py
 from __future__ import annotations
 
-from dataclasses import is_dataclass, fields
+from dataclasses import MISSING, fields, is_dataclass
 from enum import Enum
 from typing import Any
 import reprlib
 
 
-class ParserPrettyPrinter:
+class CompactPrettyPrinter:
     """
-    Tree-style pretty-printer intended for AST/debug dumps.
+    Compact pretty printer for parser output (AST, VTypes, etc.) that does not
+    depend on enumerating AST node classes.
 
-    Goals:
-    - No dependency on specific AST node types (no isinstance against AST classes).
-    - Include all relevant info (every field of dataclasses, container contents).
-    - Readable output for nested structures (tree indentation).
-    - Optional per-node override: __pp__(pp) -> str
+    Abbreviation rules (generic):
+    - dataclasses printed as TypeName(k=v, ...)
+    - omit fields that are equal to their dataclass default/default_factory
+    - inline short sequences; truncate long ones as [... xN]
+    - limit recursion depth; show TypeName(…) when too deep
+    - cycle-safe
     """
 
     def __init__(
         self,
         *,
+        width: int = 100,
+        max_depth: int = 12,
+        max_seq_items: int = 6,
+        inline_seq_items: int = 3,
         indent: int = 2,
-        max_depth: int = 80,
-        max_seq_items: int | None = None,
-        show_private_attrs: bool = False,
+        drop_redundant_length_fields: bool = True,
     ):
-        self.indent = indent
+        self.width = width
         self.max_depth = max_depth
         self.max_seq_items = max_seq_items
-        self.show_private_attrs = show_private_attrs
+        self.inline_seq_items = inline_seq_items
+        self.indent = indent
+        self.drop_redundant_length_fields = drop_redundant_length_fields
 
         self._repr = reprlib.Repr()
-        self._repr.maxstring = 300
-        self._repr.maxother = 300
+        self._repr.maxstring = 200
+        self._repr.maxother = 200
 
     def pformat(self, node: Any) -> str:
         visited: set[int] = set()
-        return self._fmt(node, depth=0, visited=visited, prefix="")
+        return self._fmt(node, depth=0, visited=visited, cur_indent=0)
 
-    # ---------- formatting core ----------
-
-    def _fmt(self, node: Any, *, depth: int, visited: set[int], prefix: str) -> str:
+    def _fmt(self, node: Any, *, depth: int, visited: set[int], cur_indent: int) -> str:
         if depth > self.max_depth:
-            return prefix + "… (max depth)"
+            return "…"
 
         # primitives
         if node is None or isinstance(node, (bool, int, float)):
-            return prefix + repr(node)
+            return repr(node)
 
         if isinstance(node, str):
-            return prefix + self._fmt_str(node)
+            # keep identifiers unquoted if they look like identifiers/operators
+            if (
+                node
+                and all(c.isalnum() or c in "_-+*/%<>=!?." for c in node)
+                and " " not in node
+            ):
+                return node
+            return repr(node)
 
-        # enums (TokenType, TagCategory, etc.)
         if isinstance(node, Enum):
-            return prefix + f"{type(node).__name__}.{node.name}"
+            return f"{type(node).__name__}.{node.name}"
 
-        # per-node override hook
+        # optional customization hook on nodes
         pp = getattr(node, "__pp__", None)
         if callable(pp):
-            # must return a string; you can still call pp.pformat(...) inside __pp__
-            return prefix + str(pp(self))
+            return str(pp(self))
 
-        # cycle safety: apply to "compound" nodes
-        oid = id(node)
-        if oid in visited:
-            return prefix + f"<cycle {type(node).__name__}>"
-        compound = self._is_compound(node)
-        if compound:
-            visited.add(oid)
-        try:
-            # dataclass: main path for your AST + VTypes
-            if is_dataclass(node):
-                return self._fmt_dataclass(
-                    node, depth=depth, visited=visited, prefix=prefix
-                )
-
-            # mappings
-            if isinstance(node, dict):
-                return self._fmt_dict(node, depth=depth, visited=visited, prefix=prefix)
-
-            # sequences
-            if isinstance(node, (list, tuple, set, frozenset)):
-                return self._fmt_seq(node, depth=depth, visited=visited, prefix=prefix)
-
-            # plain objects
-            if hasattr(node, "__dict__"):
-                return self._fmt_object(
-                    node, depth=depth, visited=visited, prefix=prefix
-                )
-
-            # fallback
-            return prefix + self._repr.repr(node)
-        finally:
-            if compound:
-                visited.remove(oid)
-
-    def _is_compound(self, node: Any) -> bool:
-        return (
+        # cycle safety for compound nodes
+        compound = (
             is_dataclass(node)
             or isinstance(node, (dict, list, tuple, set, frozenset))
             or hasattr(node, "__dict__")
         )
+        oid = id(node)
+        if compound:
+            if oid in visited:
+                return f"<cycle {type(node).__name__}>"
+            visited.add(oid)
 
-    # ---------- node-type formatters (generic) ----------
+        try:
+            if is_dataclass(node):
+                return self._fmt_dataclass(node, depth, visited, cur_indent)
+            if isinstance(node, dict):
+                return self._fmt_dict(node, depth, visited, cur_indent)
+            if isinstance(node, (list, tuple, set, frozenset)):
+                return self._fmt_seq(node, depth, visited, cur_indent)
+            if hasattr(node, "__dict__"):
+                return self._fmt_object(node, depth, visited, cur_indent)
+            return self._repr.repr(node)
+        finally:
+            if compound:
+                visited.remove(oid)
 
-    def _fmt_dataclass(
-        self, node: Any, *, depth: int, visited: set[int], prefix: str
-    ) -> str:
-        cls_name = type(node).__name__
-        flds = list(fields(node))
-        if not flds:
-            return prefix + f"{cls_name}()"
-
-        # Header line: NodeType
-        lines = [prefix + cls_name]
-        child_prefix = prefix + (" " * self.indent)
-
-        for f in flds:
-            val = getattr(node, f.name)
-            lines.append(
-                self._fmt_field(
-                    f.name, val, depth=depth, visited=visited, prefix=child_prefix
-                )
-            )
-
-        return "\n".join(lines)
-
-    def _fmt_object(
-        self, node: Any, *, depth: int, visited: set[int], prefix: str
-    ) -> str:
-        cls_name = type(node).__name__
-        d = vars(node)
-        items = []
-        for k, v in d.items():
-            if not self.show_private_attrs and k.startswith("_"):
-                continue
-            items.append((k, v))
-
-        if not items:
-            return prefix + f"{cls_name}()"
-
-        lines = [prefix + cls_name]
-        child_prefix = prefix + (" " * self.indent)
-        for k, v in items:
-            lines.append(
-                self._fmt_field(k, v, depth=depth, visited=visited, prefix=child_prefix)
-            )
-        return "\n".join(lines)
-
-    def _fmt_field(
-        self, name: str, val: Any, *, depth: int, visited: set[int], prefix: str
-    ) -> str:
-        # Decide single-line vs multiline for readability
-        if self._is_inlineable(val):
-            return prefix + f"{name}: {self._inline(val)}"
-
-        # Multiline: "name:" on one line, children below
-        head = prefix + f"{name}:"
-        child_prefix = prefix + (" " * self.indent)
-        body = self._fmt(val, depth=depth + 1, visited=visited, prefix=child_prefix)
-        return head + "\n" + body
-
-    def _fmt_seq(self, seq: Any, *, depth: int, visited: set[int], prefix: str) -> str:
-        # Normalize to list for slicing/len
+    def _fmt_seq(self, seq: Any, depth: int, visited: set[int], cur_indent: int) -> str:
         items = list(seq)
+        n = len(items)
 
-        if self.max_seq_items is not None:
-            truncated = len(items) > self.max_seq_items
-            items = items[: self.max_seq_items]
-        else:
-            truncated = False
-
-        typename = type(seq).__name__
-
-        if not items:
-            return prefix + f"{typename} []"
-
-        lines = [
-            prefix
-            + f"{typename} [{len(list(seq)) if hasattr(seq, '__len__') else len(items)}]"
-        ]
-        child_prefix = prefix + (" " * self.indent)
-
-        for i, item in enumerate(items):
-            if self._is_inlineable(item):
-                lines.append(child_prefix + f"- {self._inline(item)}")
-            else:
-                lines.append(child_prefix + "-")
-                lines.append(
-                    self._fmt(
-                        item,
-                        depth=depth + 1,
-                        visited=visited,
-                        prefix=child_prefix + (" " * self.indent),
-                    )
-                )
-
-        if truncated:
-            lines.append(
-                child_prefix + f"- … (truncated, max_seq_items={self.max_seq_items})"
+        # inline a few items
+        if n == 0:
+            return "[]"
+        if n <= self.inline_seq_items and all(not is_dataclass(x) for x in items):
+            inner = ", ".join(
+                self._fmt(x, depth=depth + 1, visited=visited, cur_indent=cur_indent)
+                for x in items
             )
+            if isinstance(seq, tuple):
+                if n == 1:
+                    return f"({inner},)"
+                return f"({inner})"
+            return f"[{inner}]"
 
-        return "\n".join(lines)
+        # truncate for readability
+        shown = items[: self.max_seq_items]
+        inner = ", ".join(
+            self._fmt(x, depth=depth + 1, visited=visited, cur_indent=cur_indent)
+            for x in shown
+        )
+        suffix = f", … x{n - self.max_seq_items}" if n > self.max_seq_items else ""
+        if isinstance(seq, tuple):
+            return f"({inner}{suffix})"
+        return f"[{inner}{suffix}]"
 
     def _fmt_dict(
-        self, d: dict[Any, Any], *, depth: int, visited: set[int], prefix: str
+        self, d: dict[Any, Any], depth: int, visited: set[int], cur_indent: int
     ) -> str:
         if not d:
-            return prefix + "dict {}"
+            return "{}"
+        items = list(d.items())
+        shown = items[: self.max_seq_items]
+        parts = []
+        for k, v in shown:
+            ks = self._fmt(k, depth=depth + 1, visited=visited, cur_indent=cur_indent)
+            vs = self._fmt(v, depth=depth + 1, visited=visited, cur_indent=cur_indent)
+            parts.append(f"{ks}: {vs}")
+        suffix = (
+            f", … x{len(items) - self.max_seq_items}"
+            if len(items) > self.max_seq_items
+            else ""
+        )
+        return "{ " + ", ".join(parts) + suffix + " }"
 
-        lines = [prefix + f"dict [{len(d)}]"]
-        child_prefix = prefix + (" " * self.indent)
+    def _fmt_dataclass(
+        self, node: Any, depth: int, visited: set[int], cur_indent: int
+    ) -> str:
+        cls = type(node)
+        name = cls.__name__
 
-        # Keep stable order if keys are sortable; else keep insertion
-        try:
-            items = sorted(d.items(), key=lambda kv: repr(kv[0]))
-        except Exception:
-            items = list(d.items())
+        if depth >= self.max_depth:
+            return f"{name}(…)"
 
-        if self.max_seq_items is not None:
-            truncated = len(items) > self.max_seq_items
-            items = items[: self.max_seq_items]
-        else:
-            truncated = False
+        # build field list, omitting default-valued fields
+        parts: list[str] = []
+        flds = list(fields(node))
 
-        for k, v in items:
-            ks = self._inline(k) if self._is_inlineable(k) else self._repr.repr(k)
-            if self._is_inlineable(v):
-                lines.append(child_prefix + f"{ks}: {self._inline(v)}")
-            else:
-                lines.append(child_prefix + f"{ks}:")
-                lines.append(
-                    self._fmt(
-                        v,
-                        depth=depth + 1,
-                        visited=visited,
-                        prefix=child_prefix + (" " * self.indent),
-                    )
-                )
+        # optional generic redundancy drop: if there's a `length` field that matches len(elements/items/options/etc.)
+        redundant_length = set()
+        if self.drop_redundant_length_fields:
+            value_by_name = {f.name: getattr(node, f.name) for f in flds}
+            if "length" in value_by_name:
+                length_val = value_by_name["length"]
+                for candidate in (
+                    "elements",
+                    "items",
+                    "options",
+                    "variants",
+                    "branches",
+                    "entries",
+                    "levels",
+                ):
+                    if candidate in value_by_name and hasattr(
+                        value_by_name[candidate], "__len__"
+                    ):
+                        try:
+                            if length_val == len(value_by_name[candidate]):
+                                redundant_length.add("length")
+                        except Exception:
+                            pass
 
-        if truncated:
-            lines.append(
-                child_prefix + f"…: (truncated, max_seq_items={self.max_seq_items})"
-            )
+        for f in flds:
+            if f.name in redundant_length:
+                continue
 
-        return "\n".join(lines)
+            val = getattr(node, f.name)
 
-    # ---------- inline heuristics ----------
+            # omit if equals default value
+            if f.default is not MISSING and val == f.default:
+                continue
+            if f.default_factory is not MISSING:  # type: ignore
+                try:
+                    if val == f.default_factory():  # type: ignore
+                        continue
+                except Exception:
+                    pass
 
-    def _is_inlineable(self, val: Any) -> bool:
-        if val is None or isinstance(val, (bool, int, float)):
-            return True
-        if isinstance(val, Enum):
-            return True
-        if isinstance(val, str):
-            return len(val) <= 60 and ("\n" not in val)
-        if isinstance(val, (list, tuple)) and len(val) == 0:
-            return True
-        if isinstance(val, dict) and len(val) == 0:
-            return True
-        # dataclasses are usually NOT inlineable for readability
-        return False
+            vs = self._fmt(val, depth=depth + 1, visited=visited, cur_indent=cur_indent)
+            parts.append(f"{f.name}={vs}")
 
-    def _inline(self, val: Any) -> str:
-        if isinstance(val, str):
-            return self._fmt_str(val)
-        if isinstance(val, Enum):
-            return f"{type(val).__name__}.{val.name}"
-        return self._repr.repr(val)
-
-    def _fmt_str(self, s: str) -> str:
-        # Keep strings readable but unambiguous
-        # If it's identifier-like, show as bare; otherwise repr
-        if s and all(c.isalnum() or c in "_-+*/%<>=!?." for c in s) and " " not in s:
+        s = f"{name}(" + ", ".join(parts) + ")"
+        if len(s) <= self.width and "\n" not in s:
             return s
-        return repr(s)
+
+        # multiline fallback if it still gets too long
+        pad = " " * (cur_indent + self.indent)
+        pad0 = " " * cur_indent
+        body = (",\n").join(pad + p for p in parts)
+        return f"{name}(\n{body}\n{pad0})"
+
+    def _fmt_object(
+        self, node: Any, depth: int, visited: set[int], cur_indent: int
+    ) -> str:
+        name = type(node).__name__
+        d = {k: v for k, v in vars(node).items() if not k.startswith("_")}
+        if not d:
+            return f"{name}()"
+        parts = [
+            f"{k}={self._fmt(v, depth=depth + 1, visited=visited, cur_indent=cur_indent)}"
+            for k, v in d.items()
+        ]
+        s = f"{name}(" + ", ".join(parts) + ")"
+        if len(s) <= self.width and "\n" not in s:
+            return s
+        pad = " " * (cur_indent + self.indent)
+        pad0 = " " * cur_indent
+        body = (",\n").join(pad + p for p in parts)
+        return f"{name}(\n{body}\n{pad0})"
 
 
 def pretty_print_ast(node: Any) -> str:
-    return ParserPrettyPrinter().pformat(node)
+    return CompactPrettyPrinter().pformat(node)

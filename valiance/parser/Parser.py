@@ -1,3 +1,4 @@
+import enum
 from typing import Callable, TypeVar, cast
 
 from valiance.parser.Errors import GenericParseError
@@ -9,6 +10,12 @@ from valiance.lexer.TokenType import TokenType
 
 T = TypeVar("T")
 U = TypeVar("U")
+
+
+class DictCheckReturnValue(enum.Enum):
+    YES = enum.auto()
+    NO = enum.auto()
+    ERROR = enum.auto()
 
 
 def default_parse_items_wrap(x: list[T]) -> T:
@@ -49,6 +56,18 @@ def is_element_token(token: Token) -> bool:
     )
 
 
+def location_from_token(token: Token) -> Location:
+    """
+    Create a Location object from a Token's location information.
+
+    :param token: The token to extract location from
+    :type token: Token
+    :return: A Location object representing the token's location
+    :rtype: Location
+    """
+    return Location(token.line, token.column)
+
+
 def testopt(val: T | None, condition: Callable[[T], bool]) -> bool:
     """
     Unwrap an optional value and test it against a condition.
@@ -67,6 +86,23 @@ class Parser:
         self.tokenStream = tokenStream
         self.asts: list[ASTNode] = []
         self.errors: list[GenericParseError] = []
+
+    def add_error(
+        self, message: str, location: Location, class_: type = GenericParseError
+    ):
+        """
+        Add a parsing error to the parser's error list.
+
+        :param self: This Parser instance
+        :param message: The error message
+        :type message: str
+        :param location: The (line, column) location of the error
+        :type location: (int, int)
+        :param class_: The class of the error to create
+        :type class_: type
+        """
+        error = class_(message, location)
+        self.errors.append(error)
 
     def add_node(self, node: ASTNode):
         """
@@ -104,7 +140,7 @@ class Parser:
         """
         if len(nodes) == 1:
             return nodes[0]
-        return GroupNode(nodes)
+        return GroupNode(nodes[0].location if nodes else Location(0, 0), nodes)
 
     def head_equals(self, type_: TokenType) -> bool:
         """
@@ -160,7 +196,7 @@ class Parser:
             return self.tokenStream[index].type == type_
         return False
 
-    def parse(self) -> list[ASTNode]:
+    def parse(self) -> list[ASTNode] | list[GenericParseError]:
         """
         Parse this parser's list of tokens into AST nodes.
 
@@ -172,6 +208,8 @@ class Parser:
             node = self.parse_next()
             if node is not None:
                 self.asts.append(node)
+        if self.errors:
+            return self.errors
         return self.asts
 
     def peek(self) -> Token | None:
@@ -196,7 +234,9 @@ class Parser:
             [list[T]], T
         ] = default_parse_items_wrap,  # Function to wrap conglomerate items
         separator: TokenType = TokenType.COMMA,
-        verify: Tuple[Callable[[list[T]], bool], str] | None = None,
+        verify: (
+            Tuple[Callable[[list[T]], bool], str, Callable[[list[T]], Location]] | None
+        ) = None,
     ) -> list[T]:
         """
         A generic-style item parser that can parse any number of separated items,
@@ -242,9 +282,12 @@ class Parser:
                     if not current_item:
                         raise Exception("Empty item detected.")
                     if verify is not None:
-                        condition, error_msg = verify
+                        condition, error_msg, get_location = verify
                         if not condition(current_item):
-                            raise GenericParseError(error_msg)
+                            self.add_error(
+                                error_msg,
+                                get_location(current_item),
+                            )
                     items.append(wrap_fn(current_item))
                 else:
                     # If conglomerate is False, just extend the items list
@@ -295,13 +338,17 @@ class Parser:
         :return: The list of parsed ASTNodes
         :rtype: list[ASTNode]
         """
+        location_fn: Callable[[list[ASTNode]], Location] = lambda nodes: (
+            nodes[0].location if nodes else Location(0, 0)
+        )
+        location_fn = lambda nodes: nodes[0].location if nodes else Location(0, 0)
         return self.parse_items(
             close_token,
             self.parse_next,
             conglomerate=True,
             wrap_fn=self.group_wrap,
             separator=TokenType.COMMA,
-            verify=verify,
+            verify=(verify[0], verify[1], location_fn) if verify else None,
         )
 
     def parse_next(self) -> ASTNode | None:
@@ -316,13 +363,17 @@ class Parser:
         token = self.tokenStream.pop(0)
         match token.type:
             case TokenType.NUMBER:
-                return LiteralNode(token.value, VTypes.NumberType())
+                return LiteralNode(
+                    location_from_token(token), token.value, VTypes.NumberType()
+                )
             case TokenType.STRING:
-                return LiteralNode(token.value, VTypes.StringType())
+                return LiteralNode(
+                    location_from_token(token), token.value, VTypes.StringType()
+                )
             case TokenType.LEFT_PAREN:
-                return self.parse_tuple()
+                return self.parse_tuple(token)
             case TokenType.LEFT_SQUARE:
-                return self.parse_list_or_dictionary()
+                return self.parse_list_or_dictionary(token)
             case TokenType.LEFT_BRACE:
                 return self.parse_block()
             case TokenType.VARIABLE:
@@ -390,22 +441,65 @@ class Parser:
 
     # Specialised parse methods start here
 
-    def parse_tuple(self) -> ASTNode:
+    def parse_tuple(self, head_token: Token) -> ASTNode:
         tuple_items = self.quick_items(
             TokenType.RIGHT_PAREN,
             verify=(self.is_expressionable, "Tuple items must be expressionable."),
         )
-        return TupleNode(tuple_items, len(tuple_items))
+        return TupleNode(location_from_token(head_token), tuple_items, len(tuple_items))
 
-    def parse_list_or_dictionary(self) -> ASTNode:
-        items = self.quick_items(TokenType.RIGHT_SQUARE)
+    def parse_list_or_dictionary(self, head_token: Token) -> ASTNode | None:
+        items = self.parse_items(
+            TokenType.RIGHT_SQUARE,
+            self.parse_list_item,
+            conglomerate=True,
+            separator=TokenType.COMMA,
+            wrap_fn=self.group_wrap,
+        )
 
         # See if any items were collected
         if not items:
-            return ListNode([])  # This _will_ need to be disambiguated by the user
+            return ListNode(
+                location_from_token(head_token), []
+            )  # This _will_ need to be disambiguated by the user
 
-        # Now determine if this is a dictionary or a list
-        return NotImplementedError
+        dict_check = self.is_dictionary_item(items[0])
+        if len(items) > 1:
+            for item in items[1:]:
+                next_check = self.is_dictionary_item(item)
+                if next_check.name != dict_check.name:
+                    if dict_check == DictCheckReturnValue.YES:
+                        self.add_error(
+                            "Non-dictionary item found in dictionary.",
+                            item.location,
+                        )
+                    else:
+                        self.add_error(
+                            "Dictionary item found in list.",
+                            item.location,
+                        )
+                    dict_check = DictCheckReturnValue.ERROR
+                    return None
+        if dict_check == DictCheckReturnValue.YES:
+            # It's a dictionary
+            dict_entries: list[Tuple[ASTNode, ASTNode]] = []
+            for item in items:
+                assert isinstance(item, GroupNode)
+                key_node = item.elements[0]
+                value_node = item.elements[1]
+                dict_entries.append((key_node, value_node))
+            return DictionaryNode(location_from_token(head_token), dict_entries)
+        elif dict_check == DictCheckReturnValue.NO:
+            # It's a list
+            list_items: list[ASTNode] = []
+            for item in items:
+                if isinstance(item, GroupNode):
+                    list_items.extend(item.elements)
+                else:
+                    list_items.append(item)
+            return ListNode(location_from_token(head_token), list_items)
+        else:
+            return None
 
     def parse_block(self) -> ASTNode:
         return NotImplementedError
@@ -534,3 +628,95 @@ class Parser:
             ):
                 return False
         return True
+
+    def is_dictionary_item(self, node: ASTNode):
+        """
+        Check whether the provided ASTNode list represents a valid dictionary key.
+        :param self: This Parser instance
+        :param nodes: List of ASTNodes to check
+        :type nodes: list[ASTNode]
+        :return: ReturnValue indicating whether the nodes form a valid dictionary key
+        :rtype: ReturnValue
+        """
+
+        # If it is not a GroupNode, it cannot be a dictionary key,
+        # as it is only a single item. Therefore, return NO if it is
+        # expressionable, ERROR otherwise.
+        if not isinstance(node, GroupNode):
+            if self.is_expressionable([node]):
+                return DictCheckReturnValue.NO
+            else:
+                self.add_error(
+                    "Expressionable item found when parsing list/dictionary.",
+                    node.location,
+                )
+                return DictCheckReturnValue.ERROR
+
+        nodes = node.elements[::]
+
+        # Collect expressionable nodes from the start
+        # which will either get us to the end (NO) or
+        # something that could be the "=" that makes this
+        # a dictionary item.
+        while nodes and self.is_expressionable([nodes[0]]):
+            nodes.pop(0)
+
+        if not nodes:
+            return DictCheckReturnValue.NO
+
+        if not isinstance(nodes[0], AuxiliaryTokenNode):
+            self.add_error(
+                "Expected '=' or expressionable item when parsing list/dictionary.",
+                nodes[0].location,
+            )
+            return DictCheckReturnValue.ERROR  # Not an "=" token, so ERROR
+
+        if nodes[0].token.type != TokenType.EQUALS:
+            self.add_error(
+                "Expected '=' token or expressionable item when parsing list/dictionary.",
+                nodes[0].location,
+            )
+            return DictCheckReturnValue.ERROR  # Not an "=" token, so ERROR
+
+        nodes.pop(0)  # Remove the "=" token
+
+        # Don't return yet because we need to make sure it's a valid
+        if not nodes:
+            self.add_error(
+                "Expected value after '=' in dictionary item.",
+                node.location,
+            )
+            return DictCheckReturnValue.ERROR
+
+        while nodes and self.is_expressionable([nodes[0]]):
+            nodes.pop(0)
+
+        if not nodes:
+            return DictCheckReturnValue.YES
+        self.add_error(
+            "Unexpected token after dictionary item value.",
+            nodes[0].location,
+        )
+
+        return DictCheckReturnValue.ERROR
+
+    def parse_list_item(self) -> ASTNode | None:
+        """
+        A helper function for list parsing that turns isolated "="s
+        into auxiliary token ASTNodes. This is so that dictionary-ness
+        can even be determined.
+
+        If the first token is not an "=", just parse normally.
+
+        This is a class method because the parse_items method does
+        not take a function that takes any parameters other than self.
+        So therefore, this function needs to be able to mutate self.
+
+        :param self: This Parser instance
+        :return: The parsed ASTNode
+        """
+
+        if self.tokenStream and self.tokenStream[0].type == TokenType.EQUALS:
+            equals_token = self.tokenStream.pop(0)
+            return AuxiliaryTokenNode(location_from_token(equals_token), equals_token)
+        return self.parse_next()
