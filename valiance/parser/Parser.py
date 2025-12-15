@@ -589,32 +589,46 @@ class Parser:
     def parse_multi_variable(self, variable_token: Token) -> ASTNode | None:
         self.eat_whitespace()
         variable_names: list[str] = []
+        errored: bool = False
         while self.tokenStream and not self.head_equals(TokenType.RIGHT_PAREN):
             if (
                 self.head_equals(TokenType.WORD)
                 or self.head().value in ReservedWords.RESERVED_WORDS
             ):
                 variable_names.append(self.head().value)
-                self.discard()
-                self.eat_whitespace()
             else:
                 self.add_error(
-                    "Expected variable name in multi-variable declaration.",
+                    f"Expected variable name in multi-variable declaration. Got '{self.head().value}'.",
                     location_from_token(self.head()) if self.peek() else Location(0, 0),
                 )
-                break
+                errored = True
+
+            # Discard even after error to sync up to a closing parenthesis
+            # if that's even present.
+            self.discard()
+            self.eat_whitespace()
+
             if self.head_equals(TokenType.COMMA):
                 self.discard()
                 self.eat_whitespace()
             elif self.head_equals(TokenType.RIGHT_PAREN):
-                self.discard()  # Discard the RIGHT_PAREN
                 break
             else:
                 self.add_error(
                     "Expected ',' between variable names in multi-variable declaration.",
                     location_from_token(self.head()) if self.peek() else Location(0, 0),
                 )
-                break
+                self.discard()
+        self.eat_whitespace()
+        if not self.head_equals(TokenType.RIGHT_PAREN):
+            self.add_error(
+                "Expected ')' after multi-variable declaration.",
+                location_from_token(self.head()) if self.peek() else Location(0, 0),
+            )
+            return None
+        if errored:  # Don't try to continue if there were errors
+            return None
+        self.discard()  # Discard the RIGHT_PAREN token
         self.eat_whitespace()
         if not self.head_equals(TokenType.EQUALS):
             self.add_error(
