@@ -1,6 +1,7 @@
 import enum
 from typing import Callable, TypeVar, cast
 
+from valiance.compiler_common import ReservedWords
 from valiance.parser.Errors import GenericParseError
 import valiance.vtypes.VTypes as VTypes
 
@@ -142,6 +143,17 @@ class Parser:
             return nodes[0]
         return GroupNode(nodes[0].location if nodes else Location(0, 0), nodes)
 
+    def head(self) -> Token:
+        """
+        Get the head token in the token stream. Only use if you are sure
+        there is at least one token available.
+
+        :param self: This Parser instance
+        :return: The head token
+        :rtype: Token
+        """
+        return self.tokenStream[0]
+
     def head_equals(self, type_: TokenType) -> bool:
         """
         Test whether the head token in the token stream matches the given type.
@@ -274,7 +286,7 @@ class Parser:
 
         self.eat_whitespace()  # Consumption 1 - Pre-loop
 
-        while not self.head_equals(close_token):
+        while self.tokenStream and not self.head_equals(close_token):
             self.eat_whitespace()  # Consumption 2 - Pre-separator
 
             if self.head_equals(separator):
@@ -303,6 +315,24 @@ class Parser:
             if item is not None:
                 current_item.append(item)
             self.eat_whitespace()  # Consumption 4 - Pre-close_token check in the next loop iteration
+
+        # At this point, we should be at the close_token
+        # So verify that the token is indeed the close_token
+        if not self.head_equals(close_token):
+            if not self.peek():
+                self.add_error(
+                    f"Expected closing token {close_token.name} but reached end of file.",
+                    Location(0, 0),
+                )
+            else:
+                self.add_error(
+                    f"Expected closing token {close_token.name} not found.",
+                    Location(
+                        self.peek().line if self.peek() else 0,  # type: ignore
+                        self.peek().column if self.peek() else 0,  # type: ignore
+                    ),
+                )
+            return []
 
         # Make sure that any remaining items are added
         # This is necessary because the last item won't be followed by a separator
@@ -379,7 +409,7 @@ class Parser:
             case TokenType.VARIABLE:
                 return self.parse_variable(variable_token=token)
             case TokenType.MULTI_VARIABLE:
-                return self.parse_multi_variable()
+                return self.parse_multi_variable(variable_token=token)
             case _ if token.type == TokenType.WORD or is_element_token(token):
                 return self.parse_element(initial_token=token)
             case TokenType.DUPLICATE:
@@ -517,13 +547,100 @@ class Parser:
             return None
 
     def parse_block(self) -> ASTNode:
-        return NotImplementedError
+        return self.group_wrap(
+            self.parse_items(
+                TokenType.RIGHT_BRACE,
+                self.parse_next,
+                conglomerate=True,
+                separator=TokenType.DUMMY_TOKEN_TYPE,
+                wrap_fn=self.group_wrap,
+            )
+        )
 
-    def parse_variable(self, variable_token: Token) -> ASTNode:
-        return NotImplementedError
+    def parse_variable(self, variable_token: Token) -> ASTNode | None:
+        self.eat_whitespace()
+        if not self.peek() or (self.peek() and self.peek().type != TokenType.EQUALS):  # type: ignore
+            # A simple variable get
+            return VariableGetNode(
+                location_from_token(variable_token), variable_token.value
+            )
 
-    def parse_multi_variable(self) -> ASTNode:
-        return NotImplementedError
+        # A variable set
+        self.discard()  # Discard the EQUALS token
+        value: list[ASTNode] = []
+        while self.tokenStream and not self.head_equals(TokenType.NEWLINE):
+            self.eat_whitespace()
+            node = self.parse_next()
+            if node is not None:
+                if not self.is_expressionable([node]):
+                    self.add_error(
+                        "Variable assignment value must be expressionable.",
+                        node.location,
+                    )
+                    return None
+                else:
+                    value.append(node)
+        return VariableSetNode(
+            location_from_token(variable_token),
+            variable_token.value,
+            self.group_wrap(value),
+        )
+
+    def parse_multi_variable(self, variable_token: Token) -> ASTNode | None:
+        self.eat_whitespace()
+        variable_names: list[str] = []
+        while self.tokenStream and not self.head_equals(TokenType.RIGHT_PAREN):
+            if (
+                self.head_equals(TokenType.WORD)
+                or self.head().value in ReservedWords.RESERVED_WORDS
+            ):
+                variable_names.append(self.head().value)
+                self.discard()
+                self.eat_whitespace()
+            else:
+                self.add_error(
+                    "Expected variable name in multi-variable declaration.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+                break
+            if self.head_equals(TokenType.COMMA):
+                self.discard()
+                self.eat_whitespace()
+            elif self.head_equals(TokenType.RIGHT_PAREN):
+                self.discard()  # Discard the RIGHT_PAREN
+                break
+            else:
+                self.add_error(
+                    "Expected ',' between variable names in multi-variable declaration.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+                break
+        self.eat_whitespace()
+        if not self.head_equals(TokenType.EQUALS):
+            self.add_error(
+                "Expected '=' after multi-variable declaration.",
+                location_from_token(self.head()) if self.peek() else Location(0, 0),
+            )
+            return None
+        self.discard()  # Discard the EQUALS token
+        value: list[ASTNode] = []
+        while self.tokenStream and not self.head_equals(TokenType.NEWLINE):
+            self.eat_whitespace()
+            node = self.parse_next()
+            if node is not None:
+                if not self.is_expressionable([node]):
+                    self.add_error(
+                        "Variable assignment value must be expressionable.",
+                        node.location,
+                    )
+                    return None
+                else:
+                    value.append(node)
+        return MultipleVariableSetNode(
+            location_from_token(variable_token),
+            variable_names,
+            self.group_wrap(value),
+        )
 
     def parse_element(self, initial_token: Token) -> ASTNode:
         return NotImplementedError

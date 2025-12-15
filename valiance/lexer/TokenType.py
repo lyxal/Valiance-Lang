@@ -12,6 +12,7 @@ class TokenType(enum.Enum):
     ANNOTATION = "ANNOTATION"
     TAG_TOKEN = "TAG_TOKEN"
     PASS = "PASS"
+    DUMMY_TOKEN_TYPE = "Hi there hello, this should not be used as an actual token type, just something that will never be generated as a natural token by the scanner"
 
     # Keywords
     AS = "as"

@@ -161,7 +161,7 @@ class Scanner:
                     self.scan_element()
                 case "$" if not self._head_equals("$("):
                     self.scan_variable()
-                case "$(":
+                case _ if self._head_equals("$("):
                     self.add_token(TokenType.MULTI_VARIABLE, "$(")
                 case "(":
                     self.add_token(TokenType.LEFT_PAREN, HEAD)

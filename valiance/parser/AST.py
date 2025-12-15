@@ -155,6 +155,14 @@ class VariableSetNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class MultipleVariableSetNode(ASTNode):
+    """Represents multiple variable assignment"""
+
+    names: list[str]
+    value: ASTNode
+
+
+@dataclass(frozen=True)
 class AugmentedVariableSetNode(ASTNode):
     """Represents an augmented variable assignment"""
 
