@@ -1945,24 +1945,27 @@ define[T] find(haystack: T+, needle: T) {
 ```
 
 - While only the types have changed, this definition of find works for any type of list and compatible needle type.
-
-## 18.1. Generics and List Types
-- The type represented by `T` will be one rank lower than the input type.
-- For example, given the following function:
+  
+## 18.1. Unification Algorithm:
+- When a generic function is called, each parameter determines what the generic type variable must be based on its argument.
+- Unification succeeds only if all parameters agree on the same type.
+- Example:
 
 ```
-$uniquify = fn[T] (list: T+) -> T+ {
-  $seen = [] as T+
-  $list foreach ($item) {
-    if ($seen contains($item)) {
-      $seen: append($item)
-    }
-  }
-  $seen
-}
+define[T] append(xs: T+, item: T) -> T+
+
+append([1, 2], 3)
+# xs is Number+, so T must be Number
+# item is Number, so T must be Number  
+# Both agree → T = Number ✓
+
+append([1, 2], "hello")
+# xs is Number+, so T must be Number
+# item is String, so T must be String
+# Conflict → Compile error
 ```
 
-- If `uniquify` is passed `Number+`, then `T` will be `Number`. However, if it is passed `Number++`, then `T` will be `Number+`.
+- If any parameter's constraint on T conflicts with another's, the call fails to type check. 
 
 ## 18.2. Indexed Generics
 
