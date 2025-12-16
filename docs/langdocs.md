@@ -549,6 +549,10 @@ $n F[U] #? Use overload 2
 1 2 3 4 _[a, b, _, _] #? -> 3, 4
 ```
 
+## 8.1. Numbered Labels
+
+- `_n` can be used in labels as a shorthand for `n` repeated `_`s. For example `\[a, _3 -> a]` == `\[a, _, _, _ -> a]`.
+
 # 9. Functions
 
 - Whereas elements are called immediately, functions can live on the stack and in variables without being called.
@@ -727,6 +731,37 @@ $x(fn {2 *}) #? $x is type checked now. It's checked as if it were originally de
 - CSTC is also triggered when varadaic tuples are in a function's parameters.
 - If creating a function that will be CSTC'd, make sure to document the expected behaviour.
 - NOTE: CSTC is only triggered when parameters include either an unspecified function, or a varadaic tuple.
+
+## 9.7. `call` and Function Unions
+
+- For normal `Function` types, `call` behaves without any extra details. Just pop the arguments and push the results.
+- However, if `call` is given a union of functions (eg `Function[T -> U] | Function[X -> Y]`), it behaves a little differently.
+- `call` will pop a number of items corresponding to the maximal arity between functions in the union. For example, `call`ing a `Function[T -> U] | Function[T, U -> V]` will pop 2 items, even if the function is actually a `Function[T -> U]`
+  - This ensures that all possible outcomes of calling the function have enough arguments at compile time
+- `call` will then push a number of items corresponding to the minimum multiplicity between functions in the union. For example, `Function[ -> X] | Function[ -> X, Y]` would only return 1 item.
+- "But how is the function call resolved?"
+- As if it were a `match`. `call`, when given `FunctionA | FunctionB | ... | FunctionN` is roughly equivalent to automatically generating:
+
+```
+match {
+  as :...FunctionA.args, :FunctionA -> call,
+  as :...FunctionB.args, :FunctionB -> call,
+  ...,
+  as :...FunctionN.args, :FunctionN -> call
+}
+```
+
+- Concrete example:
+
+```
+#? Say there's a Function[Number -> Number] | Function[String, String -> String, String]
+#? `call`ing it would be equivalent to
+
+match {
+  default, as :Number, as :Function[Number -> Number] -> call,
+  as: String, as :String, as Function[String, String -> String, String] -> call dip: pop
+}
+```
 
 # 10. Vectorisation
 - A cruical part of any array language is the ability for elements to automatically apply to every list item without extra ceremony.
@@ -1434,6 +1469,14 @@ fn {negate} [4, 1, 3] sort #? Still calls with default key
 - Passing an optional as an unnamed arg _must_ account for non-optional args
 	- Like with `sort(_, 'negate)`
 	- Otherwise, `'negate` is treated as the thing to sort, which is a compile error.
+
+ ## 14.2. Overloads and Arity Consistency
+
+- All overloads of an element must have the same arity and multiplicity
+	- Compile error if there are overloads with different arities and/or multiplicities
+- While mixed arity is possible in Valiance's type system, mixed-arity overloads are typically indicative of elements that should have different names.
+	- Instead of `sort(T+)` and `sort(T+, Function[T -> U])`, consider `sort(T+)` and `sortBy(T+, Function[T -> U])`
+	- Alternatively, `sort(T+, Function[T -> U] = fn {^}`
 
 
 # 15. Objects
@@ -2736,6 +2779,25 @@ import sorted: #sorted
 
 - `private` before a define, object, trait, variant, or enum, will make that thing unable to be imported.
 - Tags cannot be made import private, because that doesn't make sense.
+
+## 25.4. Importing and Arity Consistency
+- When you import an element as a component from another module, you must make sure that any elements in your code with the same name have the same arity
+
+```
+#? File A.vlnc
+define foo(:Number) {...}
+```
+
+```
+#? File B.vlnc
+import A: foo
+
+#? This is a compile error
+define foo(:Number, :Number) {...}
+```
+
+- If it can't be remedied, the element cannot be component imported. It has to be referred to by namespace (`A.foo`).
+- This ensures fixed arity across modules. The core idea is that you're in control over what gets imported, so don't import arity conflicts.
 
 # 26. Eager Evaluation 
 
