@@ -31,6 +31,7 @@ def main():
         asts = parser_.parse()
 
         if asts and isinstance(asts[0], GenericParseError):
+            print("\033[91mThere were problems.\033[0m")
             print("Parsing errors:")
             for error in asts:
                 print(error)

@@ -1,6 +1,8 @@
 from abc import ABC
 from dataclasses import dataclass
 import enum
+from turtle import right
+from typing import Tuple
 
 
 @dataclass(frozen=True)
@@ -21,19 +23,19 @@ class StringType(VType):
 @dataclass(frozen=True)
 class ListType(VType):
     element_type: VType
-    rank: int
+    rank: (
+        int | str
+    )  # int if rank is expressed as numbers, str if it's depedent on where
 
 
 @dataclass(frozen=True)
 class MinimumRankType(ListType):
     element_type: VType
-    rank: int
 
 
 @dataclass(frozen=True)
 class ExactRankType(ListType):
     element_type: VType
-    rank: int
 
 
 @dataclass(frozen=True)
@@ -76,7 +78,8 @@ class FunctionType(VType):
 @dataclass(frozen=True)
 class CustomType(VType):
     name: str
-    type_parameters: list[VType] | None = None
+    left_types: list[VType]
+    right_types: list[VType]
 
 
 class TypeNames(enum.Enum):
@@ -84,3 +87,28 @@ class TypeNames(enum.Enum):
     String = "String"
     Dictionary = "Dictionary"
     Function = "Function"
+
+
+def type_name_to_vtype(
+    type_name: str, generics: Tuple[list[VType], list[VType]]
+) -> VType:
+    if type_name == TypeNames.Number.value:
+        if generics[0] or generics[1]:
+            raise ValueError("Number type does not accept generics")
+        return NumberType()
+    elif type_name == TypeNames.String.value:
+        if generics[0] or generics[1]:
+            raise ValueError("String type does not accept generics")
+        return StringType()
+    elif type_name == TypeNames.Dictionary.value:
+        if len(generics[0]) > 1:
+            raise ValueError("Dictionary type given more than 1 key type")
+        if len(generics[1]) > 1:
+            raise ValueError("Dictionary type given more than 1 value type")
+        return DictionaryType(generics[0][0], generics[1][0])
+    elif type_name == TypeNames.Function.value:
+        return FunctionType(True, [], generics[0], generics[1], [])
+    else:
+        return CustomType(
+            name=type_name, left_types=generics[0], right_types=generics[1]
+        )

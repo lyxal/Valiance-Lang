@@ -1,5 +1,6 @@
 import enum
-from typing import Callable, TypeVar, cast
+import itertools
+from typing import Callable, TypeVar, cast, overload
 
 from valiance.compiler_common import ReservedWords
 from valiance.parser.Errors import GenericParseError
@@ -11,6 +12,12 @@ from valiance.lexer.TokenType import TokenType
 
 T = TypeVar("T")
 U = TypeVar("U")
+
+TYPE_OPERATOR_PRECEDENCE_SET = [{"|"}, {"&"}]
+TYPE_OPERATOR_PRECEDENCE_TABLE: dict[str, int] = {}
+for precedence, operators in enumerate(TYPE_OPERATOR_PRECEDENCE_SET):
+    for operator in operators:
+        TYPE_OPERATOR_PRECEDENCE_TABLE[operator] = precedence
 
 
 class DictCheckReturnValue(enum.Enum):
@@ -237,9 +244,22 @@ class Parser:
             return self.tokenStream[0]
         return None
 
+    def pop(self) -> Token:
+        """
+        Pop and return the head token from the token stream.
+        Raises an exception if the token stream is empty.
+
+        :param self: This Parser instance
+        :return: The head token
+        :rtype: Token
+        """
+        if not self.tokenStream:
+            raise Exception("Attempted to pop from an empty token stream.")
+        return self.tokenStream.pop(0)
+
     def parse_items(
         self,
-        close_token: TokenType,
+        close_token: TokenType | list[TokenType],
         parse_fn: Callable[[], T | None],
         conglomerate: bool = False,  # Whether to wrap items in a GroupNode if multiple
         wrap_fn: Callable[
@@ -249,6 +269,7 @@ class Parser:
         verify: (
             Tuple[Callable[[list[T]], bool], str, Callable[[list[T]], Location]] | None
         ) = None,
+        yeet_closer: bool = True,
     ) -> list[T]:
         """
         A generic-style item parser that can parse any number of separated items,
@@ -278,15 +299,20 @@ class Parser:
         :type separator: TokenType
         :param verify: Optional function and error message to verify each parsed item. For example, a tuple may want to ensure items are expressionable.
         :type verify: (Callable[[list[T]], bool], str) | None
+        :param yeet_closer: Discard the closing token if true
+        :type yeet_closer: bool
         :return: The list of parsed items, possibly wrapped if conglomerate is True
         :rtype: list[T]
         """
         items: list[T] = []  # The collected items
         current_item: list[T] = []  # Used to collect items before wrapping
 
+        if isinstance(close_token, TokenType):
+            close_token = [close_token]
+
         self.eat_whitespace()  # Consumption 1 - Pre-loop
 
-        while self.tokenStream and not self.head_equals(close_token):
+        while self.tokenStream and not self.head_is_any_of(close_token):
             self.eat_whitespace()  # Consumption 2 - Pre-separator
 
             if self.head_equals(separator):
@@ -318,15 +344,16 @@ class Parser:
 
         # At this point, we should be at the close_token
         # So verify that the token is indeed the close_token
-        if not self.head_equals(close_token):
+        if not self.head_is_any_of(close_token):
+            token_names = ", ".join(token.name for token in close_token)
             if not self.peek():
                 self.add_error(
-                    f"Expected closing token {close_token.name} but reached end of file.",
+                    f"Expected closing token {token_names} but reached end of file.",
                     Location(0, 0),
                 )
             else:
                 self.add_error(
-                    f"Expected closing token {close_token.name} not found.",
+                    f"Expected closing token {token_names} not found.",
                     Location(
                         self.peek().line if self.peek() else 0,  # type: ignore
                         self.peek().column if self.peek() else 0,  # type: ignore
@@ -344,7 +371,8 @@ class Parser:
 
         # Finally, eat any trailing whitespace before the closing token
         self.eat_whitespace()
-        self.discard()  # Discard the closing token
+        if yeet_closer:
+            self.discard()  # Discard the closing token
         return items
 
     def quick_items(
@@ -656,8 +684,28 @@ class Parser:
             self.group_wrap(value),
         )
 
-    def parse_element(self, initial_token: Token) -> ASTNode:
-        return NotImplementedError
+    def parse_element(self, initial_token: Token) -> ASTNode | None:
+        element_name = initial_token.value
+        while self.peek() and is_element_token(self.head()):
+            element_name += self.pop().value
+
+        if not self.head_is_any_of([TokenType.LEFT_BRACE, TokenType.LEFT_SQUARE]):
+            return ElementNode(
+                location_from_token(initial_token), element_name, [], [], []
+            )
+
+        generics = []
+        if self.head_equals(TokenType.LEFT_SQUARE):
+            self.discard()  # Remove the LEFT_SQUARE
+            temp = self.parse_generics()
+            if temp is None:
+                return None
+            generics = temp[0]
+            self.discard()  # Remove the RIGHT_SQUARE
+
+        return ElementNode(
+            location_from_token(initial_token), element_name, generics, [], []
+        )
 
     def parse_labelled(self, ast_type: type[ASTNode]) -> ASTNode:
         return NotImplementedError
@@ -730,6 +778,228 @@ class Parser:
 
     def parse_import(self) -> ASTNode:
         return NotImplementedError
+
+    # Direct parsing methods not corresponding to AST structures
+    def parse_type(self, min_precedence: int = 0) -> VTypes.VType | None:
+        left = self.parse_primary_type()
+        if left is None:
+            return None
+        self.eat_whitespace()
+        while self.peek() is not None and self.peek().value in TYPE_OPERATOR_PRECEDENCE_TABLE:  # type: ignore
+            operator_token = self.peek()
+            assert operator_token is not None
+
+            operator = operator_token.value
+            precedence = TYPE_OPERATOR_PRECEDENCE_TABLE[operator]
+
+            if precedence < min_precedence:
+                break
+
+            self.discard()  # Consume the operator token
+            self.eat_whitespace()
+            right = self.parse_type(precedence + 1)
+            if right is None:
+                return None
+
+            assert left is not None
+            assert right is not None
+
+            left = self.make_type_operation(left, right, operator_token)
+
+        if left is None:
+            return None
+        base_type = left
+        return base_type
+
+    def parse_primary_type(self) -> VTypes.VType | None:
+        if not self.peek():
+            self.add_error(
+                "Unexpected end of input when parsing type.",
+                Location(0, 0),
+            )
+            return None
+
+        if self.head_equals(TokenType.LEFT_BRACE):
+            self.discard()  # Discard the LEFT_BRACE token
+            base_type = self.parse_type()
+            if base_type is None:
+                return None
+            assert base_type is not None
+            self.eat_whitespace()
+            if not self.head_equals(TokenType.RIGHT_BRACE):
+                self.add_error(
+                    "Expected '}' after type expression.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+                return None
+            self.discard()  # Discard the RIGHT_BRACE token
+        else:
+            name_token = self.pop()
+            if (
+                name_token.type != TokenType.WORD
+                and name_token.type != TokenType.VARIABLE
+            ):
+                self.add_error(
+                    f"Expected type name, got '{name_token.value}'.",
+                    location_from_token(name_token),
+                )
+                return None
+
+            type_name = name_token.value
+            if name_token.type == TokenType.VARIABLE:
+                type_name = "$" + type_name
+
+            generic_params: Tuple[list[VTypes.VType], list[VTypes.VType]] | None = None
+            self.eat_whitespace()
+
+            if self.head_equals(TokenType.LEFT_SQUARE):
+                self.discard()  # Discard LEFT_SQUARE
+                if (gen := self.parse_generics()) is not None:
+                    generic_params = gen
+                else:
+                    return None
+                self.eat_whitespace()
+
+            try:
+                base_type = VTypes.type_name_to_vtype(
+                    type_name, generic_params or ([], [])
+                )
+            except ValueError as e:
+                self.add_error(
+                    str(e),
+                    location_from_token(name_token),
+                )
+                return None
+
+        modifiers: list[TokenType] = []
+        while self.head_is_any_of(
+            [TokenType.PLUS, TokenType.STAR, TokenType.TILDE, TokenType.QUESTION]
+        ):
+            modifiers.append(self.tokenStream.pop(0).type)
+
+        if self.head_equals(TokenType.NUMBER):
+            # Handle numeric rank modifier
+            number_token = self.tokenStream.pop(0)
+            try:
+                rank_value = int(number_token.value)
+                if rank_value < 0:
+                    raise ValueError("Rank value cannot be negative.")
+            except ValueError:
+                self.add_error(
+                    f"Invalid rank value '{number_token.value}'. Must be a non-negative integer.",
+                    location_from_token(number_token),
+                )
+                return None
+
+            # Expand the last modifier by the numeric value
+            if not modifiers:
+                self.add_error(
+                    "Numeric rank modifier must follow a rank modifier (+, *, ~, ?).",
+                    location_from_token(number_token),
+                )
+                return None
+
+            last_modifier = modifiers.pop()
+            modifiers.extend([last_modifier] * rank_value)
+
+        if not self.head_equals(TokenType.VARIABLE):
+            grouped_modifiers = itertools.groupby(modifiers)
+            for modifier, group in grouped_modifiers:
+                count = len(list(group))  # The numeric "rank" of this type
+                match modifier:
+                    case TokenType.PLUS:
+                        base_type = VTypes.ExactRankType(base_type, count)
+                    case TokenType.STAR:
+                        base_type = VTypes.MinimumRankType(base_type, count)
+                    case TokenType.TILDE:
+                        base_type = VTypes.ListType(base_type, count)
+                    case TokenType.QUESTION:
+                        for _ in range(count):
+                            base_type = VTypes.OptionalType(base_type)
+                    case _:
+                        pass  # Will not happen, because it's guaranteed by the while condition
+
+        elif self.head_equals(TokenType.VARIABLE):
+            # Handle variable rank modifier
+            var_token = self.tokenStream.pop(0)
+            if not modifiers:
+                self.add_error(
+                    "Variable rank modifier must follow a rank modifier (+, *, ~).",
+                    location_from_token(var_token),
+                )
+                return None
+
+            if len(modifiers) > 1:
+                self.add_error(
+                    "Only one variable rank modifier is allowed.",
+                    location_from_token(var_token),
+                )
+                return None
+
+            if modifiers[0] != TokenType.PLUS:
+                self.add_error(
+                    "Only exact rank (+) modifier can be used with variable rank.",
+                    location_from_token(var_token),
+                )
+                return None
+
+            base_type = VTypes.ExactRankType(base_type, var_token.value)
+        return base_type
+
+    def parse_identifier(self, consider_underscore: bool = False) -> str | None:
+        """
+        Take the next word and just return its value as an identifier.
+
+        :param self: This Parser instance
+        :return: The identifier string
+        :rtype: str
+        """
+        if self.head_equals(TokenType.WORD) or (
+            consider_underscore and self.head_equals(TokenType.UNDERSCORE)
+        ):
+            token = self.tokenStream.pop(0)
+            return token.value
+        else:
+            self.add_error(
+                f"Expected identifier but got {self.peek()}",
+                location=location_from_token(self.head()),
+            )
+
+    def parse_generics(self) -> Tuple[list[VType], list[VType]] | None:
+        """
+        Return a list of types used in a generic. Note that this is NOT for
+        parsing generic declarations in things like objects/traits/etc
+
+        Assumes that the LEFT_SQUARE has been discarded
+        """
+
+        left_side = self.parse_items(
+            [TokenType.RIGHT_SQUARE, TokenType.ARROW],
+            self.parse_type,
+            yeet_closer=False,
+        )
+        if not left_side:
+            return None
+
+        self.eat_whitespace()
+
+        right_side: list[VTypes.VType] = []
+
+        print("Starting on parsing right side")
+        print(self.tokenStream)
+
+        if self.head_equals(TokenType.ARROW):
+            self.discard()
+            self.eat_whitespace()
+            right_side = self.parse_items(
+                TokenType.RIGHT_SQUARE, self.parse_type, yeet_closer=False
+            )
+
+        self.discard()
+
+        print("Right side was", right_side)
+
+        return (left_side, right_side)
 
     # Parsing helper methods
     def is_expressionable(self, nodes: list[ASTNode]) -> bool:
@@ -897,3 +1167,33 @@ class Parser:
         value_node = self.group_wrap(value_nodes)
 
         return (key_node, value_node)
+
+    def make_type_operation(
+        self, left: VTypes.VType, right: VTypes.VType, operator_token: Token
+    ) -> VTypes.VType | None:
+        """
+        Given two VTypes and an operator token, create and return
+        the resulting VType from applying the operator.
+
+        :param self: This Parser instance
+        :param left: The left-hand side VType
+        :type left: VTypes.VType
+        :param right: The right-hand side VType
+        :type right: VTypes.VType
+        :param operator_token: The operator token
+        :type operator_token: Token
+        :return: The resulting VType after applying the operator, or None on error
+        :rtype: VTypes.VType | None
+        """
+        operator = operator_token.value
+        match operator:
+            case "&":
+                return VTypes.IntersectionType(left, right)
+            case "|":
+                return VTypes.UnionType(left, right)
+            case _:
+                self.add_error(
+                    f"Unknown type operator '{operator}'.",
+                    location_from_token(operator_token),
+                )
+                return None
