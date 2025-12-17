@@ -985,9 +985,6 @@ class Parser:
 
         right_side: list[VTypes.VType] = []
 
-        print("Starting on parsing right side")
-        print(self.tokenStream)
-
         if self.head_equals(TokenType.ARROW):
             self.discard()
             self.eat_whitespace()
@@ -996,8 +993,6 @@ class Parser:
             )
 
         self.discard()
-
-        print("Right side was", right_side)
 
         return (left_side, right_side)
 
