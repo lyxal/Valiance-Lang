@@ -907,6 +907,110 @@ double([1, 2, 3]) #? [2, 4, 6]
 	- For example, `T | T+` can vectorise where a `T~` can, because a `T | T+` _is_ a `T~`.
 	- `{T | T+}+3` can vectorise where a `T~3` can, because it's still a `T~3`.
 
+## 10.4. The `using` Keyword
+
+- As already mentioned, something like `[1, 2, 3] [4, 5] +` errors at runtime. The lengths of the two lists do not match.
+- A programmer in this situation may think to do something akin to:
+
+```
+dip: peek: length
+\ padToLength(fill = 0)
++
+```
+
+- But that's:
+	- Verbose
+	- Ceremonious
+	- Fragile (good luck applying that to 2+d lists)
+- There's a better way to do this. Rather than pad the lists, pad the function calls.
+- That is to say, if there is a missing value in the function call, then specify what should be substituted.
+- The `using` keyword allows for such substituions to be specified.
+- Syntax:
+
+```
+${element} using ${pattern}
+```
+
+- `pattern` can be one of three things
+
+1. `(${fill})`, where `fill` uses the stack to figure out what value should be used to replace missing arguments.
+2. `{${patterns}}`, where `patterns` gives fine-grained control over how present arguments should be used to fill missing arguments.
+3. `${selection element}`, where `selection element` acts as a fallback for all cases. Typically this will be `nonNull`. This usage of `using` is typically rare for triads and greater.
+
+### 10.4.1. The Fill Case
+
+- The `using (${fill})` form of `using` will substitute all missing arguments with whatever is calculated by `fill`
+- `fill` is executed once after the arguments to `element` are popped.
+- The result is used throughout the entire fill process.
+- Note that the `fill` must be compatible with all parameters of the element
+  - Obviously, if it can be used anywhere in the element call, then it needs to work with all parameters
+- This form of `using` is most helpful for type-homogeneous elements (ie all arguments are the same type). These will most often be dyadic pervasive mathematical operations like addition.
+- The example from earlier with the fill form of using could be written as:
+
+```
+[1, 2, 3] [4, 5] + using(0)
+#? [5, 7, 3]
+```
+
+- The keen will note that this is basically Uiua's fill modifier.
+
+### 10.4.2. The Pattern Case
+
+- The fill version of `using` can only be used on type homogeneous elements. This means it cannot be used on something defined on `T, U` where `T != U`. 
+- Notably, this is a consequence of the fill version being a "blanket" fill. There is no way for it to have fine grained control over what gets substituted.
+- That's why `using` also allows for a pattern system to be defined. The syntax is:
+
+```
+${element} using { ${patterns} }
+```
+
+- `patterns` is a comma separated series of:
+
+```
+${pattern} -> ${code}
+```
+
+- Each `pattern` is a comma separated series of names or `_`s.
+  - A name means "this argument is present, and can be used to determine what gets substituted"
+  - A `_` means "this argument is missing"
+- `code` is a series of expressionable items (basically anything that can appear in a list)
+- The example from earlier becomes:
+
+```
+[1, 2, 3] [4, 5] + using {
+  lhs, _ -> $lhs, _, rhs -> $rhs
+}
+#? [5, 7, 3]
+```
+
+- If a case isn't defined, then the behaviour will fallback to the default element. This is helpful if you know that, say, only the second argument will have length mismatches. The above example could also be:
+
+```
++ using {$lhs, _ -> $lhs}
+#? Because it's known that there'll never be a `_, rhs` case
+```
+
+### 10.4.3. The Selection Case
+
+- The pattern form of `using` is compatible with all functions and is capable of expressing all substitution cases.
+- However, it can be verbose having to write out a whole pattern set when the substitution can be expressed as a single element.
+- That's why the third form of `using` exists. It has the syntax:
+
+```
+${element} using ${selector}
+```
+
+- `selector` is an element that needs to have the same arity as `element`, and must accept optional versions of the parameters of `element`. 
+- That is to say, if `element` is defined on `T, U`, then `selector` must be defined on `T?, U?`
+- This is because missing values will be passed in as `None`. 
+- This has the consequence of meaning that optional types in `element` must be accepted as double-wrapped optionals in `selector` (otherwise, the meaning of `None` becomes meaningless).
+- The most common selector will probably be `or`, which, when given two options, returns the first non-None choice (or None of they're both None.)
+- The example from before becomes:
+
+```
+[1, 2, 3] [4, 5] + using or
+```
+
 # 11. The `:` Modifier
 - A common pattern is to pass functions to other functions. Basically higher order functions.
 - For example:
