@@ -837,9 +837,13 @@ def vectorized_apply(func, expected_ranks, actual_args):
         return results
 ```
 
-- Length mismatches result in a runtime error.
+- When an element is applied to multiple array arguments, all arrays must have equal length at each corresponding dimension.
 - For example, `[1, 2, 3] [4, 5] +` is an error, because the `3` is unpaired.
-  - While it would be possible to have a trimming/re-use/universal default fill option, these can lead to surprising results. 
+  - While it would be possible to have a trimming/re-use/universal default fill option, these can lead to surprising results.
+- `[[1, 2], [3, 4, 5]] [[6, 7], [8, 9]] +` also raises a runtime error
+  - The `[3, 4, 5]` does not have the same length as the `[8, 9]`
+- Length mismatch errors are raised as `Panic[String]`s.
+- 	Bet you can't do that in your fancy APLs. 
 
 ## 10.1. Fine Grained Vectorisation Control
 
