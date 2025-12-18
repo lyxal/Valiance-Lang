@@ -837,6 +837,10 @@ def vectorized_apply(func, expected_ranks, actual_args):
         return results
 ```
 
+- Length mismatches result in a runtime error.
+- For example, `[1, 2, 3] [4, 5] +` is an error, because the `3` is unpaired.
+  - While it would be possible to have a trimming/re-use/universal default fill option, these can lead to surprising results. 
+
 ## 10.1. Fine Grained Vectorisation Control
 
 - Pairwise behaviour may not always be useful.
