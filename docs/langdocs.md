@@ -2690,27 +2690,29 @@ multi define eval(:Mul) {
 
 - However, sometimes unconditional exception needed. Or an exception not expressible as a condition.
 - `panic(${arg})` throws an unconditional exception, with the value `arg` attached.
-	- `panic` inside a function/element attaches that panic to the function type
-	- `assert` also attaches `Panic`, but will always be `Panic[String]`
+	- `panic` inside a function/element attaches the `Panic[T]` element tag to the function type, where `T` is the type of `arg`.
+    - This indicates that the function may throw a panic of type `T`.
+	- `assert` also attaches the `Panic` tag element, but will always be `Panic[String]`
 
 ```
 define Foo() {
   panic("Uh oh!")
 }
-#? Function[ -> ] + {Panic[String]}
+#? Function[ -> ] + Panic[String]
 
 define Bar(x: Number) {
   if ($x 0.5 >) {panic("Uh oh!")}
   if ($x 0.25 <) {panic(200)}
   $x
 }
-#? Function[Number -> Number] + {Panic[String] | Panic[Number]}
+#? Function[Number -> Number] + Panic[String] + Panic[Number]
 ```
 
 - Note that types with `Panic`s attached do _not_ need the `Panic`s handled
 	- Java checked exceptions are painful
 	- Handling is optional
 	- Being part of the type increases transparency
+	- A natural extension of element tags
 
 - Exceptions from `panic`/`assert` can be caught using `try/handle`
 	- `try` block executes code
@@ -3112,9 +3114,11 @@ eager define[T] println(:T) -> () {...}
 ```
 
 - The `eager` keyword makes it so that anything calling `println` forces eager evaluation of all of its arguments.
+- It also attaches the `Eager` element tag to the function type.
 - Eagerness propagates up. Anything calling an eager element becomes eager itself.
   - Otherwise, you just have the same problem as before.
 - Thus, `map: println` itself is eager. The map, by process of calling an eager function, becomes eager.
+- And the type of `map: println` is `Function[T -> ()] + Eager`.
 
 # Appendix. Reserved Words
 
