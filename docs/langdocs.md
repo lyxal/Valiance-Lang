@@ -2089,22 +2089,22 @@ append([1, 2], "hello")
 - For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
 - When they are added, `define [above T]` will be contravariance (any type above or equal to T) and `define [any T]` will be covariance (any type of T).
 
-# 19. Tags
+# 19. Data Tags
 - By far one of the spiciest features of Valiance.
-- Tags are compile-time metadata attached to values that represent properties about those values. They enable type-safe tracking of properties like sortedness, finiteness, or structural constraints without requiring explicit type hierarchies.
+- Data tags are compile-time metadata attached to values that represent properties about those values. They enable type-safe tracking of properties like sortedness, finiteness, or structural constraints without requiring explicit type hierarchies.
 	- It also does so without having to have a billion specialised runtime flags.
 		- Other array languages stored sortedness/finiteness/etc as runtime properties. But that means that the VM/interpreter must have each tag
 			- Not very extensible
-	- Tags are runtime flags but done at compile time (with some runtime tags allowed)
-- There are 3 categories of tags:
+	- Data tags are runtime flags but done at compile time (with some runtime tags allowed)
+- There are 3 categories of data tags:
 	- Constructed
 	- Computed
 	- Variant
 - Each category is handled differently throughout program flow
-- Tags can only add or remove themselves. They can poll to see if other tags are in on the act, but they can only decide if they're in or out. 
+- Data tags can only add or remove themselves. They can poll to see if other tags are in on the act, but they can only decide if they're in or out. 
  
-## 19.1. Constructed Tags
-- The first category is constructed tags. These represent properties that are inherent to a stack item. Such properties mostly result from how the stack item is constructed. Hence the name.
+## 19.1. Constructed Data Tags
+- The first category is constructed data tags. These represent properties that are inherent to a stack item. Such properties mostly result from how the stack item is constructed. Hence the name.
 - For example, `infinite` is a constructed property of a list. Making a list infinite usually requires intent in how the list is made.
 	- Like you don't (really) accidentally make a list infinite just by applying operations to it. You have to construct its infiniteness through some stream-like sequence
 - Such a property is usually hard to remove too. It's best described as sticky.
@@ -2113,33 +2113,34 @@ append([1, 2], "hello")
 		- Neither does doing something like appending an item.
 		- Taking the first `n` items of an infinite list, on the other hand, does make it finite.
 - Therefore, constructed tags are retained between elements _unless explicitly removed_
+  - Generally speaking, if a returned value depends on an input value, it should retain all constructed tags of that input value.
 - This is done using a "one in all in" rule. The output of an element at call site has all the constructed tags of the input unless explicitly removed by the output or tag overlays.
 - From there, you can do backwards inference on the absence of computed tags by saying "well if it's a requirement that the output not have a tag, then all inputs must not have the tag either UNLESS the output of the previous function explicitly removes the tag" 
-  - Does also require checking the tag overlays 
-## 19.2. Computed Tags
-- Where constructed tags represent inherent properties stemming from how the stack item is created, computed tags represent properties that are picked up along the way. Such properties are computed as the result of an operation. Hence the name.
+  - Does also require checking the data tag overlays 
+## 19.2. Computed Data Tags
+- Where constructed data tags represent inherent properties stemming from how the stack item is created, computed data tags represent properties that are picked up along the way. Such properties are computed as the result of an operation. Hence the name.
 - For example, `sorted` is a computed property of a list. While sortedness can be constructed, it is very easy to make a list suddenly _not_ sorted.
 	- The moment the order of items in the list change, sortedness is no longer guaranteed.
 	- It must be recomputed to see if it still applies
 - Such a property, therefore, is very easy to remove. It's best described as fragile.
-- Therefore, computed tags are automatically removed between elements, _unless explicitly retained/added_.
+- Therefore, computed data tags are automatically removed between elements, _unless explicitly retained/added_.
 
-## 19.3. Variant Tags
-- Sometimes, computed tags may have certain sub-categories of the overall property that cannot be reliably inferred at compile time. Instead, they are variants that can be computed at runtime. Hence the name. (Continuity!)
+## 19.3. Variant Data Tags
+- Sometimes, computed data tags may have certain sub-categories of the overall property that cannot be reliably inferred at compile time. Instead, they are variants that can be computed at runtime. Hence the name. (Continuity!)
 - For example, a `sorted` list may be sorted in `ascending` or `descending` order. Problem is that determining exactly which way a list is sorted at compile time isn't always possible. Plus, having `ascending` and `descending` as individual tags adds a lot of bloat.
 	- Basically tag subtyping.
-- Tag variants don't get a say in when they are removed or added at compile time
-- Adding a tag variant to a stack item automatically adds that variant's parent computed tag.
+- Data tag variants don't get a say in when they are removed or added at compile time
+- Adding a data tag variant to a stack item automatically adds that variant's parent computed tag.
 
-## 19.4. Using Tags
-- "But how to use these tags?"
-- First you need to define the tag:
+## 19.4. Using Data Tags
+- "But how to use these data tags?"
+- First you need to define the data tag:
 
 ```
 tag ${category} #${tagName}
 ```
 - `category` is one of `constructed`, `computed`, `variant`.
-- `variant` tags need:
+- `variant` data tags need:
 
 ```
 tag variant #${parentName} #${tagName}
@@ -2154,19 +2155,19 @@ tag variant #sorted #ascending
 tag variant #sorted #descending
 ```
 
-- You add a tag to a value in three ways:
+- You add a data tag to a value in three ways:
 	- `#${tagName}` after a stack item
-	- Expecting the tag as part of a type parameter
-	- Adding the tag as part of a function return
+	- Expecting the data tag as part of a type parameter
+	- Adding the data tag as part of a function return
 - For example:
 
 ```
 [1, 2, 3, 4, 5] #sorted
 ```
 
-- To explicitly remove a tag: `#-${tagName}`.
+- To explicitly remove a data tag: `#-${tagName}`.
 - For example, to remove `#infinite`, `#-infinite` (good for when you know an operation returns a finite list from an infinite list).
-- Some more tag examples:
+- Some more data tag examples:
 
 ```
 define[T] sort(xs: T+) -> #sorted T+ {...}
@@ -2187,11 +2188,19 @@ define[T] min(xs: T+) -> T {sort min}
 
 - Note that in the implementation of `min(#sorted T+)`, pattern matching is required to ensure that the tag variants of `#sorted` are considered. If it were just `first`, it would return an incorrect result for `#descending` lists.
 	- Exhaustivity error if all tag variants are not considered.
+  
+- You can also require the abscence of a data tag:
 
-## 19.5. Tag Overlays
+```
+define[T] length(#-infinite T+) -> Number {...}
+[1, 2, 3] length #? OK
+(1, 2, 3) unfold (...) {...} length #? Compile Error! Cannot guarantee finiteness
+```
 
-- Defining new tag-respecting overloads for all elements is very verbose
-	- Especially if the tags do not change the behaviour of the element at all.
+## 19.5. Data Tag Overlays
+
+- Defining new data-tag-respecting overloads for all elements is very verbose
+	- Especially if the data tags do not change the behaviour of the element at all.
 - Consider:
 
 ```
@@ -2201,9 +2210,9 @@ define +(:#sorted Number, Number){
 }
 ```
 
-- Tags can specify "overlays" that describe how tags should be added/removed if an element is given tagged inputs
-- No change in behaviour, the element is performed exactly as normal, tags stripped and all.
-- Overlays are specified at tag 
+- Data tags can specify "overlays" that describe how data tags should be added/removed if an element is given tagged inputs
+- No change in behaviour, the element is performed exactly as normal, data tags stripped and all.
+- Overlays are specified at data tag 
 - Syntax:
 
 ```
@@ -2228,7 +2237,7 @@ ${element}[${generics}]: {
 - `generics` is optional, and allows for generic type variables to be expressed
 - `parameters` is the overload parameters. No names are needed, just the types.
 - `output` is the return types
-- The tag being defined can be represented as `#`
+- The data tag being defined can be represented as `#`
 	- Saves repeating tag name
 	- Other tags need to be spelled out
 - The `+` example becomes:
@@ -2254,7 +2263,7 @@ tag computed #sorted {
 }
 ```
 
-- "But what if I need to add a new tag overlay rule to a tag already defined?"
+- "But what if I need to add a new data tag overlay rule to a data tag already defined?"
 - `tag extend #${tagName}`
 
 ```
@@ -2264,10 +2273,10 @@ tag extend #sorted {
 }
 ```
 
-## 19.6. Disjointed Tags
+## 19.6. Disjointed DataTags
 
-- Sometimes, tags are incompatible
-	- For example, consider two tags `#nonempty` (intention of describing a non-empty list of items) and `#empty` (intention of describing an empty-list of items)
+- Sometimes, tags are incompatible (notice the lack of "data" in the name - foreshadowing)
+	- For example, consider two data tags `#nonempty` (intention of describing a non-empty list of items) and `#empty` (intention of describing an empty-list of items)
 	- A list can obviously not be `#nonempty` and `#empty` at the same time.
 - You can specify that a tag is incompatible with another tag using `tag disjoint ${parentTag} ${otherTag}`
 	- This will make it so that `parentTag` registers an incompatibility with `otherTag`.
@@ -2291,7 +2300,7 @@ tag disjoin #empty #nonempty
 #empty #? #nonempty is removed, #empty is added.
 ```
 
-## 19.7. Importing Tags
+## 19.7. Importing Data Tags
 
 - Imported as if they were normal parts of a module
 - `import ${libName}.#{$tagName}`
@@ -2300,8 +2309,8 @@ tag disjoin #empty #nonempty
 	- `#infinite`
 
 ### 19.7.1. The `@tagdef` Annotation
-- Adds a new definition, but care must be taken to ensure the tag is gone
-- The annotation makes it so that importing the tag imports the overload
+- Adds a new definition, but care must be taken to ensure the data tag is gone
+- The annotation makes it so that importing the data tag imports the overload
 	- Otherwise, things might not get imported
 	- Say you import `#sorted`, it'll also import the overloads marked `@tagdef(#sorted)`.
 		- Normal importing might miss overloads that are supposed to be included.
@@ -2313,6 +2322,159 @@ tag disjoin #empty #nonempty
   #sorted
 }
 ```
+
+# 19.a. Element Tags
+
+- Data tags are great for attaching metadata to stack items.
+- But what if you want to attach metadata to elements and functions?
+- Like for example, indicating that an element interacts with IO?
+- Data tags can't help here, because they are only for data
+	- Plus, they can be removed. If `IO` were a data tag, you'd be able to remove it from elements.
+- Thus, in addition to data tags, Valiance supports element tags.
+- Element tags are sticky tags that propagate up to the caller of an element with an element tag.
+	- For example, if an element/function calls an element that has `IO` attached, the caller will also have `IO` attached.
+- There are two categories of element tags:
+	- `property`
+	- `companion`
+- These categories do not impact tag flow. Rather, they impact _who_ can apply a tag. This will become obvious in the tag description sections.
+- Unlike data tags, element tags do not have any overlay rules. If an element tag is present, it propagates up.
+- But also unlike data tags, element tags can have type parameters.
+	- This is useful for element tags like `Panic`, which require specification of the type of panic.
+- Element tags are specified after the function type using `-`
+
+## 19.a.1. `property` Element Tags
+
+- `property` element tags are tags that can be freely added by the user.
+- `property` tags include:
+	- `IO`
+	- `Random`
+	- `Panic[T]`
+	- `Memoizable`
+
+- Syntax:
+
+```
+tag property ${Name}
+```
+
+- No `#` before the name.
+- Added to element definitions after the arguments:
+
+```
+define name(args) + ${element tags} -> returns {...}
+fn (args) + ${element tags} -> returns {...}
+```
+
+- If property tags are not specified, they'll be implicit
+- If property tags are specified, then using any property tag _not_ specified is a compile error.
+	- For example, if you declare element `foo` uses only `Random` and then it uses `IO`, that's a compile error.
+- An element does _not_ have to explicitly use an element with specified element tags.
+	- Your element may be considered random or to use IO without using anything that is inherently random (e.g. direct command line access)
+
+## 19.a.2. `companion` Element Tags
+
+- `companion` element tags are tags that _cannot_ be added by the user.
+- They can only be added by annotations or core system features.
+- `companion` element tags include `Eager` and `Memoized`.
+- Attempting to add a `companion` tag like a `property` tag is a compile error.
+	- You should not be allowed to attach `Eager` to an element if it isn't made eager using the `eager` keyword.
+- `companion` tags can still be expected as part of a parameter though.
+- Syntax:
+
+```
+tag companion ${Name}
+```
+
+- No `#` before the name.
+- Although companion element tags cannot be manually added, they still need to be defined in Valiance files so that other tags can use them in type parameters and in tag disjoints.
+
+## 19.a.3. Other Notes on Element Tags
+- Element tag abscence can be specified just like with data tags:
+
+```
+define[T, U] lazymap(xs: T+, function: Function[T -> U] - Eager) {...}
+```
+
+```
+define[T] callSafe(function: Function - Panic) {...}
+```
+
+- Element tag abscence verified in back pass. Same one-in-all-in rule as constructed tags.
+- Although functions can have data tags applied to them, element tags are for things that shouldn't be removable.
+	- Don't use data tags for properties of functions that aren't value-level metadata.
+- Element tags do not have `#` in their name
+
+## 19.a.4. Tag Disjoints and Element Tags
+
+- Data tags can declare that they are incompatible with element tags.
+	- For example, most times an `#infinite` stack value should not be used in an `Eager` element.
+- Syntax is exactly the same:
+
+```
+tag disjoint #${data tag} ${element tag}
+```
+
+- Unlike when a data tag is disjoint with another data tag, this level of disjointedness throws a compile error.
+- For example:
+
+```
+tag disjoint #infinite Eager
+unfold (...) {...} println #? Compile Error!
+#? The #infinite from the unfold would need to be removed
+#? with #-infinite
+```
+
+# 19.b. On Constructed Tags, Propagation, and Tag Depth
+- This section is important enough that it needs to not be buried under sub-headings for constructed tags.
+- Say you have the following:
+
+```
+define foo(x: Number+) {5+}
+```
+
+- So far, nothing out-of-the-ordinary. `foo` is inferred to return `Number+`.
+- But what if you give it an `#infinite Number+`?
+	- Then it _should_ return an `#infinite Number+`
+
+- Second, say you also have the following:
+
+```
+define bar(x: Number+) {[1, 2, 3]}
+```
+
+- If this is called with an `#infinite Number+`, then it absolutely should _not_ return an `#infinite Number+`.
+	- The returned list is known to be finite.
+- Therefore, tags from inputs are only propagated if the returned value has been constructed from an input with a tag.
+- But: there's a new edge case. What if you have:
+
+```
+define baz(x: Number+) {[$x, [1, 2, 3]]}
+```
+
+- Normally, `baz` is inferred as returning a `Number++`
+- But what happens if `baz` is given an `#infinite Number+`? What should the return type become?
+	- `Number++` is no longer a safe return type. Otherwise `baz first length` is allowed without any compile or runtime errors.
+	- That defeats the whole point of the tag system
+- The return type shouldn't be `#infinite Number++` though, because the result has a finite number of items.
+	- `baz length` is perfectly valid, and returns `2`.
+- One might say that it should return `{#infinite Number+ | Number+}+`
+	- This option is technically correct.
+	- But this can lead to nasty surprises.
+	- First, it means that `Number++` is no longer a safe simplification of `{Number+ | Number+}+`. This also has the implication that `T+ | T+` cannot be safely unified into just `T+`.
+	- Second, the compiler now has the added complexity of tracking that the return type is a union, in addition to recognising that it can _sometimes_ be used where a `Number++` is expected, and sometimes cannot.
+	- Ultimately, `{#infinite Number+ | Number+}+` runs antithetical to the premise of array programming.
+- Instead, Valiance opts to call the result `{#infinite Number+}+`. Although the second item of the result is not `#infinite`, it is considered `#infinite` for ergonomic purposes.
+	- It's still correct and safe, just more conservative
+	- But also, it's fundamentally no different to the union type
+	- Extracting an item from either union or consolidated type requires some level of pattern matching to determine whether it's infinite or not.
+- However, `{#infinite Number+}+` as a return type is still a little bit funky, and still requires a fair bit of special casing to still be considered a `Number++`.
+- Therefore, Valiance actually calls it an `#infinite+ Number++`.
+- The `+` in `#infinite+` indicates that the tag applies at depth 1.
+- This is beneficial because it improves readability of the type (no `{}` needed and it's still clearly a `Number++`).
+	- This also makes the compiler easier to implement. Rather than having to track `{#infinite Number+}+` as a `Number++`, the compiler knows that "oh, this is a `Number++` with items at depth 1 being `#infinite`".
+- This rule is merely a natural extension of the "one-in-all-in" tag abscence inference rule.
+	- If one input is `#infinite`, it's safe to conservatively assume _all_ inputs are `#infinite`.
+- Note that tag depth only applies to data tags. Element tags obviously do not have a meaningful interpretation of depth.
 
 # 20. Annotations
 
