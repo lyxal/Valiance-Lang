@@ -1810,6 +1810,65 @@ increment increment increment #? value = 3
 incCount println #? 4
 ```
 
+## 15.7. Copy Constructors
+
+- Called when:
+	- `^` or `\` is used to create copies of an object
+		- `\` only calls when there's multiple of an item pushed on the post-stack
+	- A variable is pushed to the stack
+		- In a sense, this creates a copy, given everything is immutable.
+
+- Useful for specifying what gets copied, and whether something can even be copied.
+- Syntax:
+
+```
+define ^${ObjectName} {...}
+```
+
+- Example: can't really think of one except for making copying an error:
+
+```
+object Singleton {
+  define Singleton($id: Number) {}
+  @error("Cannot copy singleton") define ^Singleton {}
+}
+```
+
+## 15.8. Destructors
+
+- First, a brief overview of memory system
+- Each scope has two reference stacks: the references it "owns", and the references it "keeps alive"
+- When an object is created in a scope, it is added to the references it "owns".
+- When a scope captures a reference from an outer scope, it adds the reference to the references it "keeps alive"
+- When a scope returns, any references being returned, including those stored in any "keep alive" stacks, are kept alive
+- Any references not being returned, nor included in any sub-"keep alive" stacks are freed.
+- In this way, a destructor is called when the object is not leaving a scope in any capacity.
+- Syntax:
+
+```
+define ~${ObjectName} {...}
+```
+
+- Massively helpful for ensuring automatic clean up of resources
+	- Screw you `under`. We don't inverses in this house.
+	- Told ya `under` was an excuse for poor API design.
+- Consider:
+
+```
+import system
+object File {
+  private field handle: system.StreamHandle
+  define File(filename: String) {
+    $handle = system.openFile($filename)
+  }
+  define read -> String {system.readStream($handle, all = true)}
+  define write(:String) {system.writeStream($handle, _)}
+  define ~File {system.closeStream($handle)}
+}
+```
+
+- The `~File` of a `File` object is called whenever that reference does not leave a scope in some capacity.
+
 # 16. Traits
 - No object inheritance -> Reliance upon composition.
 - But! Sometimes, subtyping is very helpful
@@ -2340,7 +2399,14 @@ tag disjoin #empty #nonempty
 - Unlike data tags, element tags do not have any overlay rules. If an element tag is present, it propagates up.
 - But also unlike data tags, element tags can have type parameters.
 	- This is useful for element tags like `Panic`, which require specification of the type of panic.
-- Element tags are specified after the function type using `-`
+- Element tags are specified after the function type using `+`
+- Element tag abscences are specified after the function type using `-`
+- Examples:
+
+```
+Function[T -> ()] + Eager + IO
+Function[Number -> Number] + Panic[String]
+```
 
 ## 19.a.1. `property` Element Tags
 
