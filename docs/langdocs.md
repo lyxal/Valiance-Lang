@@ -24,7 +24,7 @@ By the way, `${...}` in an example means "not actually part of the syntax, but t
 	- Intentional OO rather than an afterthought, or rather than something designed to not give the OO experience of other big languages.
 - Functional programming
 	- First class functions, and first-class functions that are actually ergonomic to work with.
-- Memory safe without garbage collection nor manual memory management.
+- Memory safe without manual memory management.
 	- While this sounds pretentious at first, there's some language restrictions that makes this easier than it sounds.
 - Extensibility and modularity
 	- The ability to add function overloads, and even multiple dispatch.
