@@ -56,6 +56,18 @@ class ElementNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class ElementArgumentIgnoreNode(ASTNode):
+    """Represents an argument to skip in an element call syntax"""
+
+
+@dataclass(frozen=True)
+class ElementArgumentFillNode(ASTNode):
+    """Represents an argument to fill in an element call syntax.
+    In other words, partial application with #
+    """
+
+
+@dataclass(frozen=True)
 class LiteralNode(ASTNode):
     """Represents a literal value"""
 
@@ -204,12 +216,15 @@ class SwapNode(ASTNode):
 class PopNode(ASTNode):
     """Represents the pop operation, labels optional"""
 
-    labels: list[str]
+    prestack: list[str]
+    poststack: list[str]
 
     def __post_init__(self):
         # Handle default values for empty lists
-        if not self.labels:
-            object.__setattr__(self, "labels", ["a"])
+        if not self.prestack:
+            object.__setattr__(self, "prestack", ["a"])
+        if self.poststack:
+            raise ValueError("Poststack must be empty for PopNode")
 
 
 @dataclass(frozen=True)

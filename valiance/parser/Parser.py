@@ -135,6 +135,28 @@ class Parser:
         for _ in range(count):
             self.tokenStream.pop(0)
 
+    def eat(self, type_: TokenType) -> Token | None:
+        """
+        Consume and return the head token if it matches the given type.
+        Returns None if the head token does not match.
+
+        :param self: This Parser instance
+        :param type_: The TokenType to match against the head token
+        :type type_: TokenType
+        :return: The head token if it matches the given type, otherwise None
+        :rtype: Token | None
+        """
+        if self.head_equals(type_):
+            return self.pop()
+        self.add_error(
+            "Expected token of type "
+            + str(type_)
+            + " but found "
+            + str(self.head().type),
+            location_from_token(self.head()),
+        )
+        return None
+
     def group_wrap(self, nodes: list[ASTNode]) -> ASTNode:
         """
         Take a list of ASTNodes and return a single GroupNode if there are
@@ -174,6 +196,43 @@ class Parser:
         if self.tokenStream:
             return self.tokenStream[0].type == type_
         return False
+
+    def head_lookahead_equals(self, types: list[TokenType]) -> bool:
+        """
+        Test whether the first few tokens in the token stream match the given types.
+
+        :param self: This Parser instance
+        :param types: The list of TokenTypes to compare against the head tokens
+        :type types: list[TokenType]
+        :return: True if the head tokens match the given types, False otherwise
+        :rtype: bool
+        """
+
+        # A simple for-loop does not account for extra whitespace within
+        # the token stream, so a manual count is needed
+        check_index = 0
+        stream_length = len(self.tokenStream)
+
+        while check_index < stream_length:
+            # Skip whitespace tokens
+            if self.tokenStream[check_index].type == TokenType.WHITESPACE:
+                check_index += 1
+                continue
+
+            # If we've run out of types to check against, return True
+            if len(types) == 0:
+                return True
+
+            # Compare the current token with the first type in the list
+            if self.tokenStream[check_index].type != types[0]:
+                return False
+
+            # Move to the next type and token
+            types.pop(0)
+            check_index += 1
+
+        # If there are still types left to check, return False
+        return len(types) == 0
 
     def head_is_any_of(self, types: list[TokenType]) -> bool:
         """
@@ -409,6 +468,28 @@ class Parser:
             verify=(verify[0], verify[1], location_fn) if verify else None,
         )
 
+    def collect_until(self, stop_tokens: list[TokenType]) -> list[ASTNode]:
+        """
+        An even more simplified version of parse_items that collects ASTNodes
+        until one of the specified stop tokens is encountered. No separators
+        involved. Always keeps the stop token.
+
+        :param self: This Parser instance
+        :param stop_tokens: The token types that signify the end of the collection
+        :type stop_tokens: list[TokenType]
+        :return: The list of collected ASTNodes
+        :rtype: list[ASTNode]
+        """
+
+        items: list[ASTNode] = []
+        self.eat_whitespace()
+        while self.tokenStream and not self.head_is_any_of(stop_tokens):
+            node = self.parse_next()
+            if node is not None:
+                items.append(node)
+            self.eat_whitespace()
+        return items
+
     def parse_next(self) -> ASTNode | None:
         """
         Parse and return the next AST node from the token stream.
@@ -441,11 +522,11 @@ class Parser:
             case _ if token.type == TokenType.WORD or is_element_token(token):
                 return self.parse_element(initial_token=token)
             case TokenType.DUPLICATE:
-                return self.parse_labelled(ast_type=DuplicateNode)
+                return self.parse_labelled(ast_type=DuplicateNode, token=token)
             case TokenType.SWAP:
-                return self.parse_labelled(ast_type=SwapNode)
+                return self.parse_labelled(ast_type=SwapNode, token=token)
             case TokenType.UNDERSCORE:
-                return self.parse_labelled(ast_type=PopNode)
+                return self.parse_labelled(ast_type=PopNode, token=token)
             case TokenType.FN:
                 return self.parse_function()
             case TokenType.SINGLE_QUOTE:
@@ -689,7 +770,7 @@ class Parser:
         while self.peek() and is_element_token(self.head()):
             element_name += self.pop().value
 
-        if not self.head_is_any_of([TokenType.LEFT_BRACE, TokenType.LEFT_SQUARE]):
+        if not self.head_is_any_of([TokenType.LEFT_PAREN, TokenType.LEFT_SQUARE]):
             return ElementNode(
                 location_from_token(initial_token), element_name, [], [], []
             )
@@ -703,12 +784,85 @@ class Parser:
             generics = temp[0]
             self.discard()  # Remove the RIGHT_SQUARE
 
+        if self.head_equals(TokenType.LEFT_PAREN):
+            self.discard()  # Remove the LEFT_PAREN
+            arguments = self.parse_element_call_syntax(element_name)
+            return ElementNode(
+                location_from_token(initial_token),
+                element_name,
+                generics,
+                arguments,
+                [],
+            )
+
         return ElementNode(
             location_from_token(initial_token), element_name, generics, [], []
         )
 
-    def parse_labelled(self, ast_type: type[ASTNode]) -> ASTNode:
-        return NotImplementedError
+    def parse_labelled(
+        self, token: Token, ast_type: type[DuplicateNode | SwapNode | PopNode]
+    ) -> ASTNode | None:
+        """Parse a labelled AST node (like Duplicate, Swap, Pop)."""
+
+        # Don't bother parsing further if there's no label indicator
+        if not self.head_equals(TokenType.LEFT_SQUARE):
+            return ast_type(location_from_token(token), [], [])
+
+        self.discard()  # Discard the LEFT_SQUARE
+        self.eat_whitespace()
+        prestack: list[str] = []
+        poststack: list[str] = []
+
+        # Collect the prestack labels first
+        while not self.head_is_any_of([TokenType.ARROW, TokenType.RIGHT_SQUARE]):
+            if self.head_equals(TokenType.WORD) or self.head_equals(
+                TokenType.UNDERSCORE
+            ):
+                prestack.append(self.pop().value)
+            else:
+                self.add_error(
+                    "Expected label name or underscore in labelled instruction.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+                self.discard()  # Discard to try and continue
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard the COMMA
+                self.eat_whitespace()
+            self.eat_whitespace()
+
+        if self.head_equals(TokenType.RIGHT_SQUARE):
+            if not prestack:
+                self.add_error(
+                    "Labelled instruction must have at least one prestack label if no poststack labels are provided.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+            if ast_type == PopNode:
+                self.discard()  # Discard the RIGHT_SQUARE
+                return ast_type(location_from_token(token), prestack, poststack)
+            self.add_error(
+                "Labelled instruction missing '->' for poststack labels.",
+                location_from_token(self.head()) if self.peek() else Location(0, 0),
+            )
+            self.discard()  # Discard the RIGHT_SQUARE
+            return None
+
+        self.eat(TokenType.ARROW)
+        self.eat_whitespace()
+        while not self.head_equals(TokenType.RIGHT_SQUARE):
+            if self.head_equals(TokenType.WORD):
+                poststack.append(self.pop().value)
+            else:
+                self.add_error(
+                    "Expected label name in post-stack labels of labelled instruction.",
+                    location_from_token(self.head()) if self.peek() else Location(0, 0),
+                )
+                self.discard()  # Discard to try and continue
+            if self.head_equals(TokenType.COMMA):
+                self.discard()  # Discard the COMMA
+                self.eat_whitespace()
+            self.eat_whitespace()
+        self.discard()  # Discard the RIGHT_SQUARE
+        return ast_type(location_from_token(token), prestack, poststack)
 
     def parse_function(self) -> ASTNode:
         return NotImplementedError
@@ -995,6 +1149,60 @@ class Parser:
         self.discard()
 
         return (left_side, right_side)
+
+    def parse_element_call_syntax(self, element_name: str) -> list[Tuple[str, ASTNode]]:
+        """
+        Collect all arguments passed to an element using call syntax,
+        i.e. ElementName(arg1, arg2, ...)
+
+        Assumes that the opening LEFT_PAREN has already been consumed.
+
+        :param self: This Parser instance
+        :param initial_token: The initial token representing the element name
+        :return: A list of tuples containing argument names and their corresponding ASTNodes
+        """
+        arguments: list[Tuple[str, ASTNode]] = []
+        while not self.head_equals(TokenType.RIGHT_PAREN):
+            name = ""
+            if self.head_lookahead_equals([TokenType.WORD, TokenType.EQUALS]):
+                name = self.pop().value
+                self.eat_whitespace()
+                self.discard()  # We know it's an EQUALS, because of the lookahead
+                self.eat_whitespace()
+            if self.head_equals(TokenType.UNDERSCORE):
+                args = [ElementArgumentIgnoreNode(location_from_token(self.head()))]
+                self.discard()  # Discard the UNDERSCORE
+            elif self.head_equals(TokenType.HASH):
+                args = [ElementArgumentFillNode(location_from_token(self.head()))]
+                self.discard()  # Discard the HASH
+            else:
+                args = self.collect_until([TokenType.COMMA, TokenType.RIGHT_PAREN])
+                if not args:
+                    self.add_error(
+                        f"Expected argument value in element call syntax for element '{element_name}'.",
+                        location_from_token(self.head()),
+                    )
+                    return []
+                if not self.is_expressionable(args):
+                    self.add_error(
+                        f"Element call syntax arguments must be expressionable for element '{element_name}'.",
+                        location_from_token(self.head()),
+                    )
+                    return []
+            argument_node = self.group_wrap(args)  # type: ignore
+            arguments.append((name, argument_node))
+            self.eat_whitespace()
+            if self.head_equals(TokenType.COMMA):
+                self.discard()
+                self.eat_whitespace()
+            elif not self.head_equals(TokenType.RIGHT_PAREN):
+                self.add_error(
+                    f"Expected ',' or ')' in element call syntax for element '{element_name}'.",
+                    location_from_token(self.head()),
+                )
+                return []
+        self.discard()  # Discard the RIGHT_PAREN
+        return arguments
 
     # Parsing helper methods
     def is_expressionable(self, nodes: list[ASTNode]) -> bool:
