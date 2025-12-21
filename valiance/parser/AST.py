@@ -3,17 +3,10 @@ from dataclasses import dataclass
 from typing import Sequence, Tuple
 
 from valiance.lexer.Token import Token
+from valiance.compiler_common.Location import Location
 from valiance.compiler_common.Index import Index
 from valiance.compiler_common.TagCategories import TagCategory
 from valiance.vtypes.VTypes import VType
-
-
-class Location:
-    """Represents a location in the source code"""
-
-    def __init__(self, line: int, column: int):
-        self.line = line
-        self.column = column
 
 
 @dataclass(frozen=True)
@@ -22,6 +15,16 @@ class ASTNode(ABC):
 
     location: Location
     pass
+
+
+@dataclass(frozen=True)
+class ErrorNode(ASTNode):
+    """Represents an error in the AST"""
+
+    token: Token
+
+    def __repr__(self):
+        return f"{self.token.value}"
 
 
 @dataclass(frozen=True)

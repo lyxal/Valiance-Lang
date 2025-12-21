@@ -1,3 +1,4 @@
+from valiance.compiler_common.Location import Location
 from valiance.lexer.TokenType import TokenType
 
 
@@ -7,6 +8,7 @@ class Token:
         self.value = value
         self.line = line
         self.column = column
+        self.location = Location(line, column)
 
     def __repr__(self):
         return f"Token({self.type}, {self.value}, {self.line}, {self.column})"

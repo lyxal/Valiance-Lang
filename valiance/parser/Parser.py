@@ -36,7 +36,7 @@ def default_parse_items_wrap(x: list[T]) -> T:
     :return: What the items would be wrapped into
     :rtype: T
     """
-    return x
+    return x  # type: ignore
 
 
 def is_element_token(token: Token) -> bool:
