@@ -2399,13 +2399,13 @@ tag disjoin #empty #nonempty
 - Unlike data tags, element tags do not have any overlay rules. If an element tag is present, it propagates up.
 - But also unlike data tags, element tags can have type parameters.
 	- This is useful for element tags like `Panic`, which require specification of the type of panic.
-- Element tags are specified after the function type using `+`
+- Element tags are specified after the function type using `:`. Multiple element tags are separated by `+`
 - Element tag abscences are specified after the function type using `-`
 - Examples:
 
 ```
-Function[T -> ()] + Eager + IO
-Function[Number -> Number] + Panic[String]
+Function[T -> ()]: Eager + IO
+Function[Number -> Number]: Panic[String]
 ```
 
 ## 19.a.1. `property` Element Tags
@@ -2427,8 +2427,8 @@ tag property ${Name}
 - Added to element definitions after the arguments:
 
 ```
-define name(args) + ${element tags} -> returns {...}
-fn (args) + ${element tags} -> returns {...}
+define name(args): ${element tags} -> returns {...}
+fn (args): ${element tags} -> returns {...}
 ```
 
 - If property tags are not specified, they'll be implicit
@@ -2458,7 +2458,7 @@ tag companion ${Name}
 - Element tag abscence can be specified just like with data tags:
 
 ```
-define[T, U] lazymap(xs: T+, function: Function[T -> U] - Eager) {...}
+define[T, U] lazymap(xs: T+, function: Function[T -> U]: -Eager) {...}
 ```
 
 ```
