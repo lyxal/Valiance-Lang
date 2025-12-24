@@ -1,5 +1,7 @@
 from abc import abstractmethod
+from dataclasses import replace
 from typing import Callable, Optional, TypeVar
+import logging
 
 from valiance.parser.Errors import GenericParseError, ParserError
 
@@ -7,6 +9,8 @@ from valiance.parser.AST import *
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
 from valiance.vtypes import VTypes
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -27,6 +31,14 @@ OPEN_CLOSE_TOKEN_MAP: dict[TokenType, TokenType] = {
 # A helper function to generate a depth-tracking table for
 # token synchronisation.
 sync_table = lambda: {_type: 0 for _type in OPEN_CLOSE_TOKEN_MAP}
+
+# A helper function to eother wrap a list of ASTNodes into a GroupNode
+# or return the single ASTNode if there's only one.
+
+group_wrap: Callable[[list[ASTNode]], ASTNode]
+group_wrap = lambda nodes: (
+    nodes[0] if len(nodes) == 1 else GroupNode(nodes[0].location, nodes)
+)
 
 
 def is_element_token(token: Token) -> bool:
@@ -53,6 +65,50 @@ def is_element_token(token: Token) -> bool:
         TokenType.QUESTION,
         TokenType.UNDERSCORE,
     )
+
+
+def is_expressionable(nodes: list[ASTNode]) -> bool:
+    """Determine if a GroupNode or list of ASTNodes can be treated as an expression.
+
+    Args:
+        nodes (GroupNode|list[ASTNode]): The nodes to check. Assumed to be not empty.
+    Returns:
+        bool: Whether the nodes can be treated as an expression
+    """
+
+    if isinstance(nodes, GroupNode):
+        nodes = nodes.elements
+
+    for node in nodes:
+        if isinstance(node, GroupNode):
+            for inner_node in node.elements:
+                if not is_expressionable([inner_node]):
+                    return False
+        if not isinstance(
+            node,
+            (
+                LiteralNode,
+                ElementNode,
+                FunctionNode,
+                ListNode,
+                TupleNode,
+                DictionaryNode,
+                VariableGetNode,
+                DuplicateNode,
+                SwapNode,
+                PopNode,
+                IfNode,
+                MatchNode,
+                WhileNode,
+                ForNode,
+                UnfoldNode,
+                AssertNode,
+                AssertElseNode,
+                TypeCastNode,
+            ),
+        ):
+            return False
+    return True
 
 
 class ParserStrategy:
@@ -297,23 +353,42 @@ class Parser:
         return self.tokens[0]
 
     def lookahead_equals(
-        self, token_types: list[TokenType], eat_whitespace: bool = True
+        self,
+        token_types: list[TokenType],
+        eat_whitespace: bool = True,
+        ignore_whitespace: bool = True,
     ) -> bool:
         """Check whether the start of the lookahead matches a given sequence of tokens
 
         Args:
             token_types (list[TokenType]): The sequence of token types to check for
             eat_whitespace (bool, optional): Whether whitespace should be consumed before checking. Defaults to True.
-
+            ignore_whitespace (bool, optional): Whether whitespace tokens in the lookahead should be ignored. Defaults to True.
         Returns:
             bool: Whether the lookahead matches the given sequence of token types.
         """
         if eat_whitespace:
             self.eat_whitespace()
             self.error_if_eof()
-        for i, token_type in enumerate(token_types):
-            if len(self.tokens) <= i or self.tokens[i].type != token_type:
+
+        lookahead_index = 0
+        for token_type in token_types:
+            # Advance the lookahead index to the next non-whitespace token if ignoring whitespace
+            while (
+                ignore_whitespace
+                and lookahead_index < len(self.tokens)
+                and self.tokens[lookahead_index].type == TokenType.WHITESPACE
+            ):
+                lookahead_index += 1
+
+            if lookahead_index >= len(self.tokens):
                 return False
+
+            if self.tokens[lookahead_index].type != token_type:
+                return False
+
+            lookahead_index += 1
+
         return True
 
     def sync(self, *token_types: TokenType) -> None:
@@ -502,8 +577,8 @@ class Parser:
             ASTNode: The parsed AST node.
         """
 
-        print("Parsing next token:", self.head())
-        print("Remaining tokens:", self.tokens)
+        logging.log(logging.DEBUG, "Parsing next token: %s", self.head())
+        logging.log(logging.DEBUG, "Remaining tokens: %s", self.tokens)
 
         for strategy in self.strategies:
             if strategy.can_parse():
@@ -538,6 +613,174 @@ class Parser:
                 "Token could not be parsed by any strategy, but already inside a strategy; not adding error."
             )
         return ErrorNode(self.head().location, self.head())
+
+    def parse_until(self, *token_types: TokenType) -> list[ASTNode]:
+        """Parse tokens until one of the given token types is encountered.
+
+        Args:
+            *token_types (TokenType): The token types to stop parsing at.
+        Returns:
+            list[ASTNode]: The parsed AST nodes.
+        """
+
+        asts: list[ASTNode] = []
+        while not self.head_in(*token_types):
+            ast = self.parse_next()
+            asts.append(ast)
+        return asts
+
+    def make_type_operation(
+        self, left: VTypes.VType, right: VTypes.VType, operator_token: Token
+    ) -> VTypes.VType:
+        """
+        Create a type operation (union or intersection) between two types.
+
+        Args:
+            left (VTypes.VType): The left operand type.
+            right (VTypes.VType): The right operand type.
+            operator_token (Token): The token representing the operator.
+        Returns:
+            VTypes.VType: The resulting type after applying the operation.
+        """
+        operator = operator_token.value
+        match operator:
+            case "&":
+                return VTypes.IntersectionType(left, right)
+            case "|":
+                return VTypes.UnionType(left, right)
+            case _:
+                self.add_error(
+                    f"Unknown type operator '{operator}'.",
+                    operator_token,
+                )
+                return VTypes.ErrorType()
+
+    def parse_type(self, min_precedence: int = 0) -> VType:
+        """Parse a type from the token stream.
+
+        NOTE: Normal usage should not need to specify min_precedence.
+        It's an internal detail used for parsing type expressions with
+        operator precedence.
+
+        Args:
+            min_precedence (int, optional): The minimum precedence level for parsing. Defaults to 0.
+
+        Returns:
+            VType: The parsed type.
+        """
+
+        left = self.parse_primary_type()
+        while (
+            self.head().value in TYPE_OPERATOR_PRECEDENCE_TABLE
+            and TYPE_OPERATOR_PRECEDENCE_TABLE[self.head().value] >= min_precedence
+        ):
+            operator_token = self.pop()
+            operator = operator_token.value
+            precedence = TYPE_OPERATOR_PRECEDENCE_TABLE[operator]
+            if precedence < min_precedence:
+                break
+            right = self.parse_type(precedence + 1)
+            left = self.make_type_operation(left, right, operator_token)
+
+        return left
+
+    def parse_primary_type(self) -> VType:
+        """Parse a primary type from the token stream.
+
+        Primary types are basic types like identifiers, literals, lists, tuples, etc.
+
+        NOTE: This method is called by parse_type to handle the base cases.
+        Do not call this method directly unless you know what you're doing.
+
+        Returns:
+            VType: The parsed primary type.
+        """
+
+        data_tags: list[VTypes.DataTag] = []
+
+        # First, handle data tags
+        while self.head_equals(TokenType.TAG_TOKEN):
+            token = self.pop()
+            tag_name = token.value
+            depth = 0
+            if self.lookahead_equals([TokenType.PLUS, TokenType.NUMBER]):
+                self.pop()  # Pop the plus
+                number_token = self.pop()
+                try:
+                    depth = int(number_token.value)
+                except ValueError:
+                    self.add_error(
+                        f"Invalid data tag depth: '{number_token.value}' is not a valid integer.",
+                        number_token,
+                    )
+            else:
+                while self.head_equals(TokenType.PLUS):
+                    self.pop()
+                    depth += 1
+            data_tags.append(VTypes.DataTag(name=tag_name, depth=depth))
+
+        # Then, handle grouping
+        if self.head_equals(TokenType.LEFT_BRACE):
+            self.eat(TokenType.LEFT_BRACE)
+            inner_type = self.parse_type()
+            self.eat(TokenType.RIGHT_BRACE)
+            return replace(inner_type, data_tags=tuple(data_tags))
+
+        if self.head_equals(TokenType.WORD):
+            token = self.pop()
+            left_type_args: list[VTypes.VType] = []
+            right_type_args: list[VTypes.VType] = []
+
+            # Parse type arguments if present
+            if self.head_equals(TokenType.LEFT_SQUARE):
+                self.eat(TokenType.LEFT_SQUARE)
+                # Parse left type arguments
+                while not self.head_equals(TokenType.COLON) and not self.head_equals(
+                    TokenType.RIGHT_SQUARE
+                ):
+                    left_type_args.append(self.parse_type())
+                    if self.head_equals(TokenType.COMMA):
+                        self.eat(TokenType.COMMA)
+                    else:
+                        break
+                # If there's a colon, parse right type arguments
+                if self.head_equals(TokenType.ARROW):
+                    self.eat(TokenType.ARROW)
+                    while not self.head_equals(TokenType.RIGHT_SQUARE):
+                        right_type_args.append(self.parse_type())
+                        if self.head_equals(TokenType.COMMA):
+                            self.eat(TokenType.COMMA)
+                        else:
+                            break
+                self.eat(TokenType.RIGHT_SQUARE)
+
+            element_tags: list[VTypes.ElementTag] = []
+            negate_next = False
+            if self.head_equals(TokenType.COLON):
+                self.pop()  # Pop the colon
+                if self.head_equals(TokenType.MINUS):
+                    self.pop()  # Pop the MINUS
+                    negate_next = True
+                while self.head_equals(TokenType.WORD):
+                    tag_token = self.pop()
+                    prefix = "" if not negate_next else "-"
+                    element_tags.append(
+                        VTypes.ElementTag(name=prefix + tag_token.value)
+                    )
+                    if self.head_equals(TokenType.PLUS):
+                        self.pop()  # Pop the PLUS
+                        negate_next = False
+                    else:
+                        break
+            return VTypes.type_name_to_vtype(
+                token.value, (left_type_args, right_type_args), data_tags, element_tags
+            )
+        else:
+            self.add_error(
+                f"Expected a primary type, got {self.head().type} ('{self.head().value}')",
+                self.head(),
+            )
+            return VTypes.ErrorType()
 
     class NumberParser(ParserStrategy):
         name: str = "Number"
@@ -575,7 +818,7 @@ class Parser:
                 lambda node: isinstance(node, ErrorNode),
                 lambda token: ErrorNode(self.parser.head().location, token),
                 singleton=False,
-                validate=None,
+                validate=lambda node: is_expressionable([node]),
                 multi_item_wrap=lambda items: (
                     items[0] if len(items) == 1 else GroupNode(items[0].location, items)
                 ),
@@ -599,10 +842,116 @@ class Parser:
                 lambda node: isinstance(node, ErrorNode),
                 lambda token: ErrorNode(self.parser.head().location, token),
                 singleton=False,
-                validate=None,
+                validate=lambda node: is_expressionable([node]),
                 multi_item_wrap=lambda items: (
                     items[0] if len(items) == 1 else GroupNode(items[0].location, items)
                 ),
             )
             self.parser.eat(TokenType.RIGHT_PAREN)
             return TupleNode(location, items, len(items))
+
+    class ElementParser(ParserStrategy):
+        name: str = "Element"
+
+        def can_parse(self) -> bool:
+            return is_element_token(self.parser.head())
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.head()
+            name = self.parser.pop().value
+            while is_element_token(self.parser.head()):
+                name += self.parser.pop().value
+
+            # Handle potential type arguments for the element
+            args: list[VTypes.VType] = []
+            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                args = self.parser.parse_items(
+                    TokenType.LEFT_SQUARE,
+                    TokenType.COMMA,
+                    TokenType.RIGHT_SQUARE,
+                    self.parser.parse_type,
+                    lambda t: isinstance(t, VTypes.ErrorType),
+                    lambda token: VTypes.ErrorType(),
+                    singleton=True,
+                    validate=None,
+                )
+                self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            if self.parser.head_equals(TokenType.LEFT_PAREN):
+                arg_nodes = self.parse_element_arguments()
+                return ElementNode(
+                    location=location_token.location,
+                    element_name=name,
+                    generics=args,
+                    args=arg_nodes,
+                    modifier_args=[],
+                )
+
+            return ElementNode(
+                location=location_token.location,
+                element_name=name,
+                generics=args,
+                args=[],
+                modifier_args=[],
+            )
+
+        def parse_element_arguments(self) -> list[Tuple[str, ASTNode]]:
+            """Parse the arguments for an element.
+
+            Returns:
+                list[Tuple[str, ASTNode]]: The parsed arguments as a list of (name, ASTNode) tuples.
+            """
+            arguments: list[Tuple[str, ASTNode]] = []
+
+            self.parser.pop()
+
+            while not self.parser.head_equals(TokenType.RIGHT_PAREN):
+                logger.log(
+                    logging.DEBUG,
+                    "Parsing element argument, head token: %s",
+                    self.parser.head(),
+                )
+                name = ""
+                args: list[ASTNode] = []
+                if self.parser.lookahead_equals([TokenType.WORD, TokenType.EQUALS]):
+                    name_token = self.parser.pop()
+                    name = name_token.value
+                    self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
+
+                # From here, the argument will either be `_` (fill when called), `#` (fill now), or an series of expressionable ASTs
+                if self.parser.head_equals(TokenType.UNDERSCORE):
+                    args = [ElementArgumentIgnoreNode(self.parser.pop().location)]
+                elif self.parser.head_equals(TokenType.HASH):
+                    args = [ElementArgumentFillNode(self.parser.pop().location)]
+                else:
+                    args = self.parser.parse_until(
+                        TokenType.COMMA, TokenType.RIGHT_PAREN
+                    )
+                    logger.log(logging.DEBUG, "Parsed element argument ASTs: %s", args)
+                    logger.log(
+                        logging.DEBUG, "Remaining tokens: %s", self.parser.tokens
+                    )
+                    if not args:
+                        self.parser.add_error(
+                            "Expected at least one argument for element argument.",
+                            self.parser.head(),
+                        )
+                        return []
+
+                    if not is_expressionable(args):
+                        self.parser.add_error(
+                            "Element argument contains non-expressionable AST nodes.",
+                            self.parser.head(),
+                        )
+                        return []
+
+                arguments.append((name, group_wrap(args)))
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.eat(TokenType.COMMA)
+            logger.log(
+                logging.DEBUG,
+                "Boutta eat RIGHT_PAREN, head token: %s",
+                self.parser.head(),
+            )
+            self.parser.eat(TokenType.RIGHT_PAREN)
+            return arguments

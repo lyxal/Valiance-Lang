@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
@@ -6,12 +7,37 @@ from valiance.parser.NewParser import Parser
 from valiance.parser.PrettyPrinter import pretty_print_ast
 
 
+def setup_logging(log_level: str = "INFO"):
+    """Configure logging once at application startup"""
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f"Invalid log level: {log_level}")
+
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler("app.log"), logging.StreamHandler()],
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--lex", action="store_true", help="Run lexer only (skip parser)"
     )
+
+    parser.add_argument(
+        "--log",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
     args = parser.parse_args()
+
+    setup_logging(args.log)
+
+    logger = logging.getLogger(__name__)
+    logger.info("Application started")
 
     while True:
         try:

@@ -1,13 +1,24 @@
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import enum
-from turtle import right
 from typing import Tuple
 
 
-@dataclass(frozen=True)
+@dataclass
+class DataTag(ABC):
+    name: str
+    depth: int
+
+
+@dataclass
+class ElementTag(ABC):
+    name: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class VType(ABC):
-    pass
+    data_tags: tuple[DataTag, ...] = field(default_factory=tuple)
+    element_tags: tuple[ElementTag, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,11 @@ class CustomType(VType):
     right_types: list[VType]
 
 
+@dataclass(frozen=True)
+class ErrorType(VType):
+    pass
+
+
 class TypeNames(enum.Enum):
     Number = "Number"
     String = "String"
@@ -90,25 +106,45 @@ class TypeNames(enum.Enum):
 
 
 def type_name_to_vtype(
-    type_name: str, generics: Tuple[list[VType], list[VType]]
+    type_name: str,
+    generics: Tuple[list[VType], list[VType]],
+    data_tags: list[DataTag],
+    element_tags: list[ElementTag],
 ) -> VType:
     if type_name == TypeNames.Number.value:
         if generics[0] or generics[1]:
             raise ValueError("Number type does not accept generics")
-        return NumberType()
+        return NumberType(data_tags=tuple(data_tags), element_tags=tuple(element_tags))
     elif type_name == TypeNames.String.value:
         if generics[0] or generics[1]:
             raise ValueError("String type does not accept generics")
-        return StringType()
+        return StringType(data_tags=tuple(data_tags), element_tags=tuple(element_tags))
     elif type_name == TypeNames.Dictionary.value:
         if len(generics[0]) > 1:
             raise ValueError("Dictionary type given more than 1 key type")
         if len(generics[1]) > 1:
             raise ValueError("Dictionary type given more than 1 value type")
-        return DictionaryType(generics[0][0], generics[1][0])
+        return DictionaryType(
+            generics[0][0],
+            generics[1][0],
+            data_tags=tuple(data_tags),
+            element_tags=tuple(element_tags),
+        )
     elif type_name == TypeNames.Function.value:
-        return FunctionType(True, [], generics[0], generics[1], [])
+        return FunctionType(
+            True,
+            [],
+            generics[0],
+            generics[1],
+            [],
+            data_tags=tuple(data_tags),
+            element_tags=tuple(element_tags),
+        )
     else:
         return CustomType(
-            name=type_name, left_types=generics[0], right_types=generics[1]
+            name=type_name,
+            left_types=generics[0],
+            right_types=generics[1],
+            data_tags=tuple(data_tags),
+            element_tags=tuple(element_tags),
         )
