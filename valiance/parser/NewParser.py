@@ -41,15 +41,19 @@ group_wrap = lambda nodes: (
 )
 
 
-def is_element_token(token: Token) -> bool:
+def is_element_token(token: Token, exclude_underscore: bool = False) -> bool:
     """Determine if a token can be used in an element name
 
     Args:
         token (Token): The token to check
+        exclude_underscore (bool, optional): Whether to exclude underscore as a valid element token. Defaults to False.
 
     Returns:
         bool: Whether the token can be used in an element name
     """
+
+    if exclude_underscore and token.type == TokenType.UNDERSCORE:
+        return False
 
     return token.type in (
         TokenType.WORD,
@@ -183,6 +187,8 @@ class Parser:
     def _collect_strategies(self) -> None:
         # Collect all ParserStrategy subclasses defined in this module
         for subclass in ParserStrategy.__subclasses__():
+            self.strategies.append(subclass(self))
+        for subclass in self.LabelledStackShuffleParser.__subclasses__():
             self.strategies.append(subclass(self))
 
     def add_error(self, message: str, location: Optional[Token]) -> None:
@@ -806,7 +812,7 @@ class Parser:
         name: str = "List"
 
         def can_parse(self) -> bool:
-            return self.parser.head_equals(TokenType.LEFT_SQUARE)
+            return self.go(TokenType.LEFT_SQUARE)
 
         def parse(self) -> ASTNode:
             location = self.parser.head().location
@@ -830,7 +836,7 @@ class Parser:
         name: str = "Tuple"
 
         def can_parse(self) -> bool:
-            return self.parser.head_equals(TokenType.LEFT_PAREN)
+            return self.go(TokenType.LEFT_PAREN)
 
         def parse(self) -> ASTNode:
             location = self.parser.head().location
@@ -854,7 +860,7 @@ class Parser:
         name: str = "Element"
 
         def can_parse(self) -> bool:
-            return is_element_token(self.parser.head())
+            return is_element_token(self.parser.head(), exclude_underscore=True)
 
         def parse(self) -> ASTNode:
             location_token = self.parser.head()
@@ -955,3 +961,132 @@ class Parser:
             )
             self.parser.eat(TokenType.RIGHT_PAREN)
             return arguments
+
+    class LabelledStackShuffleParser(ParserStrategy):
+        name: str = "AbstractStackShuffle"
+        nice_name: str = "StackShuffle"  # Replace with duplicate/swap/pop, etc
+        AST_type: type[ASTNode]
+
+        def can_parse(self) -> bool:
+            # Never use this strategy directly
+            return False
+
+        def parse(self) -> ASTNode:
+            shuffle_token = self.parser.pop()  # Pop the shuffle type token
+
+            # Account for the fact that it may be a default shuffle.
+            if not self.parser.head_equals(TokenType.LEFT_SQUARE):
+                return self.build_node(shuffle_token, [], [])
+            self.parser.eat(TokenType.LEFT_SQUARE)
+
+            # Collect all pre-stack labels
+            pre_stack: list[str] = []
+
+            while True:
+                if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
+                    pre_stack.append(self.parser.pop().value)
+                else:
+                    self.parser.add_error(
+                        f"Expected a label (WORD or UNDERSCORE) in pre-stack of {self.nice_name}. Found {self.parser.head().type}.",
+                        self.parser.head(),
+                    )
+                    self.parser.sync(TokenType.ARROW, TokenType.RIGHT_SQUARE)
+                    break
+
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.eat(TokenType.COMMA)
+                elif self.parser.head_in(TokenType.ARROW, TokenType.RIGHT_SQUARE):
+                    break
+                else:
+                    self.parser.add_error(
+                        f"Expected ',' or '->' or ']' in pre-stack of {self.nice_name}. Found {self.parser.head().type}.",
+                        self.parser.head(),
+                    )
+                    self.parser.sync(TokenType.ARROW, TokenType.RIGHT_SQUARE)
+                    break
+
+            # Collect all post-stack labels
+            # Note that it is up to the specific shuffle type to enforce
+            # whether a post-stack is required.
+            post_stack: list[str] = []
+
+            if self.parser.head_equals(TokenType.ARROW):
+                self.parser.eat(TokenType.ARROW)
+
+                while True:
+                    if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
+                        post_stack.append(self.parser.pop().value)
+                    else:
+                        self.parser.add_error(
+                            f"Expected a label (WORD or UNDERSCORE) in post-stack of {self.nice_name}. Found {self.parser.head().type}.",
+                            self.parser.head(),
+                        )
+                        self.parser.sync(TokenType.RIGHT_SQUARE)
+                        break
+
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
+                    elif self.parser.head_equals(TokenType.RIGHT_SQUARE):
+                        break
+                    else:
+                        self.parser.add_error(
+                            f"Expected ',' or ']' in post-stack of {self.nice_name}. Found {self.parser.head().type}.",
+                            self.parser.head(),
+                        )
+                        self.parser.sync(TokenType.RIGHT_SQUARE)
+                        break
+
+            self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            return self.build_node(shuffle_token, pre_stack, post_stack)
+
+        @abstractmethod
+        def build_node(
+            self, shuffle_token: Token, pre_stack: list[str], post_stack: list[str]
+        ) -> ASTNode:
+            pass
+
+    class DuplicateParser(LabelledStackShuffleParser):
+        name: str = "Duplicate"
+        nice_name: str = "Duplicate"
+        AST_type: type[ASTNode] = DuplicateNode
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.DUPLICATE)
+
+        def build_node(
+            self, shuffle_token: Token, pre_stack: list[str], post_stack: list[str]
+        ) -> ASTNode:
+            return DuplicateNode(shuffle_token.location, pre_stack, post_stack)
+
+    class SwapParser(LabelledStackShuffleParser):
+        name: str = "Swap"
+        nice_name: str = "Swap"
+        AST_type: type[ASTNode] = SwapNode
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.SWAP)
+
+        def build_node(
+            self, shuffle_token: Token, pre_stack: list[str], post_stack: list[str]
+        ) -> ASTNode:
+            return SwapNode(shuffle_token.location, pre_stack, post_stack)
+
+    class PopParser(LabelledStackShuffleParser):
+        name: str = "Pop"
+        nice_name: str = "Pop"
+        AST_type: type[ASTNode] = PopNode
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.UNDERSCORE)
+
+        def build_node(
+            self, shuffle_token: Token, pre_stack: list[str], post_stack: list[str]
+        ) -> ASTNode:
+            if post_stack:
+                self.parser.add_error(
+                    "Pop operation cannot have a post-stack.",
+                    shuffle_token,
+                )
+                return ErrorNode(shuffle_token.location, shuffle_token)
+            return PopNode(shuffle_token.location, pre_stack, [])
