@@ -3,7 +3,7 @@ import logging
 
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
-from valiance.parser.NewParser import Parser
+from valiance.parser.Parser import Parser
 from valiance.parser.PrettyPrinter import pretty_print_ast
 
 
