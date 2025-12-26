@@ -1,8 +1,10 @@
 from abc import abstractmethod
 from dataclasses import replace
+import itertools
 from typing import Callable, Optional, TypeVar
 import logging
 
+from valiance.loglib.log_block import log_block
 from valiance.parser.Errors import GenericParseError, ParserError
 
 from valiance.parser.AST import *
@@ -276,7 +278,9 @@ class Parser:
         while self.head_equals(TokenType.WHITESPACE, eat_whitespace=False):
             self.discard()
 
-    def error_if_eof(self, message: Optional[str] = None) -> None:
+    def error_if_eof(
+        self, message: Optional[str] = None, eat_whitespace: bool = True
+    ) -> None:
         """Raise an error if the token stream is at EOF.
 
         Considers the parser to be at EOF if there are no non-whitespace tokens
@@ -291,22 +295,24 @@ class Parser:
 
         Args:
             message (Optional[str], optional): _description_. Defaults to None.
+            eat_whitespace (bool, optional): Whether to consume leading whitespace before checking. Defaults to True. Most of the time, this should be True.
 
         Raises:
             IndexError: _description_
         """
 
-        self.eat_whitespace()
+        if eat_whitespace:
+            self.eat_whitespace()
         if not self.tokens:
             raise ParserError(message or "Unexpected end of input.")
 
-    def head(self) -> Token:
+    def head(self, eat_whitespace: bool = True) -> Token:
         """Get the next token without consuming it.
 
         Returns:
             Token: The next token in the stream.
         """
-        self.error_if_eof()
+        self.error_if_eof(eat_whitespace=eat_whitespace)
         return self.tokens[0]
 
     def head_equals(self, token_type: TokenType, eat_whitespace: bool = True) -> bool:
@@ -465,7 +471,7 @@ class Parser:
         Returns:
             Token: The next token in the stream.
         """
-        self.error_if_eof()
+        self.error_if_eof(eat_whitespace=False)
         token = self.tokens[0]
         self.discard()
         return token
@@ -583,11 +589,18 @@ class Parser:
             ASTNode: The parsed AST node.
         """
 
-        logging.log(logging.DEBUG, "Parsing next token: %s", self.head())
-        logging.log(logging.DEBUG, "Remaining tokens: %s", self.tokens)
+        logger.log(logging.DEBUG, "Parsing next token: %s", self.head())
+        logger.log(logging.DEBUG, "Remaining tokens: %s", self.tokens)
 
         for strategy in self.strategies:
             if strategy.can_parse():
+
+                with log_block(f"Applying strategy: {strategy.name}"):
+                    logger.debug(
+                        "Strategy %s can parse the current token.", strategy.name
+                    )
+                    logger.debug("Remaining tokens: %s", self.tokens)
+
                 # Wrap in a try/except to catch any errors that aren't
                 # simple parse errors or things that a strategy should handle.
                 # (for example, IndexErrors from popping from an empty token list
@@ -676,6 +689,58 @@ class Parser:
         """
 
         left = self.parse_primary_type()
+
+        postfix_modifiers: list[Token] = []
+
+        if self.lookahead_equals([TokenType.PLUS, TokenType.VARIABLE]):
+            self.eat(TokenType.PLUS)
+            var_token = self.pop()
+            left = VTypes.ExactRankType(left, var_token.value)
+        else:
+            while self.head_in(
+                TokenType.PLUS,
+                TokenType.STAR,
+                TokenType.TILDE,
+                TokenType.QUESTION,
+                TokenType.NUMBER,
+            ):
+                if self.head_equals(TokenType.NUMBER):
+                    number = self.pop()
+                    if not postfix_modifiers:
+                        self.add_error(
+                            "Rank modifier number must be preceded by a rank modifier operator (+, *, ~, ?).",
+                            number,
+                        )
+                        return VTypes.ErrorType()
+                    try:
+                        rank = int(number.value)
+                        modifier = postfix_modifiers.pop()
+                        postfix_modifiers.extend([modifier] * rank)
+                    except ValueError:
+                        self.add_error(
+                            f"Invalid rank modifier number: '{number.value}' is not a valid integer.",
+                            number,
+                        )
+                        return VTypes.ErrorType()
+                else:
+                    modifier_token = self.pop()
+                    postfix_modifiers.append(modifier_token)
+            grouped_modifiers = itertools.groupby(postfix_modifiers)
+            for modifier_token, group in grouped_modifiers:
+                count = len(list(group))
+                match modifier_token.type:
+                    case TokenType.PLUS:
+                        left = VTypes.ExactRankType(left, count)
+                    case TokenType.STAR:
+                        left = VTypes.MinimumRankType(left, count)
+                    case TokenType.TILDE:
+                        left = VTypes.ListType(left, count)
+                    case TokenType.QUESTION:
+                        for _ in range(count):
+                            left = VTypes.OptionalType(left)
+                    case _:
+                        raise RuntimeError("Unreachable code reached.")
+
         while (
             self.head().value in TYPE_OPERATOR_PRECEDENCE_TABLE
             and TYPE_OPERATOR_PRECEDENCE_TABLE[self.head().value] >= min_precedence
@@ -863,9 +928,20 @@ class Parser:
             return is_element_token(self.parser.head(), exclude_underscore=True)
 
         def parse(self) -> ASTNode:
+            with log_block("Element Parsing Preamble"):
+                logging.debug("Parsing element, head token: %s", self.parser.head())
+                logging.debug("Remaining tokens: %s", self.parser.tokens)
             location_token = self.parser.head()
             name = self.parser.pop().value
-            while is_element_token(self.parser.head()):
+            while is_element_token(self.parser.head(eat_whitespace=False)):
+                with log_block("Element Name Continuation"):
+                    logging.debug(
+                        "Parsing multi-part element name, current name: %s", name
+                    )
+                    logging.debug(
+                        "Next token: %s", self.parser.head(eat_whitespace=False)
+                    )
+                    logging.debug("Remaining tokens: %s", self.parser.tokens)
                 name += self.parser.pop().value
 
             # Handle potential type arguments for the element
