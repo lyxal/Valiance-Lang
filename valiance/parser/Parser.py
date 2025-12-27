@@ -636,13 +636,6 @@ class Parser:
                     self.error_stack.pop()
                     return result
                 except ParserError as e:
-                    logging.error(
-                        "ParserError encountered while parsing with strategy %s: %s",
-                        strategy.name,
-                        e,
-                    )
-                    # Also log where the error occurred in the python code
-                    logging.exception(e)
                     self.add_global_error(
                         f"Error while parsing {strategy.name}: {e}", self.head_opt()
                     )
