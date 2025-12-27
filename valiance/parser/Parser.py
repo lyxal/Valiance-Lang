@@ -1506,10 +1506,10 @@ class Parser:
                     first_bad_ast.location,
                 )
                 return ErrorNode(multi_variable_token.location, multi_variable_token)
-            if self.parser.head_equals(TokenType.SEMICOLON) or self.parser.head_equals(
-                TokenType.NEWLINE
+            if self.parser.head_in(
+                TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
             ):
-                self.parser.pop()  # Pop the SEMICOLON or NEWLINE
+                self.parser.discard()  # Pop the SEMICOLON or NEWLINE
 
             value_node = group_wrap(values)
             return MultipleVariableSetNode(
