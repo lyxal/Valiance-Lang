@@ -94,20 +94,13 @@ class DictionaryNode(ASTNode):
 
 
 @dataclass(frozen=True)
-class TypeNode(ASTNode):
-    """Represents a type"""
-
-    type_: str
-
-
-@dataclass(frozen=True)
 class DefineNode(ASTNode):
     """Represents a definition of an element or tuple"""
 
-    generics: list[TypeNode]
+    generics: list[VType]
     name: str
-    parameters: list[Tuple[str, TypeNode]]
-    output: list[TypeNode]
+    parameters: list[Tuple[str, VType]]
+    output: list[VType]
     body: GroupNode
 
 
@@ -122,9 +115,9 @@ class VariantNode(ASTNode):
 class ObjectNode(ASTNode):
     """Represents an object definition with generics, name, implemented traits, and body"""
 
-    generics: list[TypeNode]
+    generics: list[VType]
     name: str
-    implemented_traits: list[TypeNode]
+    implemented_traits: list[VType]
     body: GroupNode
 
 
@@ -132,9 +125,9 @@ class ObjectNode(ASTNode):
 class TraitNode(ASTNode):
     """Represents a trait definition with generics, name, other traits, and body"""
 
-    generics: list[TypeNode]
+    generics: list[VType]
     name: str
-    other_traits: list[TypeNode]
+    other_traits: list[VType]
     body: GroupNode
 
 
@@ -149,9 +142,10 @@ class ListNode(ASTNode):
 class FunctionNode(ASTNode):
     """Represents a function/lambda expression"""
 
-    parameters: list[Tuple[str, TypeNode]]
-    output: list[TypeNode]
-    body: GroupNode
+    generics: list[VType]
+    parameters: list[Tuple[str, VType]]
+    output: list[VType]
+    body: ASTNode
 
 
 @dataclass(frozen=True)
@@ -252,14 +246,6 @@ class ConstantSetNode(ASTNode):
 
     name: str
     value: GroupNode
-
-
-@dataclass(frozen=True)
-class TypeCastNode(ASTNode):
-    """Represents a type cast operation"""
-
-    target_type: TypeNode
-    safe: bool
 
 
 @dataclass(frozen=True)
@@ -405,3 +391,17 @@ class EnumNode(ASTNode):
 
     name: str
     variants: list[Tuple[str, ASTNode]]
+
+
+@dataclass(frozen=True)
+class SafeTypeCastNode(ASTNode):
+    """Represents a safe type cast operation"""
+
+    target_type: VType
+
+
+@dataclass(frozen=True)
+class UnsafeTypeCastNode(ASTNode):
+    """Represents an unsafe type cast operation"""
+
+    target_type: VType

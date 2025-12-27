@@ -110,7 +110,8 @@ def is_expressionable(nodes: list[ASTNode]) -> bool:
                 UnfoldNode,
                 AssertNode,
                 AssertElseNode,
-                TypeCastNode,
+                SafeTypeCastNode,
+                UnsafeTypeCastNode,
             ),
         ):
             return False
@@ -674,6 +675,25 @@ class Parser:
                 )
                 return VTypes.ErrorType()
 
+    def parse_identifier(self, wrap_as: Callable[[str], T] = lambda s: s) -> T:
+        """Parse an identifier from the token stream.
+
+        Args:
+            wrap_as (Callable[[str], T], optional): A function to wrap the identifier string. Defaults to lambda s: s.
+        Returns:
+            T: The parsed identifier, wrapped as specified.
+        """
+
+        if self.head_equals(TokenType.WORD):
+            token = self.pop()
+            return wrap_as(token.value)
+        else:
+            self.add_error(
+                f"Expected identifier, got {self.head().type} ('{self.head().value}')",
+                self.head(),
+            )
+            return wrap_as("")
+
     def parse_type(self, min_precedence: int = 0) -> VType:
         """Parse a type from the token stream.
 
@@ -852,6 +872,77 @@ class Parser:
                 self.head(),
             )
             return VTypes.ErrorType()
+
+    def parse_parameter_list(self) -> list[Tuple[str, VTypes.VType]]:
+        """Parse a list of parameters to a `fn` or a `define`
+
+        Note: Does NOT account for constructor syntax.
+
+        Returns:
+            list[Tuple[str, VTypes.VType]]: The parsed parameters as a list of (name, type) tuples.
+        """
+
+        parameters: list[Tuple[str, VTypes.VType]] = []
+
+        self.eat(TokenType.LEFT_PAREN)
+
+        if self.head_equals(TokenType.RIGHT_PAREN):
+            self.eat(TokenType.RIGHT_PAREN)
+            return parameters
+
+        implicit_generic_count = 0
+
+        while not self.head_equals(TokenType.RIGHT_PAREN):
+            if self.head_equals(TokenType.WORD):
+                param_name = self.pop().value
+                if not self.head_equals(TokenType.COLON):
+                    if not self.head_in(TokenType.COMMA, TokenType.RIGHT_PAREN):
+                        self.add_error(
+                            f"Expected either parameter type, ')', or ',' after parameter name '{param_name}'.",
+                            self.head(),
+                        )
+                        self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+                        parameters.append((param_name, VTypes.ErrorType()))
+                    else:
+                        parameters.append(
+                            (
+                                param_name,
+                                VTypes.CustomType(
+                                    f"__implicit_generic_{implicit_generic_count}",
+                                    [],
+                                    [],
+                                ),
+                            )
+                        )
+                        implicit_generic_count += 1
+                else:
+                    if not self.eat(TokenType.COLON):
+                        self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+                    else:
+                        param_type = self.parse_type()
+                        parameters.append((param_name, param_type))
+            elif self.head_equals(TokenType.COLON):
+                self.eat(TokenType.COLON)
+                param_type = self.parse_type()
+                param_name = ""
+                parameters.append((param_name, param_type))
+        return parameters
+
+    def parse_block(self) -> ASTNode:
+        """Parse a block of statements enclosed in curly braces.
+
+        Returns:
+            ASTNode: The parsed block.
+        """
+
+        location_token = self.head()
+        if not self.eat(TokenType.LEFT_BRACE):
+            self.sync(TokenType.RIGHT_BRACE)
+            return ErrorNode(location_token.location, location_token)
+
+        items = self.parse_until(TokenType.RIGHT_BRACE)
+        self.eat(TokenType.RIGHT_BRACE)
+        return GroupNode(location_token.location, items)
 
     class NumberParser(ParserStrategy):
         name: str = "Number"
@@ -1166,3 +1257,83 @@ class Parser:
                 )
                 return ErrorNode(shuffle_token.location, shuffle_token)
             return PopNode(shuffle_token.location, pre_stack, [])
+
+    class FunctionParser(ParserStrategy):
+        name: str = "Function"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.FN)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'fn' token
+            generics: list[VTypes.VType] = []
+
+            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                generics = self.parser.parse_items(
+                    TokenType.LEFT_SQUARE,
+                    TokenType.COMMA,
+                    TokenType.RIGHT_SQUARE,
+                    lambda: self.parser.parse_identifier(
+                        lambda s: VTypes.CustomType(s, [], [])
+                    ),
+                    lambda t: isinstance(t, VTypes.ErrorType),
+                    lambda token: VTypes.ErrorType(),
+                    singleton=True,
+                    validate=None,
+                )
+                self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            parameters: list[Tuple[str, VTypes.VType]] = []
+            if self.parser.head_equals(TokenType.LEFT_PAREN):
+                parameters = self.parser.parse_parameter_list()
+
+                if not self.parser.eat(TokenType.RIGHT_PAREN):
+                    self.parser.sync(TokenType.ARROW, TokenType.LEFT_BRACE)
+
+            output_types: list[VTypes.VType] = []
+            if self.parser.head_equals(TokenType.ARROW):
+                self.parser.eat(TokenType.ARROW)
+                while not self.parser.head_equals(TokenType.LEFT_BRACE):
+                    output_type = self.parser.parse_type()
+                    output_types.append(output_type)
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
+                    else:
+                        break
+            body = self.parser.parse_block()
+
+            return FunctionNode(
+                location_token.location,
+                generics,
+                parameters,
+                output_types,
+                body,
+            )
+
+    class VariableParser(ParserStrategy):
+        name: str = "Variable"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.VARIABLE)
+
+        def parse(self) -> ASTNode:
+            if not self.parser.lookahead_equals([TokenType.VARIABLE, TokenType.EQUALS]):
+                # No assignment, just a variable get
+                variable_token = self.parser.pop()  # Pop the VARIABLE token
+                return VariableGetNode(
+                    variable_token.location,
+                    variable_token.value,
+                )
+            # Variable assignment
+            variable_token = self.parser.pop()  # Pop the VARIABLE token
+            self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
+
+            values = self.parser.parse_until(
+                TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
+            )
+            value_node = group_wrap(values)
+            return VariableSetNode(
+                variable_token.location,
+                variable_token.value,
+                value_node,
+            )

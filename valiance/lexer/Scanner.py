@@ -258,6 +258,8 @@ class Scanner:
                     self.add_token(TokenType.TILDE, HEAD)
                 case "#":
                     self.add_token(TokenType.HASH, HEAD)
+                case ";":
+                    self.add_token(TokenType.SEMICOLON, HEAD)
                 case _:
                     raise ValueError(
                         f'Unexpected character "{HEAD}" at line {self.line}, column {self.column}'
