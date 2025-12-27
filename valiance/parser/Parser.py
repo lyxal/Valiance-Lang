@@ -194,15 +194,20 @@ class Parser:
         for subclass in self.LabelledStackShuffleParser.__subclasses__():
             self.strategies.append(subclass(self))
 
-    def add_error(self, message: str, location: Optional[Token]) -> None:
+    def add_error(self, message: str, location: Token | Location | None) -> None:
         """Add an error to the current error stack
 
         Args:
             message (str): The error message to display
-            location (Optional[Token]): The location of the error. Will default to (-1, -1) [e.g. when EOF is reached]
+            location (Token | Location | None): The location of the error. Will default to (-1, -1) [e.g. when EOF is reached]
         """
         if location is not None:
-            self.error_stack[-1].append(GenericParseError(message, location.location))
+            if isinstance(location, Token):
+                self.error_stack[-1].append(
+                    GenericParseError(message, location.location)
+                )
+            else:
+                self.error_stack[-1].append(GenericParseError(message, location))
         else:
             self.error_stack[-1].append(GenericParseError(message, Location(-1, -1)))
 
@@ -684,9 +689,12 @@ class Parser:
             T: The parsed identifier, wrapped as specified.
         """
 
-        if self.head_equals(TokenType.WORD):
+        name = ""
+        while self.head_in(TokenType.WORD, TokenType.UNDERSCORE):
             token = self.pop()
-            return wrap_as(token.value)
+            name += token.value
+        if name:
+            return wrap_as(name)
         else:
             self.add_error(
                 f"Expected identifier, got {self.head().type} ('{self.head().value}')",
@@ -1012,6 +1020,15 @@ class Parser:
             self.parser.eat(TokenType.RIGHT_PAREN)
             return TupleNode(location, items, len(items))
 
+    class BlockParser(ParserStrategy):
+        name: str = "Block"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.LEFT_BRACE)
+
+        def parse(self) -> ASTNode:
+            return self.parser.parse_block()
+
     class ElementParser(ParserStrategy):
         name: str = "Element"
 
@@ -1317,6 +1334,16 @@ class Parser:
             return self.go(TokenType.VARIABLE)
 
         def parse(self) -> ASTNode:
+            if self.parser.lookahead_equals([TokenType.VARIABLE, TokenType.COLON]):
+                # Augmented variable assignment
+                variable_token = self.parser.pop()  # Pop the VARIABLE token
+                self.parser.eat(TokenType.COLON)  # Pop the COLON token
+                function = self.parser.parse_next()
+                return AugmentedVariableSetNode(
+                    variable_token.location,
+                    variable_token.value,
+                    function,
+                )
             if not self.parser.lookahead_equals([TokenType.VARIABLE, TokenType.EQUALS]):
                 # No assignment, just a variable get
                 variable_token = self.parser.pop()  # Pop the VARIABLE token
@@ -1331,9 +1358,102 @@ class Parser:
             values = self.parser.parse_until(
                 TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
             )
+            if not values:
+                self.parser.add_error(
+                    "Variable assignment must have at least one value.",
+                    variable_token,
+                )
+                return ErrorNode(variable_token.location, variable_token)
+            if not is_expressionable(values):
+                first_bad_ast = [ast for ast in values if not is_expressionable([ast])][
+                    0
+                ]
+                self.parser.add_error(
+                    f"Variable assignment contains non-expressionable AST node of type {type(first_bad_ast).__name__}.",
+                    first_bad_ast.location,
+                )
+                return ErrorNode(variable_token.location, variable_token)
+            if self.parser.head_equals(TokenType.SEMICOLON) or self.parser.head_equals(
+                TokenType.NEWLINE
+            ):
+                self.parser.pop()  # Pop the SEMICOLON or NEWLINE
             value_node = group_wrap(values)
             return VariableSetNode(
                 variable_token.location,
                 variable_token.value,
+                value_node,
+            )
+
+    class MultiVariableParser(ParserStrategy):
+        name: str = "Multi-Variable Assignment"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.MULTI_VARIABLE)
+
+        def parse(self) -> ASTNode:
+            multi_variable_token = self.parser.pop()  # Pop the MULTI_VARIABLE token
+            names: list[str] = []
+
+            while True:
+                if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
+                    names.append(self.parser.parse_identifier())
+                else:
+                    self.parser.add_error(
+                        f"Expected variable name (WORD or UNDERSCORE) in multi-variable assignment. Found {self.parser.head().type}.",
+                        self.parser.head(),
+                    )
+                    self.parser.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+                    break
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.pop()
+                elif self.parser.head_equals(TokenType.RIGHT_PAREN):
+                    break
+                else:
+                    self.parser.add_error(
+                        f"Expected ',' or ')' in multi-variable assignment. Found {self.parser.head().type}.",
+                        self.parser.head(),
+                    )
+                    self.parser.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+                    break
+
+            self.parser.eat(TokenType.RIGHT_PAREN)
+            if not names:
+                self.parser.add_error(
+                    "Multi-variable assignment must have at least one variable name.",
+                    multi_variable_token,
+                )
+                return ErrorNode(multi_variable_token.location, multi_variable_token)
+
+            if not self.parser.eat(TokenType.EQUALS):  # Pop the EQUALS token
+                return ErrorNode(multi_variable_token.location, multi_variable_token)
+
+            values: list[ASTNode] = self.parser.parse_until(
+                TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
+            )
+
+            if not values:
+                self.parser.add_error(
+                    "Multi-variable assignment must have at least one value.",
+                    multi_variable_token,
+                )
+                return ErrorNode(multi_variable_token.location, multi_variable_token)
+            if not is_expressionable(values):
+                first_bad_ast = [ast for ast in values if not is_expressionable([ast])][
+                    0
+                ]
+                self.parser.add_error(
+                    f"Multi-variable assignment contains non-expressionable AST node of type {type(first_bad_ast).__name__}.",
+                    first_bad_ast.location,
+                )
+                return ErrorNode(multi_variable_token.location, multi_variable_token)
+            if self.parser.head_equals(TokenType.SEMICOLON) or self.parser.head_equals(
+                TokenType.NEWLINE
+            ):
+                self.parser.pop()  # Pop the SEMICOLON or NEWLINE
+
+            value_node = group_wrap(values)
+            return MultipleVariableSetNode(
+                multi_variable_token.location,
+                names,
                 value_node,
             )
