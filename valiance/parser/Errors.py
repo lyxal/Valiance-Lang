@@ -22,3 +22,9 @@ class ParserError(Exception):
     """Raised for general parser errors."""
 
     pass
+
+
+class EndOfFileTokenError(ParserError):
+    """Raised when an unexpected EOF token is encountered."""
+
+    pass

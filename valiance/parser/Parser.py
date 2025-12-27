@@ -5,7 +5,7 @@ from typing import Callable, Optional, TypeVar
 import logging
 
 from valiance.loglib.log_block import log_block
-from valiance.parser.Errors import GenericParseError, ParserError
+from valiance.parser.Errors import EndOfFileTokenError, GenericParseError, ParserError
 
 from valiance.parser.AST import *
 from valiance.lexer.Token import Token
@@ -307,10 +307,16 @@ class Parser:
             IndexError: _description_
         """
 
+        if not self.tokens:
+            raise EndOfFileTokenError(message or "Unexpected end of input.")
         if eat_whitespace:
             self.eat_whitespace()
         if not self.tokens:
-            raise ParserError(message or "Unexpected end of input.")
+            raise EndOfFileTokenError(message or "Unexpected end of input.")
+        if self.tokens[0].type == TokenType.EOF:
+            # Delete the EOF token from the stream to prevent infinite loops
+            self.discard()
+            raise EndOfFileTokenError(message or "Unexpected end of input.")
 
     def head(self, eat_whitespace: bool = True) -> Token:
         """Get the next token without consuming it.
@@ -336,7 +342,10 @@ class Parser:
         # that's because it'll recurse infinitely.
         if eat_whitespace:
             self.eat_whitespace()
-            self.error_if_eof()
+            if token_type != TokenType.EOF:
+                self.error_if_eof()
+        if not self.tokens:
+            return False
         return self.tokens[0].type == token_type
 
     def head_in(self, *token_types: TokenType, eat_whitespace: bool = True) -> bool:
@@ -351,7 +360,11 @@ class Parser:
         """
         if eat_whitespace:
             self.eat_whitespace()
-            self.error_if_eof()
+            # If explicitly checking for EOF, don't error if EOF is in the set
+            if not TokenType.EOF in token_types:
+                self.error_if_eof()
+        if not self.tokens:
+            return False
         return self.tokens[0].type in token_types
 
     def head_opt(self) -> Optional[Token]:
@@ -579,8 +592,11 @@ class Parser:
             list[ASTNode]: The parsed AST nodes.
         """
         while self.tokens and not self.head_equals(TokenType.EOF):
-            ast = self.parse_next()
-            self.asts.append(ast)
+            try:
+                ast = self.parse_next()
+                self.asts.append(ast)
+            except ParserError:
+                continue
         return self.asts
 
     def parse_next(self) -> ASTNode:
@@ -620,10 +636,20 @@ class Parser:
                     self.error_stack.pop()
                     return result
                 except ParserError as e:
-                    self.add_global_error(
-                        f"Error while parsing {strategy.name}: {e}", self.head()
+                    logging.error(
+                        "ParserError encountered while parsing with strategy %s: %s",
+                        strategy.name,
+                        e,
                     )
-                    return ErrorNode(self.head().location, self.head())
+                    # Also log where the error occurred in the python code
+                    logging.exception(e)
+                    self.add_global_error(
+                        f"Error while parsing {strategy.name}: {e}", self.head_opt()
+                    )
+                    return ErrorNode(
+                        self.head().location if self.head_opt() else Location(-1, -1),
+                        self.head_opt() or Token(TokenType.EOF, "", -1, -1),
+                    )
         # If no strategy could parse the current token, it's an unexpected token
         # Add an error if we aren't inside a strategy already
         # Otherwise, it's up to the strategy to handle the unexpected token
@@ -634,7 +660,7 @@ class Parser:
             )
             self.discard()
         else:
-            print(
+            logging.warning(
                 "Token could not be parsed by any strategy, but already inside a strategy; not adding error."
             )
         return ErrorNode(self.head().location, self.head())
@@ -648,10 +674,16 @@ class Parser:
             list[ASTNode]: The parsed AST nodes.
         """
 
+        with log_block("Parsing until tokens: %s" % (token_types,)):
+            logger.debug("Starting parse_until with tokens: %s", self.tokens)
         asts: list[ASTNode] = []
         while not self.head_in(*token_types):
+            if not self.tokens:
+                break
             ast = self.parse_next()
             asts.append(ast)
+        with log_block("Finished parse_until"):
+            logger.debug("Finished parse_until with tokens: %s", self.tokens)
         return asts
 
     def make_type_operation(
@@ -901,6 +933,10 @@ class Parser:
         implicit_generic_count = 0
 
         while not self.head_equals(TokenType.RIGHT_PAREN):
+            with log_block("Parameter Parsing"):
+                logger.debug("Parsing parameter, head token: %s", self.head())
+                logger.debug("Remaining tokens: %s", self.tokens)
+                logger.debug("Current parameters: %s", parameters)
             if self.head_equals(TokenType.WORD):
                 param_name = self.pop().value
                 if not self.head_equals(TokenType.COLON):
@@ -934,6 +970,17 @@ class Parser:
                 param_type = self.parse_type()
                 param_name = ""
                 parameters.append((param_name, param_type))
+            else:
+                self.add_error(
+                    f"Expected parameter name or type, got {self.head().type} ('{self.head().value}')",
+                    self.head(),
+                )
+                self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+
+            if not self.head_equals(TokenType.RIGHT_PAREN):
+                if not self.eat(TokenType.COMMA):
+                    self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+
         return parameters
 
     def parse_block(self) -> ASTNode:
@@ -1307,6 +1354,25 @@ class Parser:
                 if not self.parser.eat(TokenType.RIGHT_PAREN):
                     self.parser.sync(TokenType.ARROW, TokenType.LEFT_BRACE)
 
+            element_tags: list[VTypes.ElementTag] = []
+            if self.parser.head_equals(TokenType.COLON):
+                self.parser.pop()  # Pop the colon
+                negate_next = False
+                if self.parser.head_equals(TokenType.MINUS):
+                    self.parser.pop()  # Pop the MINUS
+                    negate_next = True
+                while self.parser.head_equals(TokenType.WORD):
+                    tag_token = self.parser.pop()
+                    prefix = "" if not negate_next else "-"
+                    element_tags.append(
+                        VTypes.ElementTag(name=prefix + tag_token.value)
+                    )
+                    if self.parser.head_equals(TokenType.PLUS):
+                        self.parser.pop()  # Pop the PLUS
+                        negate_next = False
+                    else:
+                        break
+
             output_types: list[VTypes.VType] = []
             if self.parser.head_equals(TokenType.ARROW):
                 self.parser.eat(TokenType.ARROW)
@@ -1325,6 +1391,7 @@ class Parser:
                 parameters,
                 output_types,
                 body,
+                tuple(element_tags),
             )
 
     class VariableParser(ParserStrategy):
@@ -1373,10 +1440,10 @@ class Parser:
                     first_bad_ast.location,
                 )
                 return ErrorNode(variable_token.location, variable_token)
-            if self.parser.head_equals(TokenType.SEMICOLON) or self.parser.head_equals(
-                TokenType.NEWLINE
+            if self.parser.head_in(
+                TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
             ):
-                self.parser.pop()  # Pop the SEMICOLON or NEWLINE
+                self.parser.discard()  # Pop the SEMICOLON or NEWLINE
             value_node = group_wrap(values)
             return VariableSetNode(
                 variable_token.location,

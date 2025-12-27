@@ -6,7 +6,7 @@ from valiance.lexer.Token import Token
 from valiance.compiler_common.Location import Location
 from valiance.compiler_common.Index import Index
 from valiance.compiler_common.TagCategories import TagCategory
-from valiance.vtypes.VTypes import VType
+from valiance.vtypes.VTypes import ElementTag, VType
 
 
 @dataclass(frozen=True)
@@ -146,6 +146,7 @@ class FunctionNode(ASTNode):
     parameters: list[Tuple[str, VType]]
     output: list[VType]
     body: ASTNode
+    element_tags: Tuple[ElementTag, ...] = tuple()
 
 
 @dataclass(frozen=True)
