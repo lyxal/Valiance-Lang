@@ -763,6 +763,38 @@ match {
 }
 ```
 
+## 9.8. Inline Parameter/Return Type-Casting
+
+_Note: Normal code will not need to make use of this feature. It exists primarily for ergonomic FFI_
+
+- Sometimes, you might want to always type cast a parameter before usage.
+	- And in a way that the type rules don't enable automatically (like rank subsumption/subtype as a supertype)
+- For (contrived) example:
+
+```
+fn (x: {Number|Number+}+) -> {Number|Number+}+ {
+  #? Ignore the fact you'd just write `Number++` as the
+  #? parameter type and typecast before calling
+  $x as Number++ double
+  as {Number|Number+}+
+}
+```
+
+- You can specify the type cast in the parameters/return type using `as`:
+
+```
+fn (x: {Number|Number+}+ as Number++) -> Number++ as {Number|Number+}+ {...}
+```
+
+- Most times you won't need this.
+- But very useful for FFI where types _do_ need type casting:
+
+```
+external("math.dll") define sqrt(:Number as FFI.float) -> FFI.float as Number {}
+```
+
+- More on FFI later.
+
 # 10. Vectorisation
 - A cruical part of any array language is the ability for elements to automatically apply to every list item without extra ceremony.
 - Consider:
