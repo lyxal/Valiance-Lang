@@ -3210,12 +3210,13 @@ external[${namespace}] (${filename}) {
 - `filename` is the name of the file to bind
 - `namespace` is optional, and makes it so that any bindings are available under a namespace.
 - `declarations` is a series of `define`s and `object`s.
-- A `define` inside a `foreign` block creates a Valiance type-checkable element that directly calls the corresponding function.
+- A `define` inside a `external` block creates a Valiance type-checkable element that directly calls the corresponding function.
 - The name used in define must exactly match the C function name.
 - The parameter types must also match. Notably, the parameter names need not match. Only the types.
 - This element cannot be used outside of `external` blocks.
 - `object`s inside a foreign block requires its own section.
 - An `external` block always returns the top of the stack after the block
+  - Note that FFI types cannot be returned from an external block. Only Valiance types can be returned.
 - Everything else is just normal Valiance.
 - Note that the filename is also optional. If no file name is provided, then the external block is used solely to provide access to elements using FFI types.
 
@@ -3343,8 +3344,8 @@ object Counter {
 ```c
 // in Point.c
 typedef struct {
-  int x;
-  int y;
+  public int x;
+  public int y;
 } Point
 ```
 
@@ -3357,9 +3358,23 @@ typedef struct {
 ```vlnc
 external[point] ("Point.c") {
   object Point {
-    private field $x: FFI.int
-	private field $y: FFI.int
+    public field $x: FFI.int
+	  public field $y: FFI.int
   }
+}
+```
+
+- Public fields can be directly read inside `external` blocks.
+- However, they cannot be written to directly. `$p.x = 10` is not allowed inside an `external` block.
+  - This makes it safer, as direct field writes may violate invariants.
+- These kinds of objects can be instantiated directly inside `external` blocks.
+
+```vlnc
+
+```external {
+  point.Point(10 as FFI.int, 20 as FFI.int)
+  #? Something else needs to be returned though
+  #? because external blocks must return Valiance types
 }
 ```
 
@@ -3391,6 +3406,41 @@ cast p: point.Point -> Point {
 ## 27.4. FFI and Function Objects
 
 - Do you really want to be passing Valiance functions to C though?
+
+## 27.5. Inline Function Binding
+
+- Two external blocks for a function bind is kinda verbose.
+- Especially when interaction with the FFI is all just type casts
+- Reusing the C example:
+
+```c
+// Say this is in shared library math.dll
+int add(int x, int y) {
+    return x + y;
+}
+```
+
+- Instead of needing
+
+```
+external ("math.dll") {
+  define add(:FFI.int, :FFI.int) -> FFI.int {}
+}
+define add(:Number, :Number) {
+  external {both: as FFI.int; add as Number}
+}
+```
+
+- You can simply write
+
+```
+external("math.dll") define add(
+  :Number as FFI.int,
+  :Number as FFI.int
+) -> FFI.int as Number {}
+```
+
+- Useful when it's all just type casts.
 
 # 28. Type Cast Definitions
 
