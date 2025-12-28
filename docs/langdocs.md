@@ -3186,6 +3186,259 @@ eager define[T] println(:T) -> () {...}
 - Thus, `map: println` itself is eager. The map, by process of calling an eager function, becomes eager.
 - And the type of `map: println` is `Function[T -> ()] + Eager`.
 
+
+# 27. Foreign Function Interfaces
+
+_Note: semantics still experimental, subject to being implemented much much later. Designed and considered now to ensure that the implementation is future-proof_
+
+_Note: FFI is very unsafe. Valiance can help make sure you're doing it right, but once you call C code, you're on your own._
+
+- Sometimes, you'll want to dip into C code to get functionality of existing libraries.
+- Like for example you may want bindings to a C-implemented graphics library.
+- This sounds good, but there's a slight problem: Valiance is decidedly not C.
+- The solution: Valiance allows you to define Valiance-safe interfaces to underlying C code.
+- The first important structure is the `external` structure.
+- This structure allows for Valiance mappings to be made to underlying C code.
+- The structure is:
+
+```
+external[${namespace}] (${filename}) {
+  ${declarations}
+}
+```
+
+- `filename` is the name of the file to bind
+- `namespace` is optional, and makes it so that any bindings are available under a namespace.
+- `declarations` is a series of `define`s and `object`s.
+- A `define` inside a `foreign` block creates a Valiance type-checkable element that directly calls the corresponding function.
+- The name used in define must exactly match the C function name.
+- The parameter types must also match. Notably, the parameter names need not match. Only the types.
+- This element cannot be used outside of `external` blocks.
+- `object`s inside a foreign block requires its own section.
+- An `external` block always returns the top of the stack after the block
+- Everything else is just normal Valiance.
+- Note that the filename is also optional. If no file name is provided, then the external block is used solely to provide access to elements using FFI types.
+
+## 27.1. Binding C Functions to Valiance Elements 
+
+- Say your C library contains the following function:
+
+```c
+// Say this is in shared library math.dll
+int add(int x, int y) {
+    return x + y;
+}
+```
+
+- The goal is to end up with a Valiance-side binding which can be used in a wrapper for that function that looks like
+
+```
+define add(x: Number, y: Number) {
+  #? Call the C function here
+}
+```
+
+- There's an immediate first problem: Valiance only has one number type: `Number`. There's no meaningful distinction between integer sizes and signedness.
+- The solution is to have an `FFI` library containing a whole bunch of C types.
+  - This FFI type library contains types that cannot be created, nor interacted with, in normal Valiance code. They only exist inside `external` blocks.
+- Valiance types can be converted to FFI types inside foreign blocks, where compatible.
+  - A `Number` can be cast to `FFI.int`, and there may be some pre-C-call verification. Casting rules are implemented using the `cast` keyword introduced in section 28.
+  - A `String` cannot be cast to `FFI.i32`.
+- FFI types can also be cast back to Valiance types where compatible.
+  - A `FFI.int` can be cast to a Valiance `Number`
+- The language core will provide a whole bunch of these conversions for convenience.
+- With this in mind, the binding would become:
+
+```
+external ("math.dll") {
+  define add(:FFI.int, :FFI.int) -> FFI.int {}
+}
+```
+
+- That's good, but it still doesn't give anything Valiance callable.
+- It still needs to be wrapped:
+
+```
+define add(x: Number, y: Number) {
+  external {
+    $x $y both: as FFI.int
+    add as Number
+  }
+}
+```
+
+- This first type casts the Valiance numbers to C ints (ie ensures the actual number is in the right int range and then changes the associated type), calls the C function, and then converts the result to Number.
+
+## 27.2. FFI and Objects 
+
+- Creating bindings and wrappers for C functions is pretty simple. You just make sure that the function call checks out, and away you go.
+- Working with C types and structs, on the other hand, is not as plain cut.
+  - C is a funky little child with funky little ways to declare types and structures.
+- Valiance provides two types of bindings to C objects
+
+1. Opaque type bindings
+2. Struct bindings
+
+- Opaque type bindings can be used when you're working with forward declarations. Like `typedef struct` in a header file.
+- These are represented using the `external object` keyword. An `external object` has no members, no constructor, and no object-friendly-elements.
+- For example, say a header file has the declarations
+
+```c
+// counter.h
+typedef struct Counter Counter;
+
+Counter* counter_create(int initial);
+void counter_inc(Counter* c);
+int counter_get(Counter* c);
+void counter_destroy(Counter* c);
+```
+
+- On the Valiance side, this would look like
+
+```vlnc
+external[counter] ("counter.h") {
+  #? Represent the typedef
+  external object Counter {}
+
+  #? Represent the functions
+  define counter_create(:FFI.int) -> Counter {} 
+  define counter_inc(:Counter) -> FFI.void {}
+  define counter_get(:Counter) -> FFI.int {}
+  define counter_destroy(:Counter) -> FFI.void {}
+}
+```
+
+- This opaque binding can then be used as a "handle" - something that can be re-used between `external` blocks.
+- Handles are allowed to be returned from `external` blocks.
+	- Handles cannot be interacted with in Valiance-side code.
+- For example, the `counter.Counter` object could be wrapped as:
+
+```vlnc
+object Counter {
+  private field $handle: counter.Counter
+  define Counter(value: Number) {
+    external {counter.counter_create($value as FFI.int)}
+	$handle = top
+  }
+
+  @self define increment() {
+    #? Modifies `handle` in place
+    external {$handle counter.counter_inc}
+  }
+
+  define get() -> Number {
+    external {$handle counter.counter_get as Number}
+  }
+
+  define ~Counter {external {$handle counter.counter_destroy}}
+}
+```
+
+- This object can be used 100% as if it were a Valiance object.
+
+### 27.2.1. FFI and C `struct`s
+
+- The above falls apart when you want to create a binding for something like:
+
+```c
+// in Point.c
+typedef struct {
+  int x;
+  int y;
+} Point
+```
+
+- Instances of `Point` will be by value, rather than something that can be neatly represented as a handle.
+- Therefore, bindings and wrappers need to consider the fields.
+- However, this is very simple. Just a normal `object` definition works.
+	- Unlike Valiance-side objects, the fields of an object inside an `external` must not be filled.
+- The `Point` struct would be bound as:
+
+```vlnc
+external[point] ("Point.c") {
+  object Point {
+    private field $x: FFI.int
+	private field $y: FFI.int
+  }
+}
+```
+
+- The wrapper need not make any reference to `external` at all:
+
+```vlnc
+object Point {define Point($x: Number, $y: Number) {}}
+```
+
+- It may be helpful to define some type casts between the FFI type and the Valiance-side type:
+
+```vlnc
+cast p: point.Point -> Point {
+  external {
+    Point($p.x as Number, $p.y as Number)
+  }
+}
+```
+
+- This means you can do stuff with a `point.Point` in an `external` block, and cast to `Point` using `as Point` on the way out.
+
+## 27.3. FFI and Lists
+
+- This section is to be written some other time.
+- C uses arrays
+- Valiance uses lists.
+- One idea is to provide a sort of `FFI.toArray(<shape>)` function which does a runtime check to see that the list is rectangular, and of the expected shape.
+
+## 27.4. FFI and Function Objects
+
+- Do you really want to be passing Valiance functions to C though?
+
+# 28. Type Cast Definitions
+
+_Note: A feature planned in conjunction with FFI. I'm not 100% keen on the concept for normal Valiance, but it's something that is actually a life-saver for FFI._
+
+_Note: To be implemented further down the line. Probably around the same time as FFI._
+
+- Type casting with `as` and `as!` has so far only been defined for `subtype -> supertype`, `supertype -> subtype`, and re-ranking relationships.
+- However, it may sometimes be convenient to have type-cast rules that `as` can work with.
+	- `as!` doesn't need to know about type-cast rules because it doesn't care about validity.
+	- This is especially the case for FFI work, where a `Number` could be `FFI.int`, `FFI.i32`, etc.
+- A custom type cast rule to turn type `A` into type `B` can be defined as:
+
+```
+cast ${typeA} -> ${typeB} {
+  ${code}
+}
+```
+
+- `typeA` is either `:{$type}` or `${name}: ${type}`.
+	- Note that 
+- `typeB` is just a type.
+- Note that "type" here means "atomic, no generics, no unions/intersections/whatever".
+- `code` is the process of how to turn `typeA` into `typeB`. Note that it _must_ return something of `typeB`.
+- A motiviating example is turning a `Number` into an `FFI.int`:
+
+```
+cast n: Number -> FFI.int {
+  assert {$n inRange(-32_767, 32_767)}
+  $n as! FFI.int
+}
+```
+
+- Note that the ultimate conversion is just an `as!`
+- But! `as FFI.int`, when given a `Number`, will now perform bounds checking.
+	- FFI may be unsafe, but at least you know it has a chance at being valid
+- Another example (from earlier):
+
+```
+cast p: point.Point -> Point {
+  external {
+    Point($p.x as Number, $p.y as Number)
+  }
+}
+```
+
+- Here, the type cast safely constructs a `Point`. There's no blind reliance on `as!`
+
 # Appendix. Reserved Words
 
 ```
