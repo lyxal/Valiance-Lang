@@ -2170,15 +2170,45 @@ append([1, 2], "hello")
 
 - If any parameter's constraint on T conflicts with another's, the call fails to type check. 
 
-## 18.2. Indexed Generics
-
-- In the parameter list of a function, numbers can be used to specify taking a certain number of items from the stack. Under the hood, the popped items are automatically assigned generic types to allow for this generic behaviour. However, it may be desirable to explicitly reference the generic type of an automatically assigned generic. Therefore, `^n` will refer to the type of argument `n`. 
-
-## 18.3. Other Notes
+## 18.2. Other Notes
 
 - There is no type erasure with generics. If something is passed an object with a generic, both object and generic types are available.
 - For now, generics are invariant. This is to keep the initial design simple. Covariance and contravariance may be added at a later date.
 - When they are added, `define [above T]` will be contravariance (any type above or equal to T) and `define [any T]` will be covariance (any type of T).
+
+## 18.3. Anonymous Generics in Function Types
+
+- If a function/element needs to create implicit generics for parameters, they will be part of the type.
+- For example:
+
+```
+fn (x) {$x}
+```
+
+- There's no one single type that satisfies `x`. Instead, it is considered to be a generic type.
+- But! There's no explicit generics in the function.
+- So, the type of the function is `Function[@1 -> @1]`
+- `@n` is effectively "anonymous generic type variable `n`"
+- Anonymous generics are only used if a type can't be inferred from usage.
+
+## 18.4. Row Polymorphism
+
+- Consider the following function:
+
+```
+fn {$.x}
+```
+
+- What is the type of this function?
+- It's `Function[@1(.baz: @2) -> @2]`
+- Huh?
+- When a parameter of an anonymous generic has a field accessed, it becomes part of the type.
+- `${type}(${fields})` means that a value of `type` is expected, and that the type _must_ implement `fields`. Each field in `fields` must have its own type.
+- This can also be used to constrain parameters:
+
+```
+fn[T, U] (x: T(.bar: U)) -> U {$x.bar} #? Completely valid
+```
 
 # 19. Data Tags
 - By far one of the spiciest features of Valiance.
