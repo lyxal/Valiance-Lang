@@ -651,11 +651,13 @@ class Parser:
                 f"Unexpected token: {self.head().type} ('{self.head().value}')",
                 self.head(),
             )
-            self.discard()
         else:
-            logging.warning(
-                "Token could not be parsed by any strategy, but already inside a strategy; not adding error."
+            self.add_error(
+                f"Unexpected token: {self.head().type} ('{self.head().value}')",
+                self.head(),
             )
+
+        self.discard()
         return ErrorNode(self.head().location, self.head())
 
     def parse_until(self, *token_types: TokenType) -> list[ASTNode]:
@@ -676,7 +678,7 @@ class Parser:
             ast = self.parse_next()
             asts.append(ast)
         with log_block("Finished parse_until"):
-            logger.debug("Finished parse_until with tokens: %s", self.tokens)
+            logger.debug("Finished parse_until with remaining tokens: %s", self.tokens)
         return asts
 
     def make_type_operation(
@@ -906,7 +908,7 @@ class Parser:
             )
             return VTypes.ErrorType()
 
-    def parse_parameter_list(self) -> list[Tuple[str, VTypes.VType]]:
+    def parse_parameter_list(self) -> list[Parameter]:
         """Parse a list of parameters to a `fn` or a `define`
 
         Note: Does NOT account for constructor syntax.
@@ -915,64 +917,51 @@ class Parser:
             list[Tuple[str, VTypes.VType]]: The parsed parameters as a list of (name, type) tuples.
         """
 
-        parameters: list[Tuple[str, VTypes.VType]] = []
+        parameters: list[Parameter] = []
 
         self.eat(TokenType.LEFT_PAREN)
 
         if self.head_equals(TokenType.RIGHT_PAREN):
-            self.eat(TokenType.RIGHT_PAREN)
+            self.discard()
             return parameters
 
-        implicit_generic_count = 0
+        # Track the number of anonymous generics in this parameter list
+        anonymous_generic_id = 0
 
         while not self.head_equals(TokenType.RIGHT_PAREN):
-            with log_block("Parameter Parsing"):
-                logger.debug("Parsing parameter, head token: %s", self.head())
-                logger.debug("Remaining tokens: %s", self.tokens)
-                logger.debug("Current parameters: %s", parameters)
-            if self.head_equals(TokenType.WORD):
-                param_name = self.pop().value
-                if not self.head_equals(TokenType.COLON):
-                    if not self.head_in(TokenType.COMMA, TokenType.RIGHT_PAREN):
-                        self.add_error(
-                            f"Expected either parameter type, ')', or ',' after parameter name '{param_name}'.",
-                            self.head(),
-                        )
-                        self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
-                        parameters.append((param_name, VTypes.ErrorType()))
-                    else:
-                        parameters.append(
-                            (
-                                param_name,
-                                VTypes.CustomType(
-                                    f"__implicit_generic_{implicit_generic_count}",
-                                    [],
-                                    [],
-                                ),
-                            )
-                        )
-                        implicit_generic_count += 1
-                else:
-                    if not self.eat(TokenType.COLON):
-                        self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
-                    else:
-                        param_type = self.parse_type()
-                        parameters.append((param_name, param_type))
-            elif self.head_equals(TokenType.COLON):
-                self.eat(TokenType.COLON)
-                param_type = self.parse_type()
-                param_name = ""
-                parameters.append((param_name, param_type))
-            else:
-                self.add_error(
-                    f"Expected parameter name or type, got {self.head().type} ('{self.head().value}')",
-                    self.head(),
-                )
-                self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+            # Get the name and type of the parameter
+            # Note that name may be empty
 
-            if not self.head_equals(TokenType.RIGHT_PAREN):
-                if not self.eat(TokenType.COMMA):
-                    self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
+            parameter_name = self.parse_identifier()
+            parameter_type: VType
+            if self.head_equals(TokenType.COLON):
+                self.discard()
+                parameter_type = self.parse_type()
+            else:
+                parameter_type = VTypes.AnonymousGeneric(anonymous_generic_id)
+                anonymous_generic_id += 1
+
+            # Now, collect any cast options
+            cast_type: VType | None = None
+            if self.head_equals(TokenType.AS):
+                self.discard()
+                cast_type = self.parse_type()
+
+            # Finally, collect the default value if present.
+            default_value: ASTNode | None = None
+            if self.head_equals(TokenType.EQUALS):
+                eq_tok_location = self.pop()
+                nodes = self.parse_until(TokenType.COMMA, TokenType.RIGHT_PAREN)
+                if not is_expressionable(nodes):
+                    self.add_error(
+                        "Default value of parameter must be expressionable",
+                        eq_tok_location,
+                    )
+                default_value = group_wrap(nodes)
+
+            parameters.append(
+                Parameter(parameter_name, parameter_type, cast_type, default_value)
+            )
 
         return parameters
 
@@ -1340,7 +1329,7 @@ class Parser:
                 )
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
-            parameters: list[Tuple[str, VTypes.VType]] = []
+            parameters: list[Parameter] = []
             if self.parser.head_equals(TokenType.LEFT_PAREN):
                 parameters = self.parser.parse_parameter_list()
 
@@ -1517,3 +1506,10 @@ class Parser:
                 names,
                 value_node,
             )
+
+    class PassParser(ParserStrategy):
+        def can_parse(self) -> bool:
+            return self.go(TokenType.PASS)
+
+        def parse(self) -> ASTNode:
+            return AuxiliaryNode(self.parser.pop().location)

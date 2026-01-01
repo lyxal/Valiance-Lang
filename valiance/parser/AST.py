@@ -9,6 +9,23 @@ from valiance.compiler_common.TagCategories import TagCategory
 from valiance.vtypes.VTypes import ElementTag, VType
 
 
+class Parameter:
+    def __init__(
+        self,
+        name: str,
+        type_: VType,
+        cast: VType | None = None,
+        default: ASTNode | None = None,
+    ):
+        self.name = name
+        self.type_ = type_
+        self.cast = cast
+        self.default = default
+
+    def __repr__(self):
+        return f"Parameter(name = {self.name}, type = {self.type_}, cast = {self.cast}, default = {self.default})"
+
+
 @dataclass(frozen=True)
 class ASTNode(ABC):
     """Base class for all AST nodes. Sealed via explicit subclass enumeration."""
@@ -143,7 +160,7 @@ class FunctionNode(ASTNode):
     """Represents a function/lambda expression"""
 
     generics: list[VType]
-    parameters: list[Tuple[str, VType]]
+    parameters: list[Parameter]
     output: list[VType]
     body: ASTNode
     element_tags: Tuple[ElementTag, ...] = tuple()

@@ -94,6 +94,11 @@ class CustomType(VType):
 
 
 @dataclass(frozen=True)
+class AnonymousGeneric(VType):
+    identifier: int
+
+
+@dataclass(frozen=True)
 class ErrorType(VType):
     pass
 

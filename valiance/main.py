@@ -25,12 +25,18 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
+
+    parser.add_argument(
+        "--rawast", action="store_true", help="Disable pretty print for parser"
+    )
     args = parser.parse_args()
 
     setup_logging(args.log)
 
     logger = logging.getLogger(__name__)
     logger.info("Application started")
+
+    use_pretty = not args.rawast
 
     while True:
         try:
@@ -75,8 +81,12 @@ def main():
             # Use a blue color to indicate partial success
             print("\033[94mPartial AST:\033[0m")
 
-        for ast in asts:
-            print(pretty_print_ast(ast))
+        if use_pretty:
+            for ast in asts:
+                print(pretty_print_ast(ast))
+        else:
+            for ast in asts:
+                print(ast)
 
 
 if __name__ == "__main__":

@@ -258,7 +258,7 @@ class ReadableCompactPP:
             )
             if "\n" in s:
                 lines.append(f"{pad}-")
-                lines.append(self._indent_block(s, cur_indent + 2 * self.indent))
+                lines.append(self._indent_block(s, cur_indent + self.indent))
             else:
                 lines.append(f"{pad}- {s}")
         if n > self.max_seq_items:
@@ -305,4 +305,4 @@ class ReadableCompactPP:
 
 
 def pretty_print_ast(node: Any) -> str:
-    return ReadableCompactPP().pformat(node)
+    return ReadableCompactPP(width=400).pformat(node)
