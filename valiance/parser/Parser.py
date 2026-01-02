@@ -11,6 +11,7 @@ from valiance.parser.AST import *
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
 from valiance.vtypes import VTypes
+from valiance.compiler_common import Identifier
 
 logger = logging.getLogger(__name__)
 
