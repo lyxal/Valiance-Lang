@@ -707,27 +707,28 @@ class Parser:
                 )
                 return VTypes.ErrorType()
 
-    def parse_identifier(self, wrap_as: Callable[[str], T] = lambda s: s) -> T:
-        """Parse an identifier from the token stream.
-
-        Args:
-            wrap_as (Callable[[str], T], optional): A function to wrap the identifier string. Defaults to lambda s: s.
-        Returns:
-            T: The parsed identifier, wrapped as specified.
-        """
-
-        name = ""
-        while self.head_in(TokenType.WORD, TokenType.UNDERSCORE):
-            token = self.pop()
-            name += token.value
-        if name:
-            return wrap_as(name)
+    def parse_identifier(self) -> Identifier:
+      identifier = Identifier()
+      while self.head_in(
+        TokenType.WORD,
+        TokenType.UNDERSCORE,
+        ignore_whitespace = False
+      ):
+        identifier.name += self.pop()
+        
+      if identifier.name == "":
+        self.add_error(f"Expected identifier, found {self.head()}", self.head().location)
+        identifier.error = True
+     
+      if self.head_equals(TokenType.DOT):
+        property = self.parse_identifier()
+        if property.is_error:
+          identifier.error = True
         else:
-            self.add_error(
-                f"Expected identifier, got {self.head().type} ('{self.head().value}')",
-                self.head(),
-            )
-            return wrap_as("")
+          identifier.property = property
+        
+      return identifier
+  
 
     def parse_type(self, min_precedence: int = 0) -> VType:
         """Parse a type from the token stream.
