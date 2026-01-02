@@ -3,16 +3,17 @@ from dataclasses import dataclass, field
 import enum
 from typing import Tuple
 
+from valiance.compiler_common import Identifier
 
 @dataclass
 class DataTag(ABC):
-    name: str
+    name: Identifier
     depth: int
 
 
 @dataclass
 class ElementTag(ABC):
-    name: str
+    name: Identifier
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -88,7 +89,7 @@ class FunctionType(VType):
 
 @dataclass(frozen=True)
 class CustomType(VType):
-    name: str
+    name: Identifier
     left_types: list[VType]
     right_types: list[VType]
 
