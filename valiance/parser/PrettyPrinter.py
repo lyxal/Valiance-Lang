@@ -58,6 +58,9 @@ class ReadableCompactPP:
         if isinstance(node, Enum):
             return f"{type(node).__name__}.{node.name}"
 
+        if type(node).__name__ == "Identifier":
+            return repr(node)
+
         hook = getattr(node, "__pp__", None)
         if callable(hook):
             return str(hook(self))

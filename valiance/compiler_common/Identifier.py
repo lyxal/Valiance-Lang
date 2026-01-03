@@ -8,7 +8,7 @@ class Identifier:
 
     def __repr__(self):
         if self.property is not None:
-            return f"{self.name}.{self.property}"
+            return f"Ident({self.name}.{self.property})"
         return self.name
 
     def __str__(self):

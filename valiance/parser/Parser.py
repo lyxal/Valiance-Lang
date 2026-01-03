@@ -44,6 +44,32 @@ group_wrap = lambda nodes: (
 )
 
 
+class LookaheadPattern:
+    pass
+
+
+class Exactly(LookaheadPattern):
+    def __init__(self, token_type: TokenType):
+        self.token_type = token_type
+
+
+class AnyOf(LookaheadPattern):
+    def __init__(self, *token_types: TokenType):
+        self.token_types = token_types
+
+
+class Repeated(LookaheadPattern):
+    def __init__(
+        self,
+        pattern: LookaheadPattern,
+        min_repeats: int = 0,
+        max_repeats: Optional[int] = None,
+    ):
+        self.pattern = pattern
+        self.min_repeats = min_repeats
+        self.max_repeats = max_repeats
+
+
 def is_element_token(token: Token, exclude_underscore: bool = False) -> bool:
     """Determine if a token can be used in an element name
 
@@ -438,6 +464,77 @@ class Parser:
 
             lookahead_index += 1
 
+        return True
+
+    def lookahead_pattern_equals(
+        self,
+        pattern: list[LookaheadPattern],
+        eat_whitespace: bool = True,
+        ignore_whitespace: bool = True,
+        care_about_eof: bool = True,
+    ) -> bool:
+        """Check whether the start of the lookahead matches a given pattern of tokens
+
+        Args:
+            pattern (list[LookaheadPattern]): The pattern of token types to check for
+            eat_whitespace (bool, optional): Whether whitespace should be consumed before checking. Defaults to True.
+            ignore_whitespace (bool, optional): Whether whitespace tokens in the lookahead should be ignored. Defaults to True.
+            care_about_eof (bool, optional): Whether to error if EOF is reached while eating whitespace. Defaults to True.
+        Returns:
+            bool: Whether the lookahead matches the given pattern of token types.
+        """
+
+        popped_tokens: list[Token] = []
+        for pattern_part in pattern:
+            if isinstance(pattern_part, Exactly):
+                if not self.lookahead_equals(
+                    [pattern_part.token_type],
+                    eat_whitespace=eat_whitespace,
+                    ignore_whitespace=ignore_whitespace,
+                    care_about_eof=care_about_eof,
+                ):
+                    # Restore any popped tokens
+                    self.tokens = popped_tokens + self.tokens
+                    return False
+                popped_tokens.append(self.tokens[0])
+                self.discard()
+            elif isinstance(pattern_part, AnyOf):
+                if not self.lookahead_equals(
+                    list(pattern_part.token_types),
+                    eat_whitespace=eat_whitespace,
+                    ignore_whitespace=ignore_whitespace,
+                    care_about_eof=care_about_eof,
+                ):
+                    # Restore any popped tokens
+                    self.tokens = popped_tokens + self.tokens
+                    return False
+                popped_tokens.append(self.tokens[0])
+                self.discard()
+            elif isinstance(pattern_part, Repeated):
+                count = 0
+                while True:
+                    if (
+                        pattern_part.max_repeats is not None
+                        and count >= pattern_part.max_repeats
+                    ):
+                        break
+                    if self.lookahead_pattern_equals(
+                        [pattern_part.pattern],
+                        eat_whitespace=eat_whitespace,
+                        ignore_whitespace=ignore_whitespace,
+                        care_about_eof=care_about_eof,
+                    ):
+                        count += 1
+                        popped_tokens.append(self.tokens[0])
+                        self.discard()
+                    else:
+                        break
+                if count < pattern_part.min_repeats:
+                    # Restore any popped tokens
+                    self.tokens = popped_tokens + self.tokens
+                    return False
+        # Restore any popped tokens
+        self.tokens = popped_tokens + self.tokens
         return True
 
     def sync(self, *token_types: TokenType) -> None:
@@ -1175,13 +1272,13 @@ class Parser:
                 modifier_args=[],
             )
 
-        def parse_element_arguments(self) -> list[Tuple[str, ASTNode]]:
+        def parse_element_arguments(self) -> list[Tuple[Identifier, ASTNode]]:
             """Parse the arguments for an element.
 
             Returns:
-                list[Tuple[str, ASTNode]]: The parsed arguments as a list of (name, ASTNode) tuples.
+                list[Tuple[Identifier, ASTNode]]: The parsed arguments as a list of (name, ASTNode) tuples.
             """
-            arguments: list[Tuple[str, ASTNode]] = []
+            arguments: list[Tuple[Identifier, ASTNode]] = []
 
             self.parser.pop()
 
@@ -1191,11 +1288,16 @@ class Parser:
                     "Parsing element argument, head token: %s",
                     self.parser.head(),
                 )
-                name = ""
+                name = Identifier("")
                 args: list[ASTNode] = []
-                if self.parser.lookahead_equals([TokenType.WORD, TokenType.EQUALS]):
-                    name_token = self.parser.pop()
-                    name = name_token.value
+                if self.parser.lookahead_pattern_equals(
+                    [
+                        Exactly(TokenType.WORD),
+                        Repeated(AnyOf(TokenType.WORD, TokenType.UNDERSCORE)),
+                        Exactly(TokenType.EQUALS),
+                    ]
+                ):
+                    name = self.parser.parse_identifier()
                     self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
 
                 # From here, the argument will either be `_` (fill when called), `#` (fill now), or an series of expressionable ASTs
@@ -1575,3 +1677,46 @@ class Parser:
 
         def parse(self) -> ASTNode:
             return AuxiliaryNode(self.parser.pop().location)
+
+    class IfParser(ParserStrategy):
+        name: str = "If Statement"
+
+        def can_parse(self):
+            return self.go(TokenType.IF)
+
+        def parse(self):
+            with log_block("If Statement Parsing"):
+                logging.debug(
+                    "Parsing IF statement, head token: %s", self.parser.head()
+                )
+                logging.debug("Remaining tokens: %s", self.parser.tokens)
+
+            location_token = self.parser.pop()
+            condition: ASTNode
+            if self.parser.eat(TokenType.LEFT_PAREN):
+                condition = group_wrap(self.parser.parse_until(TokenType.RIGHT_PAREN))
+                self.parser.eat(TokenType.RIGHT_PAREN)
+            else:
+                bad_token = self.parser.head()
+                self.parser.sync(TokenType.RIGHT_PAREN)
+                condition = ErrorNode(bad_token.location, bad_token)
+
+            with log_block("The If Statement Condition"):
+                logging.debug("Parsed IF condition AST: %s", condition)
+                logging.debug("Remaining tokens: %s", self.parser.tokens)
+
+            if_block = self.parser.parse_block()
+
+            with log_block("The If Statement Body"):
+                logging.debug("Parsed IF body AST: %s", if_block)
+                logging.debug("Remaining tokens: %s", self.parser.tokens)
+
+            else_block: ASTNode | None = None
+            if self.parser.head_equals(TokenType.ELSE, care_about_eof=False):
+                self.parser.discard()
+                if self.parser.head_equals(TokenType.IF):
+                    else_block = self.parse()
+                else:
+                    else_block = self.parser.parse_block()
+
+            return IfNode(location_token.location, condition, if_block, else_block)

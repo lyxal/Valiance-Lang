@@ -72,7 +72,7 @@ class ElementNode(ASTNode):
 
     element_name: Identifier
     generics: list[VType]
-    args: list[Tuple[str, ASTNode]]
+    args: list[Tuple[Identifier, ASTNode]]
     modifier_args: list[ASTNode]
 
 
@@ -116,10 +116,10 @@ class DefineNode(ASTNode):
     """Represents a definition of an element or tuple"""
 
     generics: list[VType]
-    name: str
-    parameters: list[Tuple[str, VType]]
+    name: Identifier
+    parameters: list[Tuple[Identifier, VType]]
     output: list[VType]
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
@@ -134,9 +134,9 @@ class ObjectNode(ASTNode):
     """Represents an object definition with generics, name, implemented traits, and body"""
 
     generics: list[VType]
-    name: str
+    name: Identifier
     implemented_traits: list[VType]
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
@@ -144,9 +144,9 @@ class TraitNode(ASTNode):
     """Represents a trait definition with generics, name, other traits, and body"""
 
     generics: list[VType]
-    name: str
+    name: Identifier
     other_traits: list[VType]
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
@@ -247,93 +247,93 @@ class PopNode(ASTNode):
 class ModuleImportNode(ASTNode):
     """Represents a module import statement"""
 
-    module_name: str
-    components: list[str]
+    module_name: Identifier
+    components: list[Identifier]
 
 
 @dataclass(frozen=True)
 class AliasedImportNode(ASTNode):
     """Represents an aliased import statement"""
 
-    original_name: str
-    alias_name: str
+    original_name: Identifier
+    alias_name: Identifier
 
 
 @dataclass(frozen=True)
 class ConstantSetNode(ASTNode):
     """Represents a constant set operation"""
 
-    name: str
-    value: GroupNode
+    name: Identifier
+    value: ASTNode
 
 
 @dataclass(frozen=True)
 class IfNode(ASTNode):
     """Represents a single block if-conditional statement"""
 
-    condition: GroupNode
-    then_branch: GroupNode
-    else_branch: GroupNode | None
+    condition: ASTNode
+    then_branch: ASTNode
+    else_branch: ASTNode | None
 
 
 @dataclass(frozen=True)
 class MatchNode(ASTNode):
     """Represents a match operation with multiple branches"""
 
-    branches: list[Tuple[GroupNode, GroupNode]]
+    branches: list[Tuple[ASTNode, ASTNode]]
 
 
 @dataclass(frozen=True)
 class AssertNode(ASTNode):
     """Represents an assert operation"""
 
-    condition: GroupNode
+    condition: ASTNode
 
 
 @dataclass(frozen=True)
 class AssertElseNode(ASTNode):
     """Represents an assert-else operation"""
 
-    condition: GroupNode
-    else_branch: GroupNode
+    condition: ASTNode
+    else_branch: ASTNode
 
 
 @dataclass(frozen=True)
 class WhileNode(ASTNode):
     """Represents a while loop operation"""
 
-    condition: GroupNode
-    body: GroupNode
+    condition: ASTNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
 class ForNode(ASTNode):
     """Represents a for loop operation"""
 
-    iterator: str
-    body: GroupNode
+    iterator: Identifier
+    body: ASTNode
 
 
 @dataclass(frozen=True)
 class UnfoldNode(ASTNode):
     """Represents an unfold operation"""
 
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
 class TryHandleNode(ASTNode):
     """Represents a try-handle operation"""
 
-    try_block: GroupNode
-    handle_block: GroupNode
+    try_block: ASTNode
+    handle_block: ASTNode
 
 
 @dataclass(frozen=True)
 class AtNode(ASTNode):
     """Represents an at expression with levels"""
 
-    levels: list[Tuple[str, int]]
+    levels: list[Tuple[Identifier, int]]
 
 
 @dataclass(frozen=True)
@@ -348,7 +348,7 @@ class IndexNode(ASTNode):
 class TagDefinitionNode(ASTNode):
     """Represents a tag definition"""
 
-    name: str
+    name: Identifier
     category: TagCategory
 
 
@@ -356,7 +356,7 @@ class TagDefinitionNode(ASTNode):
 class TagOverlayNode(ASTNode):
     """Represents a tag overlay operation"""
 
-    name: str
+    name: Identifier
     # TODO: Figure out what goes here
 
 
@@ -364,15 +364,15 @@ class TagOverlayNode(ASTNode):
 class TagDisjointNode(ASTNode):
     """Represents a tag disjoint operation"""
 
-    parent_tag: str
-    child_tag: str
+    parent_tag: Identifier
+    child_tag: Identifier
 
 
 @dataclass(frozen=True)
 class AnnotationNode(ASTNode):
     """Represents an annotation operation"""
 
-    annotation: str
+    annotation: Identifier
     target: ASTNode
 
 
@@ -387,29 +387,29 @@ class PanicNode(ASTNode):
 class SpawnNode(ASTNode):
     """Represents a spawn operation"""
 
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
 class ConcurrentBlockNode(ASTNode):
     """Represents a concurrent block operation"""
 
-    body: GroupNode
+    body: ASTNode
 
 
 @dataclass(frozen=True)
 class MatchChannelsNode(ASTNode):
     """Represents a match-channels operation"""
 
-    branches: list[Tuple[GroupNode, GroupNode]]
+    branches: list[Tuple[ASTNode, ASTNode]]
 
 
 @dataclass(frozen=True)
 class EnumNode(ASTNode):
     """Represents an enum definition"""
 
-    name: str
-    variants: list[Tuple[str, ASTNode]]
+    name: Identifier
+    variants: list[Tuple[Identifier, ASTNode]]
 
 
 @dataclass(frozen=True)
