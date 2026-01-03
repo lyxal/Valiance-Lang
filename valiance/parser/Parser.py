@@ -308,8 +308,11 @@ class Parser:
 
         # The above may or may not have been learned the hard way.
 
-        while self.head_equals(
-            TokenType.WHITESPACE, eat_whitespace=False, care_about_eof=False
+        while self.head_in(
+            TokenType.WHITESPACE,
+            TokenType.NEWLINE,
+            eat_whitespace=False,
+            care_about_eof=False,
         ):
             self.discard()
 
@@ -375,6 +378,13 @@ class Parser:
 
         # If no whitespace is to be eaten, don't check for EOF
         # that's because it'll recurse infinitely.
+
+        # Don't eat whitespace if the check is explicitly for whitespace
+        # that's a bit silly otherwise.
+        eat_whitespace = eat_whitespace and not token_type in (
+            TokenType.WHITESPACE,
+            TokenType.NEWLINE,
+        )
         if eat_whitespace:
             self.eat_whitespace()
             if token_type != TokenType.EOF and care_about_eof:
@@ -399,6 +409,10 @@ class Parser:
         Returns:
             bool: Whether the next token is in the given set of types.
         """
+        eat_whitespace = eat_whitespace and not any(
+            token_type in (TokenType.WHITESPACE, TokenType.NEWLINE)
+            for token_type in token_types
+        )
         if eat_whitespace:
             self.eat_whitespace()
             # If explicitly checking for EOF, don't error if EOF is in the set
@@ -441,6 +455,10 @@ class Parser:
         Returns:
             bool: Whether the lookahead matches the given sequence of token types.
         """
+        eat_whitespace = eat_whitespace and not any(
+            token_type in (TokenType.WHITESPACE, TokenType.NEWLINE)
+            for token_type in token_types
+        )
         if eat_whitespace:
             self.eat_whitespace()
             if not TokenType.EOF in token_types and care_about_eof:

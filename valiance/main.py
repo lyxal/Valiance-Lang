@@ -1,5 +1,6 @@
 import argparse
 import logging
+import pathlib
 
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
@@ -11,6 +12,8 @@ from valiance.loglib.logging_config import setup_logging
 from valiance.loglib.log_block import log_block
 
 logger = logging.getLogger(__name__)
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 
 def main():
@@ -29,6 +32,10 @@ def main():
     parser.add_argument(
         "--rawast", action="store_true", help="Disable pretty print for parser"
     )
+
+    parser.add_argument(
+        "--f", action="store_true", help="Read code from the file 'sample.vlnc'"
+    )
     args = parser.parse_args()
 
     setup_logging(args.log)
@@ -40,7 +47,11 @@ def main():
 
     while True:
         try:
-            source = input(">> ")
+            if args.f:
+                with open(BASE_DIR / "sample.vlnc", "r", encoding="utf-8") as f:
+                    source = f.read()
+            else:
+                source = input(">> ")
         except EOFError:
             break
 
@@ -75,6 +86,8 @@ def main():
 
         if not asts:
             print("\033[91mNo AST generated.\033[0m")
+            if args.f:
+                break
             continue
 
         if parser_.errors:
@@ -87,6 +100,9 @@ def main():
         else:
             for ast in asts:
                 print(ast)
+
+        if args.f:
+            break
 
 
 if __name__ == "__main__":
