@@ -70,7 +70,7 @@ class GroupNode(ASTNode):
 class ElementNode(ASTNode):
     """Represents a normal element"""
 
-    element_name: str
+    element_name: Identifier
     generics: list[VType]
     args: list[Tuple[str, ASTNode]]
     modifier_args: list[ASTNode]

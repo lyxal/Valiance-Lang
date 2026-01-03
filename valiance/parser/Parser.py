@@ -1098,9 +1098,13 @@ class Parser:
 
         def parse(self) -> ASTNode:
             location_token = self.parser.head()
-            name = self.parser.pop().value
+
+            # Keep a list of all parts of the element name
+            # to be combined into a single Identifier later
+            names: list[str] = []
+            names.append(self.parser.pop().value)
             with log_block("Element Parsing Preamble"):
-                logging.debug("Parsing element, head token: %s", name)
+                logging.debug("Parsing element, head token: %s", names[-1])
                 logging.debug("Remaining tokens: %s", self.parser.tokens)
 
             # After the first token of the element name, EOF isn't actually
@@ -1108,18 +1112,35 @@ class Parser:
 
             while True:
                 self.parser.eat_whitespace()
+
+                if self.parser.head_equals(TokenType.DOT, care_about_eof=False):
+                    self.parser.discard()
+                    if not is_element_token(
+                        self.parser.head(), exclude_underscore=True
+                    ):
+                        self.parser.add_error(
+                            "Expected element name after '.' in multi-part element name.",
+                            self.parser.head(),
+                        )
+                        break
+                    names.append("")
+
                 head = self.parser.head_opt()
                 if head is None or not is_element_token(head, exclude_underscore=True):
                     break
                 with log_block("Element Name Continuation"):
                     logging.debug(
-                        "Parsing multi-part element name, current name: %s", name
+                        "Parsing multi-part element name, current name: %s", names[-1]
                     )
                     logging.debug(
                         "Next token: %s", self.parser.head(eat_whitespace=False)
                     )
                     logging.debug("Remaining tokens: %s", self.parser.tokens)
-                name += self.parser.pop().value
+                names[-1] += self.parser.pop().value
+
+            name = Identifier(names.pop())
+            for part in reversed(names):
+                name = Identifier(part, property=name)
 
             # Handle potential type arguments for the element
             args: list[VTypes.VType] = []
