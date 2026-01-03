@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 import enum
 from typing import Tuple
 
-from valiance.compiler_common import Identifier
+from valiance.compiler_common.Identifier import Identifier
+
 
 @dataclass
 class DataTag(ABC):
@@ -14,6 +15,11 @@ class DataTag(ABC):
 @dataclass
 class ElementTag(ABC):
     name: Identifier
+
+
+@dataclass
+class NegateElementTag(ElementTag):
+    pass
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -112,11 +118,12 @@ class TypeNames(enum.Enum):
 
 
 def type_name_to_vtype(
-    type_name: str,
+    _type_name: Identifier,
     generics: Tuple[list[VType], list[VType]],
     data_tags: list[DataTag],
     element_tags: list[ElementTag],
 ) -> VType:
+    type_name = _type_name.name
     if type_name == TypeNames.Number.value:
         if generics[0] or generics[1]:
             raise ValueError("Number type does not accept generics")
@@ -148,7 +155,7 @@ def type_name_to_vtype(
         )
     else:
         return CustomType(
-            name=type_name,
+            name=_type_name,
             left_types=generics[0],
             right_types=generics[1],
             data_tags=tuple(data_tags),

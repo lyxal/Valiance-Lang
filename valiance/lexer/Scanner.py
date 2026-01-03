@@ -160,7 +160,7 @@ class Scanner:
                 case _ if HEAD in string.ascii_letters:
                     self.scan_element()
                 case "$" if not self._head_equals("$("):
-                    self.scan_variable()
+                    self.add_token(TokenType.VARIABLE, HEAD)
                 case _ if self._head_equals("$("):
                     self.add_token(TokenType.MULTI_VARIABLE, "$(")
                 case "(":
@@ -187,10 +187,6 @@ class Scanner:
                     self.add_token(TokenType.COLON, ":")
                 case "@":
                     self.scan_annotation()
-                case _ if self._head_matches("#(?!\\?)-?[a-zA-Z_]+"):
-                    self.column += 1
-                    self._discard()  # Discard the '#'
-                    self.scan_tag()
                 case _ if self._head_equals(SINGLE_LINE_COMMENT):
                     # Comment, discard until newline
                     while self.characters and self.characters[0] != "\n":

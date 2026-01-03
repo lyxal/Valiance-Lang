@@ -11,7 +11,7 @@ from valiance.parser.AST import *
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
 from valiance.vtypes import VTypes
-from valiance.compiler_common import Identifier
+from valiance.compiler_common.Identifier import Identifier
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,9 @@ class Parser:
 
         # The above may or may not have been learned the hard way.
 
-        while self.head_equals(TokenType.WHITESPACE, eat_whitespace=False):
+        while self.head_equals(
+            TokenType.WHITESPACE, eat_whitespace=False, care_about_eof=False
+        ):
             self.discard()
 
     def error_if_eof(
@@ -328,12 +330,18 @@ class Parser:
         self.error_if_eof(eat_whitespace=eat_whitespace)
         return self.tokens[0]
 
-    def head_equals(self, token_type: TokenType, eat_whitespace: bool = True) -> bool:
+    def head_equals(
+        self,
+        token_type: TokenType,
+        eat_whitespace: bool = True,
+        care_about_eof: bool = True,
+    ) -> bool:
         """Check if the next token is of the given type.
 
         Args:
             token_type (TokenType): The token type to check for
             eat_whitespace (bool, optional): Whether whitespace should be consumed before checking. Defaults to True.
+            care_about_eof (bool, optional): Whether to error if EOF is reached while eating whitespace. Defaults to True.
 
         Returns:
             bool: Whether the next token is of the given type.
@@ -343,18 +351,24 @@ class Parser:
         # that's because it'll recurse infinitely.
         if eat_whitespace:
             self.eat_whitespace()
-            if token_type != TokenType.EOF:
+            if token_type != TokenType.EOF and care_about_eof:
                 self.error_if_eof()
         if not self.tokens:
             return False
         return self.tokens[0].type == token_type
 
-    def head_in(self, *token_types: TokenType, eat_whitespace: bool = True) -> bool:
+    def head_in(
+        self,
+        *token_types: TokenType,
+        eat_whitespace: bool = True,
+        care_about_eof: bool = True,
+    ) -> bool:
         """Check if the next token is in the given set of types.
 
         Args:
             *token_types (TokenType): The token types to check for
             eat_whitespace (bool, optional): Whether whitespace should be consumed before checking. Defaults to True.
+            care_about_eof (bool, optional): Whether to error if EOF is reached while eating whitespace. Defaults to True.
 
         Returns:
             bool: Whether the next token is in the given set of types.
@@ -362,7 +376,7 @@ class Parser:
         if eat_whitespace:
             self.eat_whitespace()
             # If explicitly checking for EOF, don't error if EOF is in the set
-            if not TokenType.EOF in token_types:
+            if not TokenType.EOF in token_types and care_about_eof:
                 self.error_if_eof()
         if not self.tokens:
             return False
@@ -389,6 +403,7 @@ class Parser:
         token_types: list[TokenType],
         eat_whitespace: bool = True,
         ignore_whitespace: bool = True,
+        care_about_eof: bool = True,
     ) -> bool:
         """Check whether the start of the lookahead matches a given sequence of tokens
 
@@ -396,12 +411,14 @@ class Parser:
             token_types (list[TokenType]): The sequence of token types to check for
             eat_whitespace (bool, optional): Whether whitespace should be consumed before checking. Defaults to True.
             ignore_whitespace (bool, optional): Whether whitespace tokens in the lookahead should be ignored. Defaults to True.
+            care_about_eof (bool, optional): Whether to error if EOF is reached while eating whitespace. Defaults to True.
         Returns:
             bool: Whether the lookahead matches the given sequence of token types.
         """
         if eat_whitespace:
             self.eat_whitespace()
-            self.error_if_eof()
+            if not TokenType.EOF in token_types and care_about_eof:
+                self.error_if_eof()
 
         lookahead_index = 0
         for token_type in token_types:
@@ -592,7 +609,7 @@ class Parser:
         Returns:
             list[ASTNode]: The parsed AST nodes.
         """
-        while self.tokens and not self.head_equals(TokenType.EOF):
+        while self.tokens and not self.head_equals(TokenType.EOF, care_about_eof=False):
             try:
                 ast = self.parse_next()
                 self.asts.append(ast)
@@ -637,8 +654,17 @@ class Parser:
                     self.error_stack.pop()
                     return result
                 except ParserError as e:
-                    self.add_global_error(
-                        f"Error while parsing {strategy.name}: {e}", self.head_opt()
+                    if self.error_stack[-1]:
+                        self.errors.append((strategy.name, self.error_stack[-1]))
+                        self.error_stack.pop()
+                    else:
+                        self.add_global_error(
+                            f"Error while parsing {strategy.name}: {e}", self.head_opt()
+                        )
+                    logger.debug(
+                        "Strategy %s raised a ParserError: %s",
+                        strategy.name,
+                        e,
                     )
                     return ErrorNode(
                         self.head().location if self.head_opt() else Location(-1, -1),
@@ -709,27 +735,31 @@ class Parser:
                 return VTypes.ErrorType()
 
     def parse_identifier(self) -> Identifier:
-      identifier = Identifier()
-      while self.head_in(
-        TokenType.WORD,
-        TokenType.UNDERSCORE,
-        ignore_whitespace = False
-      ):
-        identifier.name += self.pop()
-        
-      if identifier.name == "":
-        self.add_error(f"Expected identifier, found {self.head()}", self.head().location)
-        identifier.error = True
-     
-      if self.head_equals(TokenType.DOT):
-        property = self.parse_identifier()
-        if property.is_error:
-          identifier.error = True
-        else:
-          identifier.property = property
-        
-      return identifier
-  
+        identifier = Identifier()
+        while self.head_in(
+            TokenType.WORD,
+            TokenType.UNDERSCORE,
+            eat_whitespace=False,
+            care_about_eof=False,
+        ):
+            identifier.name += self.pop().value
+
+        if identifier.name == "":
+            self.add_error(
+                f"Expected identifier, found {self.head()}", self.head().location
+            )
+            identifier.error = True
+
+        if self.head_equals(TokenType.DOT, care_about_eof=False):
+            self.discard()  # Discard the dot
+            self.error_if_eof("Expected property after '.' in identifier.")
+            property = self.parse_identifier()
+            if property.error:
+                identifier.error = True
+            else:
+                identifier.property = property
+
+        return identifier
 
     def parse_type(self, min_precedence: int = 0) -> VType:
         """Parse a type from the token stream.
@@ -828,8 +858,8 @@ class Parser:
 
         # First, handle data tags
         while self.head_equals(TokenType.TAG_TOKEN):
-            token = self.pop()
-            tag_name = token.value
+            self.discard()  # Discard the tag token
+            tag_name = self.parse_identifier()
             depth = 0
             if self.lookahead_equals([TokenType.PLUS, TokenType.NUMBER]):
                 self.pop()  # Pop the plus
@@ -855,7 +885,7 @@ class Parser:
             return replace(inner_type, data_tags=tuple(data_tags))
 
         if self.head_equals(TokenType.WORD):
-            token = self.pop()
+            type_name = self.parse_identifier()
             left_type_args: list[VTypes.VType] = []
             right_type_args: list[VTypes.VType] = []
 
@@ -890,18 +920,18 @@ class Parser:
                     self.pop()  # Pop the MINUS
                     negate_next = True
                 while self.head_equals(TokenType.WORD):
-                    tag_token = self.pop()
-                    prefix = "" if not negate_next else "-"
-                    element_tags.append(
-                        VTypes.ElementTag(name=prefix + tag_token.value)
-                    )
+                    tag_name = self.parse_identifier()
+                    if negate_next:
+                        element_tags.append(VTypes.NegateElementTag(name=tag_name))
+                    else:
+                        element_tags.append(VTypes.ElementTag(name=tag_name))
                     if self.head_equals(TokenType.PLUS):
                         self.pop()  # Pop the PLUS
                         negate_next = False
                     else:
                         break
             return VTypes.type_name_to_vtype(
-                token.value, (left_type_args, right_type_args), data_tags, element_tags
+                type_name, (left_type_args, right_type_args), data_tags, element_tags
             )
         else:
             self.add_error(
@@ -1067,12 +1097,20 @@ class Parser:
             return is_element_token(self.parser.head(), exclude_underscore=True)
 
         def parse(self) -> ASTNode:
-            with log_block("Element Parsing Preamble"):
-                logging.debug("Parsing element, head token: %s", self.parser.head())
-                logging.debug("Remaining tokens: %s", self.parser.tokens)
             location_token = self.parser.head()
             name = self.parser.pop().value
-            while is_element_token(self.parser.head(eat_whitespace=False)):
+            with log_block("Element Parsing Preamble"):
+                logging.debug("Parsing element, head token: %s", name)
+                logging.debug("Remaining tokens: %s", self.parser.tokens)
+
+            # After the first token of the element name, EOF isn't actually
+            # an error. You may have an element at the end of the file.
+
+            while True:
+                self.parser.eat_whitespace()
+                head = self.parser.head_opt()
+                if head is None or not is_element_token(head, exclude_underscore=True):
+                    break
                 with log_block("Element Name Continuation"):
                     logging.debug(
                         "Parsing multi-part element name, current name: %s", name
@@ -1085,7 +1123,7 @@ class Parser:
 
             # Handle potential type arguments for the element
             args: list[VTypes.VType] = []
-            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+            if self.parser.head_equals(TokenType.LEFT_SQUARE, care_about_eof=False):
                 args = self.parser.parse_items(
                     TokenType.LEFT_SQUARE,
                     TokenType.COMMA,
@@ -1098,7 +1136,7 @@ class Parser:
                 )
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
-            if self.parser.head_equals(TokenType.LEFT_PAREN):
+            if self.parser.head_equals(TokenType.LEFT_PAREN, care_about_eof=False):
                 arg_nodes = self.parse_element_arguments()
                 return ElementNode(
                     location=location_token.location,
@@ -1321,11 +1359,11 @@ class Parser:
                     TokenType.LEFT_SQUARE,
                     TokenType.COMMA,
                     TokenType.RIGHT_SQUARE,
-                    lambda: self.parser.parse_identifier(
-                        lambda s: VTypes.CustomType(s, [], [])
+                    lambda: VTypes.type_name_to_vtype(
+                        self.parser.parse_identifier(), ([], []), [], []
                     ),
                     lambda t: isinstance(t, VTypes.ErrorType),
-                    lambda token: VTypes.ErrorType(),
+                    lambda _: VTypes.ErrorType(),
                     singleton=True,
                     validate=None,
                 )
@@ -1346,11 +1384,13 @@ class Parser:
                     self.parser.pop()  # Pop the MINUS
                     negate_next = True
                 while self.parser.head_equals(TokenType.WORD):
-                    tag_token = self.parser.pop()
-                    prefix = "" if not negate_next else "-"
-                    element_tags.append(
-                        VTypes.ElementTag(name=prefix + tag_token.value)
-                    )
+
+                    tag_name = self.parser.parse_identifier()
+                    if negate_next:
+                        element_tags.append(VTypes.NegateElementTag(name=tag_name))
+                    else:
+                        element_tags.append(VTypes.ElementTag(name=tag_name))
+
                     if self.parser.head_equals(TokenType.PLUS):
                         self.parser.pop()  # Pop the PLUS
                         negate_next = False
@@ -1385,25 +1425,24 @@ class Parser:
             return self.go(TokenType.VARIABLE)
 
         def parse(self) -> ASTNode:
-            if self.parser.lookahead_equals([TokenType.VARIABLE, TokenType.COLON]):
+            variable_token = self.parser.pop()
+            variable_name = self.parser.parse_identifier()
+            if self.parser.head_equals(TokenType.COLON, care_about_eof=False):
                 # Augmented variable assignment
-                variable_token = self.parser.pop()  # Pop the VARIABLE token
                 self.parser.eat(TokenType.COLON)  # Pop the COLON token
                 function = self.parser.parse_next()
                 return AugmentedVariableSetNode(
                     variable_token.location,
-                    variable_token.value,
+                    variable_name,
                     function,
                 )
-            if not self.parser.lookahead_equals([TokenType.VARIABLE, TokenType.EQUALS]):
+            if not self.parser.head_equals(TokenType.EQUALS, care_about_eof=False):
                 # No assignment, just a variable get
-                variable_token = self.parser.pop()  # Pop the VARIABLE token
                 return VariableGetNode(
                     variable_token.location,
-                    variable_token.value,
+                    variable_name,
                 )
             # Variable assignment
-            variable_token = self.parser.pop()  # Pop the VARIABLE token
             self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
 
             values = self.parser.parse_until(
@@ -1431,7 +1470,7 @@ class Parser:
             value_node = group_wrap(values)
             return VariableSetNode(
                 variable_token.location,
-                variable_token.value,
+                variable_name,
                 value_node,
             )
 
@@ -1443,7 +1482,7 @@ class Parser:
 
         def parse(self) -> ASTNode:
             multi_variable_token = self.parser.pop()  # Pop the MULTI_VARIABLE token
-            names: list[str] = []
+            names: list[Identifier] = []
 
             while True:
                 if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):

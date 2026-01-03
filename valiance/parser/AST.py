@@ -2,6 +2,7 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
+from valiance.compiler_common.Identifier import Identifier
 from valiance.lexer.Token import Token
 from valiance.compiler_common.Location import Location
 from valiance.compiler_common.Index import Index
@@ -12,7 +13,7 @@ from valiance.vtypes.VTypes import ElementTag, VType
 class Parameter:
     def __init__(
         self,
-        name: str,
+        name: Identifier,
         type_: VType,
         cast: VType | None = None,
         default: ASTNode | None = None,
@@ -170,14 +171,14 @@ class FunctionNode(ASTNode):
 class VariableGetNode(ASTNode):
     """Represents a variable retrieval"""
 
-    name: str
+    name: Identifier
 
 
 @dataclass(frozen=True)
 class VariableSetNode(ASTNode):
     """Represents a variable assignment"""
 
-    name: str
+    name: Identifier
     value: ASTNode
 
 
@@ -185,7 +186,7 @@ class VariableSetNode(ASTNode):
 class MultipleVariableSetNode(ASTNode):
     """Represents multiple variable assignment"""
 
-    names: list[str]
+    names: list[Identifier]
     value: ASTNode
 
 
@@ -193,7 +194,7 @@ class MultipleVariableSetNode(ASTNode):
 class AugmentedVariableSetNode(ASTNode):
     """Represents an augmented variable assignment"""
 
-    name: str
+    name: Identifier
     function: ASTNode
 
 
