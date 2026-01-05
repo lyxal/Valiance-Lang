@@ -1587,7 +1587,12 @@ class Parser:
             self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
 
             values = self.parser.parse_until(
-                TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
+                TokenType.SEMICOLON,
+                TokenType.NEWLINE,
+                TokenType.EOF,
+                TokenType.RIGHT_PAREN,
+                TokenType.RIGHT_SQUARE,
+                TokenType.RIGHT_BRACE,
             )
             if not values:
                 self.parser.add_error(
