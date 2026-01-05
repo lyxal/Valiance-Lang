@@ -1,4 +1,3 @@
-# valiance/parser/PrettyPrinter.py
 from __future__ import annotations
 
 from dataclasses import MISSING, fields, is_dataclass
@@ -8,14 +7,30 @@ import reprlib
 
 
 class ReadableCompactPP:
+    """
+    Compact pretty-printer for ASTs with controlled indentation.
+
+    Design goals:
+    - Keep indentation shallow (one level per nesting).
+    - Prefer inline formatting up to `width`.
+    - When multiline is needed, avoid compounding indentation:
+        field=
+          <multiline value>
+      not:
+        field=
+            <multiline value>
+    - Lists: inline if short, else multiline with one-indent-per-level.
+    - Dataclasses: show "@line:col" and omit printing the full location object.
+    """
+
     def __init__(
         self,
         *,
-        width: int = 100,
+        width: int = 200,
         indent: int = 2,
-        max_depth: int = 20,
-        max_seq_items: int = 20,
-        inline_seq_items: int = 4,
+        max_depth: int = 30,
+        max_seq_items: int = 60,
+        inline_seq_items: int = 6,
         show_locations: bool = True,
         location_field: str = "location",
         drop_default_fields: bool = True,
@@ -58,6 +73,7 @@ class ReadableCompactPP:
         if isinstance(node, Enum):
             return f"{type(node).__name__}.{node.name}"
 
+        # Avoid importing Identifier (cycle-safe). Use its repr.
         if type(node).__name__ == "Identifier":
             return repr(node)
 
@@ -100,10 +116,6 @@ class ReadableCompactPP:
     # ---------------- heuristics ----------------
 
     def _maybe_loc_suffix(self, node: Any) -> str:
-        """
-        If node has a dataclass field named `location` with (line, column), show as "@L:C".
-        This is AST-agnostic: only relies on field names.
-        """
         if not self.show_locations or not is_dataclass(node):
             return ""
         try:
@@ -112,7 +124,6 @@ class ReadableCompactPP:
             return ""
         if loc is None:
             return ""
-        # accept either dataclass/obj with .line/.column or dict-like
         line = getattr(loc, "line", None)
         col = getattr(loc, "column", None)
         if line is None or col is None:
@@ -133,13 +144,21 @@ class ReadableCompactPP:
         return False
 
     def _is_pair_list(self, val: Any) -> bool:
-        # list of 2-tuples (common for dict entries/branches/etc.)
-        if not isinstance(val, list) or not val:
-            return False
-        for x in val:
-            if not (isinstance(x, tuple) and len(x) == 2):
-                return False
-        return True
+        # list of 2-tuples (common for args/branches/entries)
+        return (
+            isinstance(val, list)
+            and bool(val)
+            and all(isinstance(x, tuple) and len(x) == 2 for x in val)
+        )
+
+    # ---------------- helpers ----------------
+
+    def _indent_block(self, s: str, indent: int) -> str:
+        pad = " " * indent
+        return "\n".join(pad + line if line else line for line in s.splitlines())
+
+    def _try_inline(self, s: str) -> bool:
+        return "\n" not in s and len(s) <= self.width
 
     # ---------------- formatters ----------------
 
@@ -153,35 +172,36 @@ class ReadableCompactPP:
         if not flds:
             return f"{name}{locsuf}()"
 
-        # collect fields, but optionally omit defaults and optionally omit the verbose location object
         parts: list[tuple[str, Any]] = []
         for f in flds:
             val = getattr(node, f.name)
 
-            # don't print location as a full subobject if we're showing @line:col already
             if self.show_locations and f.name == self.location_field:
                 continue
-
             if self._drop_field_as_default(f, val):
                 continue
-
             parts.append((f.name, val))
 
-        # If it fits on one line, do it
+        # Inline attempt
         inline_parts = [
             f"{k}={self._fmt(v, depth=depth+1, visited=visited, cur_indent=cur_indent)}"
             for k, v in parts
         ]
         one_line = f"{name}{locsuf}(" + ", ".join(inline_parts) + ")"
-        if len(one_line) <= self.width and "\n" not in one_line:
+        if self._try_inline(one_line):
             return one_line
 
-        # Multiline: each field on its own line; special-case pair-lists for readability
+        # Multiline
         pad0 = " " * cur_indent
         pad = " " * (cur_indent + self.indent)
-        lines = [f"{name}{locsuf}("]
+        lines: list[str] = [f"{name}{locsuf}("]
+
         for k, v in parts:
             if self._is_pair_list(v):
+                # Keep pair-lists very compact:
+                # args=[
+                #   a -> b,
+                # ]
                 lines.append(f"{pad}{k}=[")
                 lines.extend(
                     self._fmt_pair_list(
@@ -191,21 +211,24 @@ class ReadableCompactPP:
                         cur_indent=cur_indent + 2 * self.indent,
                     )
                 )
-                lines.append(f"{pad}]")
+                lines.append(f"{pad}],")
+                continue
+
+            vv = self._fmt(
+                v,
+                depth=depth + 1,
+                visited=visited,
+                cur_indent=cur_indent + self.indent,
+            )
+
+            if "\n" not in vv:
+                lines.append(f"{pad}{k}={vv},")
             else:
-                vv = self._fmt(
-                    v,
-                    depth=depth + 1,
-                    visited=visited,
-                    cur_indent=cur_indent + self.indent,
-                )
-                if "\n" in vv:
-                    lines.append(f"{pad}{k}=")
-                    # indent vv by one more level
-                    vv_ind = self._indent_block(vv, cur_indent + 2 * self.indent)
-                    lines.append(vv_ind)
-                else:
-                    lines.append(f"{pad}{k}={vv}")
+                # Shallow multiline: field= then value indented by ONE level
+                lines.append(f"{pad}{k}=")
+                lines.append(self._indent_block(vv, cur_indent + 2 * self.indent))
+                lines[-1] = lines[-1] + ","
+
         lines.append(f"{pad0})")
         return "\n".join(lines)
 
@@ -217,14 +240,22 @@ class ReadableCompactPP:
         visited: set[int],
         cur_indent: int,
     ) -> list[str]:
-        # render (k, v) as "k -> v"
         pad = " " * cur_indent
         out: list[str] = []
         shown = items[: self.max_seq_items]
         for k, v in shown:
             ks = self._fmt(k, depth=depth + 1, visited=visited, cur_indent=cur_indent)
             vs = self._fmt(v, depth=depth + 1, visited=visited, cur_indent=cur_indent)
-            out.append(f"{pad}{ks} -> {vs},")
+
+            if "\n" in ks or "\n" in vs:
+                # Rare, but keep readable without exploding indentation.
+                out.append(f"{pad}(")
+                out.append(
+                    self._indent_block(f"{ks} -> {vs}", cur_indent + self.indent)
+                )
+                out.append(f"{pad}),")
+            else:
+                out.append(f"{pad}{ks} -> {vs},")
         if len(items) > self.max_seq_items:
             out.append(f"{pad}… x{len(items) - self.max_seq_items}")
         return out
@@ -234,38 +265,42 @@ class ReadableCompactPP:
     ) -> str:
         items = list(seq)
         n = len(items)
-        shown = items[: self.max_seq_items]
-
         if n == 0:
             return "[]"
 
-        # try inline if short and simple
-        if n <= self.inline_seq_items and all(self._is_inlineable(x) for x in items):
-            inner = ", ".join(
+        # Inline attempt for short lists/tuples
+        if n <= self.inline_seq_items:
+            rendered = [
                 self._fmt(x, depth=depth + 1, visited=visited, cur_indent=cur_indent)
                 for x in items
-            )
-            if isinstance(seq, tuple) and n == 1:
-                return f"({inner},)"
-            if isinstance(seq, tuple):
-                return f"({inner})"
-            return f"[{inner}]"
+            ]
+            if all("\n" not in s for s in rendered):
+                inner = ", ".join(rendered)
+                if isinstance(seq, tuple) and n == 1:
+                    s = f"({inner},)"
+                elif isinstance(seq, tuple):
+                    s = f"({inner})"
+                else:
+                    s = f"[{inner}]"
+                if self._try_inline(s):
+                    return s
 
-        # multiline list
+        # Multiline list
         pad0 = " " * cur_indent
         pad = " " * (cur_indent + self.indent)
         lines = ["["]
+        shown = items[: self.max_seq_items]
         for x in shown:
             s = self._fmt(
                 x, depth=depth + 1, visited=visited, cur_indent=cur_indent + self.indent
             )
             if "\n" in s:
-                lines.append(f"{pad}-")
-                lines.append(self._indent_block(s, cur_indent + self.indent))
+                # indent the block under the list bullet by one level
+                lines.append(f"{pad}{s.replace(chr(10), chr(10) + pad)},")
             else:
-                lines.append(f"{pad}- {s}")
+                lines.append(f"{pad}{s},")
         if n > self.max_seq_items:
-            lines.append(f"{pad}- … x{n - self.max_seq_items}")
+            lines.append(f"{pad}… x{n - self.max_seq_items}")
         lines.append(f"{pad0}]")
         return "\n".join(lines)
 
@@ -275,15 +310,36 @@ class ReadableCompactPP:
         if not d:
             return "{}"
         items = list(d.items())[: self.max_seq_items]
-        inner = ", ".join(
-            f"{self._fmt(k, depth=depth+1, visited=visited, cur_indent=cur_indent)}: {self._fmt(v, depth=depth+1, visited=visited, cur_indent=cur_indent)}"
+        rendered = [
+            (
+                self._fmt(k, depth=depth + 1, visited=visited, cur_indent=cur_indent),
+                self._fmt(v, depth=depth + 1, visited=visited, cur_indent=cur_indent),
+            )
             for k, v in items
-        )
-        suffix = (
-            f", … x{len(d) - self.max_seq_items}" if len(d) > self.max_seq_items else ""
-        )
-        s = "{ " + inner + suffix + " }"
-        return s if len(s) <= self.width else "{…}"
+        ]
+
+        if all("\n" not in ks and "\n" not in vs for ks, vs in rendered):
+            inner = ", ".join(f"{ks}: {vs}" for ks, vs in rendered)
+            suffix = (
+                f", … x{len(d) - self.max_seq_items}"
+                if len(d) > self.max_seq_items
+                else ""
+            )
+            s = "{ " + inner + suffix + " }"
+            if self._try_inline(s):
+                return s
+
+        pad0 = " " * cur_indent
+        pad = " " * (cur_indent + self.indent)
+        lines = ["{"]
+        for ks, vs in rendered:
+            if "\n" in vs:
+                vs = vs.replace("\n", "\n" + pad)
+            lines.append(f"{pad}{ks}: {vs},")
+        if len(d) > self.max_seq_items:
+            lines.append(f"{pad}… x{len(d) - self.max_seq_items}")
+        lines.append(f"{pad0}}}")
+        return "\n".join(lines)
 
     def _fmt_object(
         self, node: Any, *, depth: int, visited: set[int], cur_indent: int
@@ -292,20 +348,34 @@ class ReadableCompactPP:
         d = {k: v for k, v in vars(node).items() if not k.startswith("_")}
         if not d:
             return f"{name}()"
-        inner = ", ".join(
+
+        inline_parts = [
             f"{k}={self._fmt(v, depth=depth+1, visited=visited, cur_indent=cur_indent)}"
             for k, v in d.items()
-        )
-        s = f"{name}({inner})"
-        return s if len(s) <= self.width else f"{name}(…)"
+        ]
+        one_line = f"{name}(" + ", ".join(inline_parts) + ")"
+        if self._try_inline(one_line):
+            return one_line
 
-    def _is_inlineable(self, x: Any) -> bool:
-        return x is None or isinstance(x, (bool, int, float, str, Enum))
-
-    def _indent_block(self, s: str, indent: int) -> str:
-        pad = " " * indent
-        return "\n".join(pad + line if line else line for line in s.splitlines())
+        pad0 = " " * cur_indent
+        pad = " " * (cur_indent + self.indent)
+        lines = [f"{name}("]
+        for k, v in d.items():
+            vv = self._fmt(
+                v,
+                depth=depth + 1,
+                visited=visited,
+                cur_indent=cur_indent + self.indent,
+            )
+            if "\n" in vv:
+                lines.append(f"{pad}{k}=")
+                lines.append(self._indent_block(vv, cur_indent + 2 * self.indent))
+                lines[-1] = lines[-1] + ","
+            else:
+                lines.append(f"{pad}{k}={vv},")
+        lines.append(f"{pad0})")
+        return "\n".join(lines)
 
 
 def pretty_print_ast(node: Any) -> str:
-    return ReadableCompactPP(width=400).pformat(node)
+    return ReadableCompactPP(width=100).pformat(node)
