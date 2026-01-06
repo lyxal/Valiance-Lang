@@ -1832,3 +1832,24 @@ class Parser:
                 condition,
                 body,
             )
+
+    class UnfoldParser(ParserStrategy):
+        name: str = "Unfold Operation"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.UNFOLD)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'unfold' token
+            parameters: list[Parameter] | None
+            condition: ASTNode
+
+            (parameters, condition) = self.parser.parse_parameter_condition_split()
+            body = self.parser.parse_block()
+
+            return UnfoldNode(
+                location_token.location,
+                parameters,
+                condition,
+                body,
+            )

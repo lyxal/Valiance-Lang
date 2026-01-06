@@ -319,6 +319,8 @@ class ForNode(ASTNode):
 class UnfoldNode(ASTNode):
     """Represents an unfold operation"""
 
+    parameters: list[Parameter] | None
+    condition: ASTNode
     body: ASTNode
 
 
