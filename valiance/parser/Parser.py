@@ -261,6 +261,23 @@ class Parser:
                 )
             )
 
+    def collect_until(self, *token_types: TokenType) -> list[Token]:
+        """Collect tokens until one of the given token types is encountered.
+
+        Args:
+            *token_types (TokenType): The token types to stop collecting at.
+
+        Returns:
+            list[Token]: The collected tokens.
+        """
+
+        collected_tokens: list[Token] = []
+        while not self.head_in(*token_types):
+            if not self.tokens:
+                break
+            collected_tokens.append(self.pop())
+        return collected_tokens
+
     def discard(self, number_of_tokens: int = 1) -> None:
         """Remove the first n items from the head of the token stream.
 
@@ -1055,7 +1072,7 @@ class Parser:
             )
             return VTypes.ErrorType()
 
-    def parse_parameter_list(self) -> list[Parameter]:
+    def parse_parameter_list(self, skip_left_paren: bool = False) -> list[Parameter]:
         """Parse a list of parameters to a `fn` or a `define`
 
         Note: Does NOT account for constructor syntax.
@@ -1066,7 +1083,8 @@ class Parser:
 
         parameters: list[Parameter] = []
 
-        self.eat(TokenType.LEFT_PAREN)
+        if not skip_left_paren:
+            self.eat(TokenType.LEFT_PAREN)
 
         if self.head_equals(TokenType.RIGHT_PAREN):
             self.discard()
@@ -1127,6 +1145,55 @@ class Parser:
         items = self.parse_until(TokenType.RIGHT_BRACE)
         self.eat(TokenType.RIGHT_BRACE)
         return GroupNode(location_token.location, items)
+
+    def parse_parameter_condition_split(
+        self,
+    ) -> tuple[Optional[list[Parameter]], ASTNode]:
+        """Parse the condition, and optionally parameters of a struture like
+        while or unfold.
+
+        Assumes that the left parenthesis has been left on the token stream
+
+        Returns:
+            tuple[Optional[ASTNode], ASTNode]: Parameters (if present) and condition
+        """
+
+        # Step one is to get to just after the right paren
+
+        self.eat(TokenType.LEFT_PAREN)
+        first_part = self.collect_until(TokenType.RIGHT_PAREN)
+
+        right_paren = self.head()
+        if not self.eat(TokenType.RIGHT_PAREN):
+            self.sync(TokenType.RIGHT_PAREN)
+            return (None, ErrorNode(right_paren.location, right_paren))
+
+        # Step two is to determine what kind of situation we're
+        # facing. If there's an arrow, it's parameters and condition
+        # otherwise it's just condition
+
+        head_is_arrow = self.head_equals(TokenType.ARROW)
+
+        # Step three is to push all tokens back onto the token stream
+        # ready for parsing. The right paren also needs to be pushed back
+        # so that there's a stop point.
+
+        self.tokens = first_part + [right_paren] + self.tokens
+
+        # Step four is normal parsing
+        if head_is_arrow:
+            parameters = self.parse_parameter_list(skip_left_paren=True)
+            self.eat(TokenType.RIGHT_PAREN)
+            self.eat(TokenType.ARROW)
+            self.eat(TokenType.LEFT_PAREN)
+        else:
+            parameters = None
+
+        condition = self.parse_until(TokenType.RIGHT_PAREN)
+
+        self.eat(TokenType.RIGHT_PAREN)
+
+        return (parameters, group_wrap(condition))
 
     class NumberParser(ParserStrategy):
         name: str = "Number"
@@ -1743,3 +1810,25 @@ class Parser:
                     else_block = self.parser.parse_block()
 
             return IfNode(location_token.location, condition, if_block, else_block)
+
+    class WhileParser(ParserStrategy):
+        name: str = "While Loop"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.WHILE)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'while' token
+            parameters: list[Parameter] | None
+            condition: ASTNode
+
+            (parameters, condition) = self.parser.parse_parameter_condition_split()
+            print("tokens after while condition parse:", self.parser.tokens)
+            body = self.parser.parse_block()
+
+            return WhileNode(
+                location_token.location,
+                parameters,
+                condition,
+                body,
+            )

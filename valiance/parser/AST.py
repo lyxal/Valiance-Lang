@@ -302,6 +302,7 @@ class AssertElseNode(ASTNode):
 class WhileNode(ASTNode):
     """Represents a while loop operation"""
 
+    parameters: list[Parameter] | None
     condition: ASTNode
     body: ASTNode
 
