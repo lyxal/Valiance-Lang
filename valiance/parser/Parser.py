@@ -1293,10 +1293,12 @@ class Parser:
             # an error. You may have an element at the end of the file.
 
             while True:
-                self.parser.eat_whitespace()
-
-                if self.parser.head_equals(TokenType.DOT, care_about_eof=False):
-                    self.parser.discard()
+                if self.parser.lookahead_pattern_equals(
+                    [Repeated(Exactly(TokenType.WHITESPACE)), Exactly(TokenType.DOT)],
+                    eat_whitespace=False,
+                    care_about_eof=False,
+                ):
+                    self.parser.eat(TokenType.DOT)
                     if not is_element_token(
                         self.parser.head(), exclude_underscore=True
                     ):
