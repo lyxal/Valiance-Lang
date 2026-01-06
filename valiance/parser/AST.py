@@ -312,6 +312,7 @@ class ForNode(ASTNode):
     """Represents a for loop operation"""
 
     iterator: Identifier
+    index: Identifier | None
     body: ASTNode
 
 

@@ -1791,9 +1791,9 @@ class Parser:
                 value_node,
             )
 
-    class PassParser(ParserStrategy):
+    class SkipTokenParser(ParserStrategy):
         def can_parse(self) -> bool:
-            return self.go(TokenType.PASS)
+            return self.go(TokenType.PASS) or self.go(TokenType.SEMICOLON)
 
         def parse(self) -> ASTNode:
             return AuxiliaryNode(self.parser.pop().location)
@@ -1881,5 +1881,29 @@ class Parser:
                 location_token.location,
                 parameters,
                 condition,
+                body,
+            )
+
+    class ForEachParser(ParserStrategy):
+        name: str = "For Loop"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.FOREACH)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'for' token
+            self.parser.eat(TokenType.LEFT_PAREN)
+            iterator = self.parser.parse_identifier()
+            index: Identifier | None = None
+            if self.parser.head_equals(TokenType.COMMA):
+                self.parser.discard()
+                self.parser.eat_whitespace()
+                index = self.parser.parse_identifier()
+            self.parser.eat(TokenType.RIGHT_PAREN)
+            body = self.parser.parse_block()
+            return ForNode(
+                location_token.location,
+                iterator,
+                index,
                 body,
             )
