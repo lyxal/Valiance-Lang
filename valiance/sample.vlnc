@@ -1,4 +1,1 @@
-$collection foreach (item, index) {
-  #? A sample comment
-  process($item, $index);
-}
+fork: (x, y)

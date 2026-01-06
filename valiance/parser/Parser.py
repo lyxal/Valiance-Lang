@@ -1369,22 +1369,50 @@ class Parser:
                 )
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
+            # Collect any arguments for the element
+            arg_nodes: list[Tuple[Identifier, ASTNode]] = []
             if self.parser.head_equals(TokenType.LEFT_PAREN, care_about_eof=False):
                 arg_nodes = self.parse_element_arguments()
-                return ElementNode(
-                    location=location_token.location,
-                    element_name=name,
-                    generics=args,
-                    args=arg_nodes,
-                    modifier_args=[],
-                )
+
+            modifier_args: list[ASTNode] = []
+            # And finally, check for the presence of modifier arguments
+            if self.parser.head_equals(TokenType.COLON, care_about_eof=False):
+                colon_token = self.parser.pop()  # Pop the colon
+                # We start caring about EOF now because a modifier requires
+                # more.
+                if self.parser.head_equals(TokenType.LEFT_PAREN):
+                    modifier_args = self.parser.parse_items(
+                        TokenType.LEFT_PAREN,
+                        TokenType.COMMA,
+                        TokenType.RIGHT_PAREN,
+                        self.parser.parse_next,
+                        lambda node: isinstance(node, ErrorNode),
+                        lambda token: ErrorNode(self.parser.head().location, token),
+                        singleton=False,
+                        validate=lambda node: is_expressionable([node]),
+                        multi_item_wrap=lambda items: (
+                            items[0]
+                            if len(items) == 1
+                            else GroupNode(items[0].location, items)
+                        ),
+                    )
+                    self.parser.eat(TokenType.RIGHT_PAREN)
+                else:
+                    modified_arg = self.parser.parse_next()
+                    if not is_expressionable([modified_arg]):
+                        self.parser.add_error(
+                            "Modifier argument must be expressionable.",
+                            modified_arg.location,
+                        )
+                        modified_arg = ErrorNode(colon_token.location, colon_token)
+                    modifier_args = [modified_arg]
 
             return ElementNode(
                 location=location_token.location,
                 element_name=name,
                 generics=args,
-                args=[],
-                modifier_args=[],
+                args=arg_nodes,
+                modifier_args=modifier_args,
             )
 
         def parse_element_arguments(self) -> list[Tuple[Identifier, ASTNode]]:
@@ -1853,7 +1881,6 @@ class Parser:
             condition: ASTNode
 
             (parameters, condition) = self.parser.parse_parameter_condition_split()
-            print("tokens after while condition parse:", self.parser.tokens)
             body = self.parser.parse_block()
 
             return WhileNode(

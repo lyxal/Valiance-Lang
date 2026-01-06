@@ -168,6 +168,13 @@ class FunctionNode(ASTNode):
 
 
 @dataclass(frozen=True)
+class QuotedFunctionNode(ASTNode):
+    """Represents a quoted element"""
+
+    element: ASTNode
+
+
+@dataclass(frozen=True)
 class VariableGetNode(ASTNode):
     """Represents a variable retrieval"""
 
