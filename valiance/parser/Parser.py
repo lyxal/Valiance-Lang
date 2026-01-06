@@ -97,6 +97,7 @@ def is_element_token(token: Token, exclude_underscore: bool = False) -> bool:
         TokenType.GREATER_THAN,
         TokenType.QUESTION,
         TokenType.UNDERSCORE,
+        TokenType.EQUALS,
     )
 
 
@@ -272,9 +273,24 @@ class Parser:
         """
 
         collected_tokens: list[Token] = []
-        while not self.head_in(*token_types):
-            if not self.tokens:
+        # Initialise the open/close depth tracking table
+        open_close_count = sync_table()
+        while self.tokens:
+            if self.head().type in token_types and all(
+                count == 0 for count in open_close_count.values()
+            ):
+                # Only stop collecting if we're at depth 0 for all open/close pairs
                 break
+            if self.head().type in OPEN_CLOSE_TOKEN_MAP:
+                open_close_count[self.head().type] += 1
+            elif self.head().type in OPEN_CLOSE_TOKEN_MAP.values():
+                corresponding_open = [
+                    k for k, v in OPEN_CLOSE_TOKEN_MAP.items() if v == self.head().type
+                ][0]
+                # Don't worry about unmatched closing tokens here; just collect them
+                # The caller can handle any errors about unmatched tokens later
+                if open_close_count[corresponding_open] > 0:
+                    open_close_count[corresponding_open] -= 1
             collected_tokens.append(self.pop())
         return collected_tokens
 
@@ -1323,7 +1339,19 @@ class Parser:
                 names[-1] += self.parser.pop().value
 
             name = Identifier(names.pop())
+            if name.name == "=":
+                self.parser.add_error(
+                    "Element name cannot be '='. Did you mean to use '=' for assignment?",
+                    location_token,
+                )
+                return ErrorNode(location_token.location, location_token)
             for part in reversed(names):
+                if part == "=":
+                    self.parser.add_error(
+                        "Element name cannot be '='. Did you mean to use '=' for assignment?",
+                        location_token,
+                    )
+                    return ErrorNode(location_token.location, location_token)
                 name = Identifier(part, property=name)
 
             # Handle potential type arguments for the element
