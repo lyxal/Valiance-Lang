@@ -1,1 +1,3 @@
-fork: (x, y)
+$x = range(1, 10)
+$y = 5
+$x[$y] = "Hello, Valiance!"

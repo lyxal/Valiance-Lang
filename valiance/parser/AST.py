@@ -2,12 +2,12 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Sequence, Tuple
 
-from valiance.compiler_common.Identifier import Identifier
+
 from valiance.lexer.Token import Token
 from valiance.compiler_common.Location import Location
-from valiance.compiler_common.Index import Index
 from valiance.compiler_common.TagCategories import TagCategory
 from valiance.vtypes.VTypes import ElementTag, VType
+from valiance.compiler_common.Identifier import Identifier, StaticIndex
 
 
 class Parameter:
@@ -351,7 +351,7 @@ class AtNode(ASTNode):
 class IndexNode(ASTNode):
     """Represents an index dump operation"""
 
-    indices: list[Index]
+    indices: list[StaticIndex]
     dump: bool = False
 
 

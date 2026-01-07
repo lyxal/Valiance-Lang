@@ -11,7 +11,7 @@ from valiance.parser.AST import *
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
 from valiance.vtypes import VTypes
-from valiance.compiler_common.Identifier import Identifier
+from valiance.compiler_common.Identifier import *
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,34 @@ sync_table = lambda: {_type: 0 for _type in OPEN_CLOSE_TOKEN_MAP}
 group_wrap: Callable[[list[ASTNode]], ASTNode]
 group_wrap = lambda nodes: (
     nodes[0] if len(nodes) == 1 else GroupNode(nodes[0].location, nodes)
+)
+
+# A helper function to either parse an integer or return None
+# useful because python doesn't have a parseInt that doesn't
+# error
+
+
+def parseInt(val: str) -> int | None:
+    try:
+        return int(val)
+    except:
+        return None
+
+
+ELEMENT_TOKENS = (
+    TokenType.WORD,
+    TokenType.MINUS,
+    TokenType.PLUS,
+    TokenType.AMPERSAND,
+    TokenType.STAR,
+    TokenType.SLASH,
+    TokenType.PERCENT,
+    TokenType.EXCLAMATION,
+    TokenType.LESS_THAN,
+    TokenType.GREATER_THAN,
+    TokenType.QUESTION,
+    TokenType.UNDERSCORE,
+    TokenType.EQUALS,
 )
 
 
@@ -84,21 +112,7 @@ def is_element_token(token: Token, exclude_underscore: bool = False) -> bool:
     if exclude_underscore and token.type == TokenType.UNDERSCORE:
         return False
 
-    return token.type in (
-        TokenType.WORD,
-        TokenType.MINUS,
-        TokenType.PLUS,
-        TokenType.AMPERSAND,
-        TokenType.STAR,
-        TokenType.SLASH,
-        TokenType.PERCENT,
-        TokenType.EXCLAMATION,
-        TokenType.LESS_THAN,
-        TokenType.GREATER_THAN,
-        TokenType.QUESTION,
-        TokenType.UNDERSCORE,
-        TokenType.EQUALS,
-    )
+    return token.type in ELEMENT_TOKENS
 
 
 def is_expressionable(nodes: list[ASTNode]) -> bool:
@@ -343,7 +357,6 @@ class Parser:
 
         while self.head_in(
             TokenType.WHITESPACE,
-            TokenType.NEWLINE,
             eat_whitespace=False,
             care_about_eof=False,
         ):
@@ -446,6 +459,7 @@ class Parser:
             token_type in (TokenType.WHITESPACE, TokenType.NEWLINE)
             for token_type in token_types
         )
+
         if eat_whitespace:
             self.eat_whitespace()
             # If explicitly checking for EOF, don't error if EOF is in the set
@@ -852,6 +866,7 @@ class Parser:
                 break
             ast = self.parse_next()
             asts.append(ast)
+
         with log_block("Finished parse_until"):
             logger.debug("Finished parse_until with remaining tokens: %s", self.tokens)
         return asts
@@ -882,15 +897,16 @@ class Parser:
                 )
                 return VTypes.ErrorType()
 
-    def parse_identifier(self) -> Identifier:
-        identifier = Identifier()
-        while self.head_in(
-            TokenType.WORD,
-            TokenType.UNDERSCORE,
-            eat_whitespace=False,
-            care_about_eof=False,
-        ):
-            identifier.name += self.pop().value
+    def parse_identifier(self, *identifier_set: TokenType) -> Identifier:
+        """Parse a fully qualified identifier from the token stream.
+
+        Args:
+            *identifier_set (TokenType): Additional token types to consider as part of the identifier.
+
+        Returns:
+            Identifier: The parsed identifier.
+        """
+        identifier = self.parse_identifier_fragment(*identifier_set)
 
         if identifier.name == "":
             self.add_error(
@@ -908,6 +924,135 @@ class Parser:
                 identifier.property = property
 
         return identifier
+
+    def parse_identifier_fragment(self, *identifier_set: TokenType) -> Identifier:
+        """Parse only a part of an indentifier. Does not give a fully
+        qualified identifier.
+
+        Args:
+            *identifier_set (TokenType): Additional token types to consider as part of the identifier.
+
+        Returns:
+            Identifier: The parsed identifier fragment.
+        """
+
+        identifier = Identifier()
+        while self.head_in(
+            *identifier_set,
+            TokenType.WORD,
+            TokenType.UNDERSCORE,
+            eat_whitespace=False,
+            care_about_eof=False,
+        ):
+            identifier.name += self.pop().value
+
+        if identifier.name == "":
+            self.add_error(
+                f"Expected identifier fragment, found {self.head()}",
+                self.head().location,
+            )
+            identifier.error = True
+
+        return identifier
+
+    def parse_index(self) -> StaticIndex:
+        index_parts: list[
+            ScalarIndex | MDIndex | ScalarVariableIndex | ErrorIndex | None
+        ] = []
+
+        self.eat(TokenType.LEFT_SQUARE)
+
+        while not self.head_in(TokenType.COMMA, TokenType.RIGHT_SQUARE):
+            # If a colon is encountered, that means that an empty segment
+            # has been found. This could be fine (e.g. [::2]) but may
+            # also not be fine (e.g. [::] or [:])
+            if self.head_equals(TokenType.COLON):
+                index_parts.append(None)
+            elif self.head_equals(TokenType.NUMBER):
+                # Scalar index
+                num_token = self.pop()
+                if (v := parseInt(num_token.value)) is not None:
+                    index_parts.append(ScalarIndex(v))
+                else:
+                    self.add_error(
+                        f"Index must be integer, found {num_token.value}", num_token
+                    )
+                    index_parts.append(ErrorIndex())
+            elif self.head_equals(TokenType.VARIABLE):
+                # Scalar index (variable)
+                self.discard()  # Discard the VARIABLE token
+                ident = self.parse_identifier()
+                index_parts.append(ScalarVariableIndex(ident))
+            elif self.head_equals(TokenType.LEFT_SQUARE):
+                self.discard()
+                # Multidimensional index
+                coords: list[ScalarIndex | ScalarVariableIndex] = []
+                errored = False
+                while not self.head_equals(TokenType.RIGHT_SQUARE):
+                    if self.head_equals(TokenType.NUMBER):
+                        num_token = self.pop()
+                        if (v := parseInt(num_token.value)) is not None:
+                            coords.append(ScalarIndex(v))
+                        else:
+                            self.add_error(
+                                f"Multi-dimensional index must be integer, found {num_token.value}",
+                                num_token,
+                            )
+                            # This whole MD index is trash, so ignore it and treat it as an error index
+                            self.sync(TokenType.RIGHT_SQUARE)
+                            index_parts.append(ErrorIndex())
+                            errored = True
+                            break
+                        if not self.head_equals(TokenType.RIGHT_SQUARE):
+                            self.eat(TokenType.COMMA)
+                    elif self.head_equals(TokenType.VARIABLE):
+                        self.discard()  # Discard the VARIABLE token
+                        ident = self.parse_identifier()
+                        coords.append(ScalarVariableIndex(ident))
+                    else:
+                        self.add_error(
+                            f"Expected number in multi-dimensional index, found {self.head().value}",
+                            self.head(),
+                        )
+                        index_parts.append(ErrorIndex())
+                        self.sync(TokenType.RIGHT_SQUARE)
+                        errored = True
+                        break
+                if not errored:
+                    index_parts.append(MDIndex(coords))
+                self.eat(TokenType.RIGHT_SQUARE)
+            else:
+                self.add_error(
+                    f"Expected scalar index, slice, or multi-dimension index, found {self.head()}",
+                    self.head(),
+                )
+                self.sync(TokenType.COMMA, TokenType.RIGHT_SQUARE)
+
+            # Eat an optional COLON after the item
+            if self.head_equals(TokenType.COLON):
+                self.discard()
+
+            if not self.head_in(TokenType.COMMA, TokenType.RIGHT_SQUARE):
+                self.add_error(
+                    f"Expected comma or right square bracket in index, found {self.head()}",
+                    self.head(),
+                )
+                self.sync(TokenType.COMMA, TokenType.RIGHT_SQUARE)
+
+            if self.head_equals(TokenType.COMMA):
+                self.discard()
+
+        self.eat(TokenType.RIGHT_SQUARE)
+
+        if len(index_parts) == 3:
+            return SliceIndex(index_parts[0], index_parts[1], index_parts[2])
+        elif len(index_parts) == 2:
+            return SliceIndex(index_parts[0], index_parts[1], None)
+        elif len(index_parts) == 1:
+            assert index_parts[0] is not None
+            return index_parts[0]
+        else:
+            return ErrorIndex()
 
     def parse_type(self, min_precedence: int = 0) -> VType:
         """Parse a type from the token stream.
@@ -1297,62 +1442,7 @@ class Parser:
         def parse(self) -> ASTNode:
             location_token = self.parser.head()
 
-            # Keep a list of all parts of the element name
-            # to be combined into a single Identifier later
-            names: list[str] = []
-            names.append(self.parser.pop().value)
-            with log_block("Element Parsing Preamble"):
-                logging.debug("Parsing element, head token: %s", names[-1])
-                logging.debug("Remaining tokens: %s", self.parser.tokens)
-
-            # After the first token of the element name, EOF isn't actually
-            # an error. You may have an element at the end of the file.
-
-            while True:
-                if self.parser.lookahead_pattern_equals(
-                    [Repeated(Exactly(TokenType.WHITESPACE)), Exactly(TokenType.DOT)],
-                    eat_whitespace=False,
-                    care_about_eof=False,
-                ):
-                    self.parser.eat(TokenType.DOT)
-                    if not is_element_token(
-                        self.parser.head(), exclude_underscore=True
-                    ):
-                        self.parser.add_error(
-                            "Expected element name after '.' in multi-part element name.",
-                            self.parser.head(),
-                        )
-                        break
-                    names.append("")
-
-                head = self.parser.head_opt()
-                if head is None or not is_element_token(head, exclude_underscore=True):
-                    break
-                with log_block("Element Name Continuation"):
-                    logging.debug(
-                        "Parsing multi-part element name, current name: %s", names[-1]
-                    )
-                    logging.debug(
-                        "Next token: %s", self.parser.head(eat_whitespace=False)
-                    )
-                    logging.debug("Remaining tokens: %s", self.parser.tokens)
-                names[-1] += self.parser.pop().value
-
-            name = Identifier(names.pop())
-            if name.name == "=":
-                self.parser.add_error(
-                    "Element name cannot be '='. Did you mean to use '=' for assignment?",
-                    location_token,
-                )
-                return ErrorNode(location_token.location, location_token)
-            for part in reversed(names):
-                if part == "=":
-                    self.parser.add_error(
-                        "Element name cannot be '='. Did you mean to use '=' for assignment?",
-                        location_token,
-                    )
-                    return ErrorNode(location_token.location, location_token)
-                name = Identifier(part, property=name)
+            name = self.parser.parse_identifier(*ELEMENT_TOKENS)
 
             # Handle potential type arguments for the element
             args: list[VTypes.VType] = []
@@ -1376,7 +1466,9 @@ class Parser:
 
             modifier_args: list[ASTNode] = []
             # And finally, check for the presence of modifier arguments
-            if self.parser.head_equals(TokenType.COLON, care_about_eof=False):
+            if self.parser.head_equals(
+                TokenType.COLON, care_about_eof=False, eat_whitespace=False
+            ):
                 colon_token = self.parser.pop()  # Pop the colon
                 # We start caring about EOF now because a modifier requires
                 # more.
@@ -1473,12 +1565,11 @@ class Parser:
                 arguments.append((name, group_wrap(args)))
                 if self.parser.head_equals(TokenType.COMMA):
                     self.parser.eat(TokenType.COMMA)
-            logger.log(
-                logging.DEBUG,
-                "Boutta eat RIGHT_PAREN, head token: %s",
-                self.parser.head(),
-            )
+
             self.parser.eat(TokenType.RIGHT_PAREN)
+            with log_block("Finished parsing element arguments"):
+                logger.debug("Parsed element arguments: %s", arguments)
+                logger.debug("Remaining tokens: %s", self.parser.tokens)
             return arguments
 
     class LabelledStackShuffleParser(ParserStrategy):
@@ -1692,7 +1783,44 @@ class Parser:
 
         def parse(self) -> ASTNode:
             variable_token = self.parser.pop()
-            variable_name = self.parser.parse_identifier()
+
+            name_components: list[Identifier] = [Identifier()]
+
+            while self.parser.head_in(
+                TokenType.WORD,
+                TokenType.UNDERSCORE,
+                TokenType.LEFT_SQUARE,
+                TokenType.DOT,
+                care_about_eof=False,
+            ):
+                if self.parser.head_in(
+                    TokenType.WORD,
+                    TokenType.UNDERSCORE,
+                    care_about_eof=False,
+                ):
+                    name_components[-1] = self.parser.parse_identifier()
+                elif self.parser.head_equals(TokenType.DOT, care_about_eof=False):
+                    self.parser.discard()
+                    if not self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
+                        self.parser.add_error(
+                            f"Expected identifier after dot, found {self.parser.head()}",
+                            self.parser.head(),
+                        )
+                        break
+                    name_components.append(Identifier())
+                else:
+                    name_components[-1].index = self.parser.parse_index()
+                    if not self.parser.head_equals(TokenType.DOT, care_about_eof=False):
+                        break
+
+            variable_name: Identifier = name_components.pop()
+            for component in reversed(name_components):
+                variable_name = Identifier(
+                    name=component.name,
+                    index=component.index,
+                    property=variable_name,
+                )
+
             if self.parser.head_equals(TokenType.COLON, care_about_eof=False):
                 # Augmented variable assignment
                 self.parser.eat(TokenType.COLON)  # Pop the COLON token
@@ -1821,7 +1949,11 @@ class Parser:
 
     class SkipTokenParser(ParserStrategy):
         def can_parse(self) -> bool:
-            return self.go(TokenType.PASS) or self.go(TokenType.SEMICOLON)
+            return (
+                self.go(TokenType.PASS)
+                or self.go(TokenType.SEMICOLON)
+                or self.go(TokenType.NEWLINE)
+            )
 
         def parse(self) -> ASTNode:
             return AuxiliaryNode(self.parser.pop().location)

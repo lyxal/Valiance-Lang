@@ -2,6 +2,7 @@ import argparse
 import logging
 import pathlib
 
+from valiance.parser.AST import AuxiliaryNode
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
 from valiance.parser.Parser import Parser
@@ -61,6 +62,8 @@ def main():
         if args.lex:
             for token in tokens:
                 print(token)
+            if args.f:
+                break
             continue
 
         parser_ = Parser(tokens)
@@ -96,6 +99,8 @@ def main():
 
         if use_pretty:
             for ast in asts:
+                if isinstance(ast, AuxiliaryNode):
+                    continue
                 print(pretty_print_ast(ast))
         else:
             for ast in asts:
