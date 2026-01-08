@@ -1,4 +1,4 @@
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import enum
 from typing import Tuple
@@ -27,15 +27,36 @@ class VType(ABC):
     data_tags: tuple[DataTag, ...] = field(default_factory=tuple)
     element_tags: tuple[ElementTag, ...] = field(default_factory=tuple)
 
+    @abstractmethod
+    def toString(self) -> str:
+        pass
+
+    def formatthis(self):
+        # Data tags is a space separated list of tag names
+        data_tags_str = " ".join("#" + tag.name.name for tag in self.data_tags)
+        # Element tags is a space separated list of tag names, with negation if applicable
+        element_tags_str = " ".join(
+            ("- " if isinstance(tag, NegateElementTag) else "+ ") + tag.name.name
+            for tag in self.element_tags
+        )
+
+        return f"{data_tags_str} {self.toString()} {element_tags_str}".strip()
+
 
 @dataclass(frozen=True)
 class NumberType(VType):
     pass
 
+    def toString(self) -> str:
+        return "Number"
+
 
 @dataclass(frozen=True)
 class StringType(VType):
     pass
+
+    def toString(self) -> str:
+        return "String"
 
 
 @dataclass(frozen=True)
@@ -45,15 +66,27 @@ class ListType(VType):
         int | str
     )  # int if rank is expressed as numbers, str if it's depedent on where
 
+    def toString(self) -> str:
+        rank_str = str("~" * self.rank) if isinstance(self.rank, int) else self.rank
+        return f"{self.element_type.formatthis()}{rank_str}"
+
 
 @dataclass(frozen=True)
 class MinimumRankType(ListType):
     element_type: VType
 
+    def toString(self) -> str:
+        rank_str = str("*" * self.rank) if isinstance(self.rank, int) else self.rank
+        return f"{self.element_type.formatthis()}{rank_str}+"
+
 
 @dataclass(frozen=True)
 class ExactRankType(ListType):
     element_type: VType
+
+    def toString(self) -> str:
+        rank_str = str("+" * self.rank) if isinstance(self.rank, int) else self.rank
+        return f"{self.element_type.formatthis()}{rank_str}"
 
 
 @dataclass(frozen=True)
@@ -61,27 +94,43 @@ class UnionType(VType):
     left: VType
     right: VType
 
+    def toString(self) -> str:
+        return f"({self.left.formatthis()} | {self.right.formatthis()})"
+
 
 @dataclass(frozen=True)
 class IntersectionType(VType):
     left: VType
     right: VType
 
+    def toString(self) -> str:
+        return f"({self.left.formatthis()} & {self.right.formatthis()})"
+
 
 @dataclass(frozen=True)
 class OptionalType(VType):
     base_type: VType
+
+    def toString(self) -> str:
+        return f"{self.base_type.formatthis()}?"
 
 
 @dataclass(frozen=True)
 class TupleType(VType):
     element_types: list[VType]
 
+    def toString(self) -> str:
+        element_types_str = ", ".join(t.formatthis() for t in self.element_types)
+        return f"({element_types_str})"
+
 
 @dataclass(frozen=True)
 class DictionaryType(VType):
     key_type: VType
     value_type: VType
+
+    def toString(self) -> str:
+        return f"Dictionary[{self.key_type.formatthis()} -> {self.value_type.formatthis()}]"
 
 
 @dataclass(frozen=True)
@@ -92,6 +141,11 @@ class FunctionType(VType):
     return_types: list[VType]
     where_clauses: list[str]  # Placeholder for where clauses
 
+    def toString(self) -> str:
+        param_types_str = ", ".join(t.formatthis() for t in self.param_types)
+        return_types_str = ", ".join(t.formatthis() for t in self.return_types)
+        return f"Function[{param_types_str} -> {return_types_str}]"
+
 
 @dataclass(frozen=True)
 class CustomType(VType):
@@ -99,15 +153,35 @@ class CustomType(VType):
     left_types: list[VType]
     right_types: list[VType]
 
+    def toString(self) -> str:
+        if self.left_types and self.right_types:
+            left_str = ", ".join(t.formatthis() for t in self.left_types)
+            right_str = ", ".join(t.formatthis() for t in self.right_types)
+            return f"{self.name}[{left_str} -> {right_str}]"
+        elif self.left_types:
+            left_str = ", ".join(t.formatthis() for t in self.left_types)
+            return f"{self.name}[{left_str}]"
+        elif self.right_types:
+            right_str = ", ".join(t.formatthis() for t in self.right_types)
+            return f"{self.name}[-> {right_str}]"
+        else:
+            return f"{self.name}"
+
 
 @dataclass(frozen=True)
 class AnonymousGeneric(VType):
     identifier: int
 
+    def toString(self) -> str:
+        return f"@{self.identifier}"
+
 
 @dataclass(frozen=True)
 class ErrorType(VType):
     pass
+
+    def toString(self) -> str:
+        return "Error"
 
 
 class TypeNames(enum.Enum):

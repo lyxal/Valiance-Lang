@@ -290,16 +290,17 @@ class Parser:
         # Initialise the open/close depth tracking table
         open_close_count = sync_table()
         while self.tokens:
-            if self.head().type in token_types and all(
+            head = self.head(eat_whitespace=False)
+            if head.type in token_types and all(
                 count == 0 for count in open_close_count.values()
             ):
                 # Only stop collecting if we're at depth 0 for all open/close pairs
                 break
-            if self.head().type in OPEN_CLOSE_TOKEN_MAP:
-                open_close_count[self.head().type] += 1
-            elif self.head().type in OPEN_CLOSE_TOKEN_MAP.values():
+            if head.type in OPEN_CLOSE_TOKEN_MAP:
+                open_close_count[head.type] += 1
+            elif head.type in OPEN_CLOSE_TOKEN_MAP.values():
                 corresponding_open = [
-                    k for k, v in OPEN_CLOSE_TOKEN_MAP.items() if v == self.head().type
+                    k for k, v in OPEN_CLOSE_TOKEN_MAP.items() if v == head.type
                 ][0]
                 # Don't worry about unmatched closing tokens here; just collect them
                 # The caller can handle any errors about unmatched tokens later
@@ -906,6 +907,7 @@ class Parser:
         Returns:
             Identifier: The parsed identifier.
         """
+
         identifier = self.parse_identifier_fragment(*identifier_set)
 
         if identifier.name == "":
@@ -914,8 +916,8 @@ class Parser:
             )
             identifier.error = True
 
-        if self.head_equals(TokenType.DOT, care_about_eof=False):
-            self.discard()  # Discard the dot
+        if self.lookahead_equals([TokenType.DOT], eat_whitespace=False):
+            self.eat(TokenType.DOT)
             self.error_if_eof("Expected property after '.' in identifier.")
             property = self.parse_identifier()
             if property.error:
@@ -941,15 +943,15 @@ class Parser:
             *identifier_set,
             TokenType.WORD,
             TokenType.UNDERSCORE,
-            eat_whitespace=False,
             care_about_eof=False,
+            eat_whitespace=False,
         ):
             identifier.name += self.pop().value
 
         if identifier.name == "":
             self.add_error(
-                f"Expected identifier fragment, found {self.head()}",
-                self.head().location,
+                f"Expected identifier fragment, found {self.head(eat_whitespace=False)}",
+                self.head(eat_whitespace=False).location,
             )
             identifier.error = True
 
@@ -1288,6 +1290,13 @@ class Parser:
             parameters.append(
                 Parameter(parameter_name, parameter_type, cast_type, default_value)
             )
+
+            if not self.head_equals(TokenType.RIGHT_PAREN):
+                if not self.eat(
+                    TokenType.COMMA,
+                    "Expected ',' between parameters.",
+                ):
+                    self.sync(TokenType.COMMA, TokenType.RIGHT_PAREN)
 
         return parameters
 
@@ -1792,15 +1801,19 @@ class Parser:
                 TokenType.LEFT_SQUARE,
                 TokenType.DOT,
                 care_about_eof=False,
+                eat_whitespace=False,
             ):
                 if self.parser.head_in(
                     TokenType.WORD,
                     TokenType.UNDERSCORE,
                     care_about_eof=False,
+                    eat_whitespace=False,
                 ):
                     name_components[-1] = self.parser.parse_identifier()
-                elif self.parser.head_equals(TokenType.DOT, care_about_eof=False):
-                    self.parser.discard()
+                elif self.parser.lookahead_equals(
+                    [TokenType.DOT], eat_whitespace=False
+                ):
+                    self.parser.eat(TokenType.DOT)
                     if not self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
                         self.parser.add_error(
                             f"Expected identifier after dot, found {self.parser.head()}",
@@ -2064,5 +2077,65 @@ class Parser:
                 location_token.location,
                 iterator,
                 index,
+                body,
+            )
+
+    class DefineParser(ParserStrategy):
+        name: str = "Define Statement"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.DEFINE)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'define' token
+
+            self.parser.eat_whitespace()
+
+            generics: list[VTypes.VType] = []
+            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                generics = self.parser.parse_items(
+                    TokenType.LEFT_SQUARE,
+                    TokenType.COMMA,
+                    TokenType.RIGHT_SQUARE,
+                    lambda: VTypes.type_name_to_vtype(
+                        self.parser.parse_identifier(), ([], []), [], []
+                    ),
+                    lambda t: isinstance(t, VTypes.ErrorType),
+                    lambda _: VTypes.ErrorType(),
+                    singleton=True,
+                    validate=None,
+                )
+                self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            self.parser.eat_whitespace()
+
+            print("Getting define name", self.parser.head())
+
+            name = self.parser.parse_identifier()
+            parameters: list[Parameter] = []
+            if self.parser.head_equals(TokenType.LEFT_PAREN):
+                parameters = self.parser.parse_parameter_list()
+
+                if not self.parser.eat(TokenType.RIGHT_PAREN):
+                    self.parser.sync(TokenType.EQUALS, TokenType.LEFT_BRACE)
+
+            returns: list[VTypes.VType] = []
+            if self.parser.head_equals(TokenType.ARROW):
+                self.parser.eat(TokenType.ARROW)
+                while not self.parser.head_equals(TokenType.LEFT_BRACE):
+                    return_type = self.parser.parse_type()
+                    returns.append(return_type)
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
+                    else:
+                        break
+
+            body = self.parser.parse_block()
+            return DefineNode(
+                location_token.location,
+                generics,
+                name,
+                parameters,
+                returns,
                 body,
             )

@@ -1,3 +1,17 @@
-$x = range(1, 10)
-$y = 5
-$x[$y] = "Hello, Valiance!"
+define find(xs: T+, x: T) -> Number? {
+    $ind = 0
+    $remaining = $xs
+    $found = false
+    while ($remaining nonempty? $found not and) {
+        if ($remaining[0] $x ===) {
+            $found = true
+        } else {
+            $ind: ++
+            $remaining: firstless
+        }
+    }
+    [None, $ind] $[$found]
+}
+
+$x = 1
+$y = 2
