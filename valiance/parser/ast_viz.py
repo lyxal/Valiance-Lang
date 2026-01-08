@@ -17,9 +17,18 @@ from valiance.parser.AST import (
 from valiance.compiler_common.Identifier import Identifier
 
 
+# ---- dark theme ----
+BG = "#0F1115"
+FG = "#E6E6E6"
+MUTED = "#B7BDC6"
+NEUTRAL_BORDER = "#8A8F98"
+
+TABLE_HDR_BG = "#141922"
+TABLE_KEY_BG = "#1B2230"
+TABLE_VAL_BG = "#121821"
+
 # ---- config knobs ----
 INLINE_AST_LIST_FIELD_NAMES = {
-    # "argument-like" fields where a compact inline summary is helpful
     "arguments",
     "args",
     "items",
@@ -35,7 +44,8 @@ def _html_escape(s: str) -> str:
 
 
 def _ident_to_str(ident: Any) -> str:
-    return ident.name if isinstance(ident, Identifier) else str(ident)
+    # Identifier.__str__ / __repr__ already includes properties and indexes
+    return str(ident) if isinstance(ident, Identifier) else str(ident)
 
 
 def _skip_node(node: ASTNode) -> bool:
@@ -52,16 +62,12 @@ def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
 
 
 def _pretty_scalar(val: Any) -> str:
-    """
-    Pretty-printer for non-AST scalar-ish values.
-    Prefer toString() if present (VType).
-    """
     if val is None:
         return ""
-    to_string = getattr(val, "toString", None)
-    if callable(to_string):
+    formatthis = getattr(val, "formatthis", None)
+    if callable(formatthis):
         try:
-            return _short(str(to_string()))
+            return _short(str(formatthis()))
         except Exception:
             pass
     if isinstance(val, Identifier):
@@ -74,10 +80,6 @@ def _pretty_scalar(val: Any) -> str:
 
 
 def _ast_signature(node: ASTNode) -> str:
-    """
-    Compact representation for AST nodes to use inside table cells (never repr()).
-    """
-    # Special-case group/blocks, so compound element args look good
     if isinstance(node, GroupNode):
         try:
             return f"Group({len(node.elements)})"
@@ -87,13 +89,11 @@ def _ast_signature(node: ASTNode) -> str:
     cls = type(node).__name__.removesuffix("Node")
 
     if is_dataclass(node):
-        # LiteralNode(value=..., ...)
         if hasattr(node, "value"):
             v = getattr(node, "value", None)
             if not isinstance(v, ASTNode):
                 return f"{cls}({_pretty_scalar(v)})"
 
-        # VariableGetNode(name=Identifier) and others with .name
         if hasattr(node, "name"):
             nm = getattr(node, "name", None)
             if isinstance(nm, Identifier):
@@ -101,7 +101,6 @@ def _ast_signature(node: ASTNode) -> str:
             if isinstance(nm, str) and nm:
                 return f"{cls}({nm})"
 
-        # ElementNode / call-like nodes often have element_name
         if hasattr(node, "element_name"):
             en = getattr(node, "element_name", None)
             if isinstance(en, Identifier):
@@ -113,9 +112,6 @@ def _ast_signature(node: ASTNode) -> str:
 
 
 def _is_named_ast_pair(x: Any) -> bool:
-    """
-    True for (Identifier, ASTNode) pairs used by ElementNode.args.
-    """
     return (
         isinstance(x, tuple)
         and len(x) == 2
@@ -137,11 +133,6 @@ def _summarize_named_ast_pairs(pairs: list[tuple[Identifier, ASTNode]]) -> str:
 
 
 def _summarize_sequence(seq: list[Any]) -> str:
-    """
-    Summarize a list/tuple for a table cell, with bullets and truncation.
-    AST nodes become signatures; (Identifier, ASTNode) becomes "name = Sig".
-    """
-    # Prefer the named-pair summarization if this looks like ElementNode.args
     if seq and all(_is_named_ast_pair(x) for x in seq):
         return _summarize_named_ast_pairs(seq)  # type: ignore[arg-type]
 
@@ -247,7 +238,6 @@ def _container_table_label(node: ASTNode) -> str:
             if v is None:
                 continue
 
-            # Parameter list: always inline as bullets
             if (
                 name == "parameters"
                 and isinstance(v, list)
@@ -264,31 +254,24 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
-            # Special-case ElementNode.args: list[(Identifier, ASTNode)]
             if (
                 name == "args"
                 and isinstance(v, list)
                 and (not v or _is_named_ast_pair(v[0]))
             ):
                 rows.append((name.capitalize(), _summarize_sequence(v)))
-                # Keep drawing edges for these args too.
                 continue
 
-            # If this is a list/tuple that contains AST nodes and it's "argument-like",
-            # show an inline summary AND still render edges separately.
             if isinstance(v, (list, tuple)) and any(
                 isinstance(x, ASTNode) or _is_named_ast_pair(x) for x in v
             ):
                 if name in INLINE_AST_LIST_FIELD_NAMES:
                     rows.append((name.capitalize(), _summarize_sequence(list(v))))
-                # otherwise: omit from table (edges will show it)
                 continue
 
-            # Direct AST child fields: omit from table (edges will show it)
             if isinstance(v, ASTNode) or isinstance(v, GroupNode):
                 continue
 
-            # Normal scalar/list fields
             if isinstance(v, (list, tuple)):
                 rows.append((name.capitalize(), _summarize_sequence(list(v))))
             else:
@@ -298,15 +281,15 @@ def _container_table_label(node: ASTNode) -> str:
     for k, v in rows:
         tr_rows.append(
             "<TR>"
-            f"<TD ALIGN='LEFT' BGCOLOR='#E6E6E6'><B>{_html_escape(k)}</B></TD>"
-            f"<TD ALIGN='LEFT' BGCOLOR='#F2F2F2'>{v}</TD>"
+            f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_KEY_BG}'><B>{_html_escape(k)}</B></TD>"
+            f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_VAL_BG}'>{v}</TD>"
             "</TR>"
         )
 
     return (
         "<"
         "<TABLE BORDER='1' CELLBORDER='1' CELLSPACING='0' CELLPADDING='6'>"
-        f"<TR><TD COLSPAN='2' BGCOLOR='#FFFFFF' ALIGN='LEFT'><B>{header}</B></TD></TR>"
+        f"<TR><TD COLSPAN='2' BGCOLOR='{TABLE_HDR_BG}' ALIGN='LEFT'><B>{header}</B></TD></TR>"
         + "".join(tr_rows)
         + "</TABLE>"
         ">"
@@ -363,10 +346,9 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         "#117864",
         "#B9770E",
     ]
-    neutral = "#444444"
 
     out_nodes.append(
-        f'root [shape=box, style="rounded", color="{neutral}", label="ROOT"];'
+        f'root [shape=box, style="rounded", color="{NEUTRAL_BORDER}", fontcolor="{FG}", label="ROOT"];'
     )
 
     def gen_new_colour() -> str:
@@ -390,21 +372,19 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         n = nid(node)
         if _has_ast_children(node) and not isinstance(node, GroupNode):
             out_nodes.append(
-                f'{n} [shape=plain, color="{node_color}", penwidth={penwidth}, label={_container_table_label(node)}];'
+                f'{n} [shape=plain, color="{node_color}", penwidth={penwidth}, fontcolor="{FG}", label={_container_table_label(node)}];'
             )
         else:
             out_nodes.append(
-                f'{n} [shape=box, color="{node_color}", penwidth={penwidth}, label="{_simple_box_label(node)}"];'
+                f'{n} [shape=box, color="{node_color}", penwidth={penwidth}, fontcolor="{FG}", label="{_simple_box_label(node)}"];'
             )
         return n
 
     def link(a: str, b: str, label: str, *, color: Optional[str] = None) -> None:
-        if color:
-            out_edges.append(
-                f'{a} -> {b} [label="{_html_escape(label)}", color="{color}", fontcolor="{color}"];'
-            )
-        else:
-            out_edges.append(f'{a} -> {b} [label="{_html_escape(label)}"];')
+        c = color or MUTED
+        out_edges.append(
+            f'{a} -> {b} [label="{_html_escape(label)}", color="{c}", fontcolor="{c}"];'
+        )
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
         out_edges.append(
@@ -449,13 +429,12 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         if _has_direct_astnode_field(node):
             structure_color = get_or_assign_structure_color(nid(node))
 
-        node_color = structure_color or inherited_color or neutral
+        node_color = structure_color or inherited_color or NEUTRAL_BORDER
         penwidth = 2 if structure_color else 1
 
         entry = emit(node, node_color=node_color, penwidth=penwidth)
         exit_ = entry
 
-        # Parameter defaults
         if is_dataclass(node) and hasattr(node, "parameters"):
             params = getattr(node, "parameters", None)
             if isinstance(params, list) and (
@@ -505,8 +484,17 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         return (entry, exit_)
 
     top_entry, _ = walk(root, inherited_color=None)
+
+    dot_lines = [
+        "digraph AST {",
+        f"  rankdir={rankdir};",
+        f'  graph [bgcolor="{BG}", fontname="Consolas"];',
+        f'  node [fontname="Consolas", fontcolor="{FG}"];',
+        f'  edge [fontname="Consolas", fontcolor="{MUTED}", color="{MUTED}"];',
+    ]
+
     if top_entry is not None:
-        link("root", top_entry, "program", color=neutral)
+        link("root", top_entry, "program", color=NEUTRAL_BORDER)
 
     def dedupe(seq: list[str]) -> list[str]:
         seen = set()
@@ -520,17 +508,11 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
     out_nodes = dedupe(out_nodes)
     out_edges = dedupe(out_edges)
 
-    header = [
-        "digraph AST {",
-        f"  rankdir={rankdir};",
-        '  graph [fontname="Consolas"];',
-        '  node [fontname="Consolas"];',
-        '  edge [fontname="Consolas"];',
-    ]
-    footer = ["}"]
+    dot_lines.extend("  " + s for s in out_nodes)
+    dot_lines.extend("  " + s for s in out_edges)
+    dot_lines.append("}")
 
-    body = ["  " + s for s in (out_nodes + out_edges)]
-    return "\n".join(header + body + footer)
+    return "\n".join(dot_lines)
 
 
 def write_dot(dot: str, path: str | Path) -> Path:
@@ -553,3 +535,32 @@ def render_with_graphviz(
 
     subprocess.run([exe, f"-T{fmt}", str(dot_path), "-o", str(out_path)], check=True)
     return out_path
+
+
+def apply_svg_background(svg_path: str | Path, *, color: str = "#0F1115") -> None:
+    """
+    Ensure the entire SVG canvas has a background color.
+    Inserts a <rect> immediately after the opening <svg ...> tag.
+    """
+    p = Path(svg_path)
+    text = p.read_text(encoding="utf-8")
+
+    # Already patched?
+    if 'id="__graph_bg__"' in text:
+        return
+
+    svg_start = text.find("<svg")
+    if svg_start == -1:
+        raise ValueError("No <svg> tag found in SVG output")
+
+    svg_tag_end = text.find(">", svg_start)
+    if svg_tag_end == -1:
+        raise ValueError("Malformed <svg> tag in SVG output")
+
+    insert = (
+        f'\n  <rect id="__graph_bg__" x="0" y="0" width="100%" height="100%" '
+        f'fill="{color}"/>\n'
+    )
+
+    text = text[: svg_tag_end + 1] + insert + text[svg_tag_end + 1 :]
+    p.write_text(text, encoding="utf-8")

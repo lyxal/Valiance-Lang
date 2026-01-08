@@ -1085,6 +1085,7 @@ class Parser:
                 TokenType.TILDE,
                 TokenType.QUESTION,
                 TokenType.NUMBER,
+                TokenType.EXCLAMATION,
             ):
                 if self.head_equals(TokenType.NUMBER):
                     number = self.pop()
@@ -1107,10 +1108,13 @@ class Parser:
                 else:
                     modifier_token = self.pop()
                     postfix_modifiers.append(modifier_token)
-            grouped_modifiers = itertools.groupby(postfix_modifiers)
+            grouped_modifiers = itertools.groupby(
+                postfix_modifiers, key=lambda t: t.type
+            )
             for modifier_token, group in grouped_modifiers:
-                count = len(list(group))
-                match modifier_token.type:
+                group = list(group)
+                count = len(group)
+                match modifier_token:
                     case TokenType.PLUS:
                         left = VTypes.ExactRankType(left, count)
                     case TokenType.STAR:
@@ -1120,6 +1124,15 @@ class Parser:
                     case TokenType.QUESTION:
                         for _ in range(count):
                             left = VTypes.OptionalType(left)
+                    case TokenType.EXCLAMATION:
+                        if count > 1:
+                            self.add_error(
+                                "Non-vectorising modifier '!' can only be applied once.",
+                                group[0],
+                            )
+                            left = VTypes.ErrorType()
+                            break
+                        left.non_vectorising = True
                     case _:
                         raise RuntimeError("Unreachable code reached.")
 

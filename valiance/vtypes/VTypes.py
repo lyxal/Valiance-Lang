@@ -22,16 +22,20 @@ class NegateElementTag(ElementTag):
     pass
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(kw_only=True)
 class VType(ABC):
     data_tags: tuple[DataTag, ...] = field(default_factory=tuple)
     element_tags: tuple[ElementTag, ...] = field(default_factory=tuple)
+
+    non_vectorising: bool = False  # Indicates if the type is non-vectorising
+    is_base_type: bool = False  # Indicates if the type is a base type
 
     @abstractmethod
     def toString(self) -> str:
         pass
 
     def formatthis(self):
+        print(self)
         # Data tags is a space separated list of tag names
         data_tags_str = " ".join("#" + tag.name.name for tag in self.data_tags)
         # Element tags is a space separated list of tag names, with negation if applicable
@@ -40,10 +44,18 @@ class VType(ABC):
             for tag in self.element_tags
         )
 
+        # Indicate non-vectorising with "(non-vectorising)" if applicable
+        if self.non_vectorising:
+            element_tags_str = "(non-vectorising) " + element_tags_str
+
+        # Indicate base type with "(base type)" if applicable
+        if self.is_base_type:
+            element_tags_str = "(base type) " + element_tags_str
+
         return f"{data_tags_str} {self.toString()} {element_tags_str}".strip()
 
 
-@dataclass(frozen=True)
+@dataclass()
 class NumberType(VType):
     pass
 
@@ -51,7 +63,7 @@ class NumberType(VType):
         return "Number"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class StringType(VType):
     pass
 
@@ -59,7 +71,7 @@ class StringType(VType):
         return "String"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ListType(VType):
     element_type: VType
     rank: (
@@ -71,7 +83,7 @@ class ListType(VType):
         return f"{self.element_type.formatthis()}{rank_str}"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class MinimumRankType(ListType):
     element_type: VType
 
@@ -80,7 +92,7 @@ class MinimumRankType(ListType):
         return f"{self.element_type.formatthis()}{rank_str}+"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ExactRankType(ListType):
     element_type: VType
 
@@ -89,7 +101,7 @@ class ExactRankType(ListType):
         return f"{self.element_type.formatthis()}{rank_str}"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class UnionType(VType):
     left: VType
     right: VType
@@ -98,7 +110,7 @@ class UnionType(VType):
         return f"({self.left.formatthis()} | {self.right.formatthis()})"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class IntersectionType(VType):
     left: VType
     right: VType
@@ -107,7 +119,7 @@ class IntersectionType(VType):
         return f"({self.left.formatthis()} & {self.right.formatthis()})"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class OptionalType(VType):
     base_type: VType
 
@@ -115,7 +127,7 @@ class OptionalType(VType):
         return f"{self.base_type.formatthis()}?"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class TupleType(VType):
     element_types: list[VType]
 
@@ -124,7 +136,7 @@ class TupleType(VType):
         return f"({element_types_str})"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class DictionaryType(VType):
     key_type: VType
     value_type: VType
@@ -133,7 +145,7 @@ class DictionaryType(VType):
         return f"Dictionary[{self.key_type.formatthis()} -> {self.value_type.formatthis()}]"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class FunctionType(VType):
     fully_typed: bool
     generics: list[str]
@@ -147,7 +159,7 @@ class FunctionType(VType):
         return f"Function[{param_types_str} -> {return_types_str}]"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class CustomType(VType):
     name: Identifier
     left_types: list[VType]
@@ -168,7 +180,7 @@ class CustomType(VType):
             return f"{self.name}"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class AnonymousGeneric(VType):
     identifier: int
 
@@ -176,7 +188,7 @@ class AnonymousGeneric(VType):
         return f"@{self.identifier}"
 
 
-@dataclass(frozen=True)
+@dataclass()
 class ErrorType(VType):
     pass
 

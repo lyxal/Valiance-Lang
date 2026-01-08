@@ -70,7 +70,18 @@ def main():
         help="Open the generated SVG after rendering (Windows: uses os.startfile). Requires --svg.",
     )
 
+    parser.add_argument(
+        "--F",
+        action="store_true",
+        help="Read code from the file 'sample.vlnc' and set --svg --open-svg",
+    )
+
     args = parser.parse_args()
+
+    if args.F:
+        args.f = True
+        args.svg = True
+        args.open_svg = True
 
     setup_logging(args.log)
 
@@ -146,6 +157,9 @@ def main():
                         fmt="svg",
                         dot_exe=args.dot_exe,
                     )
+                    from valiance.parser.ast_viz import apply_svg_background
+
+                    apply_svg_background(svg_path, color="#0F1115")
                     print(f"Wrote SVG to: {svg_path.resolve()}")
 
                     if args.open_svg:
