@@ -17,6 +17,19 @@ from valiance.parser.AST import (
 from valiance.compiler_common.Identifier import Identifier
 
 
+# ---- config knobs ----
+INLINE_AST_LIST_FIELD_NAMES = {
+    # "argument-like" fields where a compact inline summary is helpful
+    "arguments",
+    "args",
+    "items",
+    "elements",
+    "modifier_args",
+}
+MAX_INLINE_LIST_ITEMS = 6
+MAX_INLINE_STRING = 60
+
+
 def _html_escape(s: str) -> str:
     return html.escape(s, quote=True)
 
@@ -25,26 +38,128 @@ def _ident_to_str(ident: Any) -> str:
     return ident.name if isinstance(ident, Identifier) else str(ident)
 
 
-def _pretty_value(val: Any) -> str:
-    if val is None:
-        return ""
-    to_string = getattr(val, "toString", None)
-    if callable(to_string):
-        try:
-            return str(to_string())
-        except Exception:
-            pass
-    if isinstance(val, Identifier):
-        return _ident_to_str(val)
-    return repr(val)
-
-
 def _skip_node(node: ASTNode) -> bool:
     return isinstance(node, (AuxiliaryNode, AuxiliaryTokenNode))
 
 
 def _is_ast(x: Any) -> bool:
     return isinstance(x, ASTNode)
+
+
+def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
+    s = s.replace("\n", "\\n")
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _pretty_scalar(val: Any) -> str:
+    """
+    Pretty-printer for non-AST scalar-ish values.
+    Prefer toString() if present (VType).
+    """
+    if val is None:
+        return ""
+    to_string = getattr(val, "toString", None)
+    if callable(to_string):
+        try:
+            return _short(str(to_string()))
+        except Exception:
+            pass
+    if isinstance(val, Identifier):
+        return _short(_ident_to_str(val))
+    if isinstance(val, str):
+        return _short(val)
+    if isinstance(val, (int, float, bool)):
+        return str(val)
+    return _short(str(val))
+
+
+def _ast_signature(node: ASTNode) -> str:
+    """
+    Compact representation for AST nodes to use inside table cells (never repr()).
+    """
+    # Special-case group/blocks, so compound element args look good
+    if isinstance(node, GroupNode):
+        try:
+            return f"Group({len(node.elements)})"
+        except Exception:
+            return "Group"
+
+    cls = type(node).__name__.removesuffix("Node")
+
+    if is_dataclass(node):
+        # LiteralNode(value=..., ...)
+        if hasattr(node, "value"):
+            v = getattr(node, "value", None)
+            if not isinstance(v, ASTNode):
+                return f"{cls}({_pretty_scalar(v)})"
+
+        # VariableGetNode(name=Identifier) and others with .name
+        if hasattr(node, "name"):
+            nm = getattr(node, "name", None)
+            if isinstance(nm, Identifier):
+                return f"{cls}({_ident_to_str(nm)})"
+            if isinstance(nm, str) and nm:
+                return f"{cls}({nm})"
+
+        # ElementNode / call-like nodes often have element_name
+        if hasattr(node, "element_name"):
+            en = getattr(node, "element_name", None)
+            if isinstance(en, Identifier):
+                return f"{cls}({_ident_to_str(en)})"
+            if isinstance(en, str) and en:
+                return f"{cls}({en})"
+
+    return cls
+
+
+def _is_named_ast_pair(x: Any) -> bool:
+    """
+    True for (Identifier, ASTNode) pairs used by ElementNode.args.
+    """
+    return (
+        isinstance(x, tuple)
+        and len(x) == 2
+        and isinstance(x[0], Identifier)
+        and isinstance(x[1], ASTNode)
+    )
+
+
+def _summarize_named_ast_pairs(pairs: list[tuple[Identifier, ASTNode]]) -> str:
+    items: list[str] = []
+    for k, v in pairs[:MAX_INLINE_LIST_ITEMS]:
+        items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
+
+    more = len(pairs) - len(items)
+    bullet_lines = [f"• {_html_escape(s)}" for s in items]
+    if more > 0:
+        bullet_lines.append(f"• … (+{more} more)")
+    return "<BR ALIGN='LEFT'/>".join(bullet_lines)
+
+
+def _summarize_sequence(seq: list[Any]) -> str:
+    """
+    Summarize a list/tuple for a table cell, with bullets and truncation.
+    AST nodes become signatures; (Identifier, ASTNode) becomes "name = Sig".
+    """
+    # Prefer the named-pair summarization if this looks like ElementNode.args
+    if seq and all(_is_named_ast_pair(x) for x in seq):
+        return _summarize_named_ast_pairs(seq)  # type: ignore[arg-type]
+
+    items: list[str] = []
+    for x in seq[:MAX_INLINE_LIST_ITEMS]:
+        if isinstance(x, ASTNode):
+            items.append(_ast_signature(x))
+        elif _is_named_ast_pair(x):
+            k, v = x
+            items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
+        else:
+            items.append(_pretty_scalar(x))
+
+    more = len(seq) - len(items)
+    bullet_lines = [f"• {_html_escape(s)}" for s in items]
+    if more > 0:
+        bullet_lines.append(f"• … (+{more} more)")
+    return "<BR ALIGN='LEFT'/>".join(bullet_lines)
 
 
 def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNode]]:
@@ -67,7 +182,6 @@ def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNo
 
 
 def _has_ast_children(node: ASTNode) -> bool:
-    """For deciding whether to render as a container card."""
     if isinstance(node, GroupNode):
         return True
     if not is_dataclass(node):
@@ -92,11 +206,6 @@ def _has_ast_children(node: ASTNode) -> bool:
 
 
 def _has_direct_astnode_field(node: ASTNode) -> bool:
-    """
-    For deciding whether to add an EXIT marker / treat as a structure boundary:
-    True only if the node has a direct ASTNode field value (including GroupNode),
-    not merely a list/tuple of AST nodes.
-    """
     if not is_dataclass(node):
         return False
     for f in fields(node):
@@ -110,7 +219,7 @@ def _has_direct_astnode_field(node: ASTNode) -> bool:
 
 def _param_to_line(p: Parameter) -> str:
     name = _ident_to_str(p.name) if getattr(p, "name", None) is not None else "<anon>"
-    type_s = _pretty_value(getattr(p, "type_", None))
+    type_s = _pretty_scalar(getattr(p, "type_", None))
     cast = getattr(p, "cast", None)
     default = getattr(p, "default", None)
 
@@ -118,7 +227,7 @@ def _param_to_line(p: Parameter) -> str:
     if type_s:
         s += f": {type_s}"
     if cast is not None:
-        s += f" as {_pretty_value(cast)}"
+        s += f" as {_pretty_scalar(cast)}"
     if default is not None:
         s += " = <default>"
     return s
@@ -135,15 +244,10 @@ def _container_table_label(node: ASTNode) -> str:
                 continue
 
             v = getattr(node, name, None)
-
-            # children become edges/sequences, not table content
-            if _is_ast(v) or isinstance(v, GroupNode):
-                continue
-            if isinstance(v, (list, tuple)) and any(_is_ast(x) for x in v):
-                continue
             if v is None:
                 continue
 
+            # Parameter list: always inline as bullets
             if (
                 name == "parameters"
                 and isinstance(v, list)
@@ -160,16 +264,35 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
+            # Special-case ElementNode.args: list[(Identifier, ASTNode)]
+            if (
+                name == "args"
+                and isinstance(v, list)
+                and (not v or _is_named_ast_pair(v[0]))
+            ):
+                rows.append((name.capitalize(), _summarize_sequence(v)))
+                # Keep drawing edges for these args too.
+                continue
+
+            # If this is a list/tuple that contains AST nodes and it's "argument-like",
+            # show an inline summary AND still render edges separately.
+            if isinstance(v, (list, tuple)) and any(
+                isinstance(x, ASTNode) or _is_named_ast_pair(x) for x in v
+            ):
+                if name in INLINE_AST_LIST_FIELD_NAMES:
+                    rows.append((name.capitalize(), _summarize_sequence(list(v))))
+                # otherwise: omit from table (edges will show it)
+                continue
+
+            # Direct AST child fields: omit from table (edges will show it)
+            if isinstance(v, ASTNode) or isinstance(v, GroupNode):
+                continue
+
+            # Normal scalar/list fields
             if isinstance(v, (list, tuple)):
-                items = [_pretty_value(x) for x in v]
-                cell = (
-                    "<BR ALIGN='LEFT'/>".join(f"• {_html_escape(s)}" for s in items)
-                    if items
-                    else ""
-                )
-                rows.append((name.capitalize(), cell))
+                rows.append((name.capitalize(), _summarize_sequence(list(v))))
             else:
-                rows.append((name.capitalize(), _html_escape(_pretty_value(v))))
+                rows.append((name.capitalize(), _html_escape(_pretty_scalar(v))))
 
     tr_rows = []
     for k, v in rows:
@@ -199,7 +322,9 @@ def _simple_box_label(node: ASTNode) -> str:
             v = getattr(node, f.name, None)
             if v is None:
                 continue
-            if _is_ast(v) or isinstance(v, GroupNode):
+            if isinstance(v, (ASTNode, GroupNode)):
+                continue
+            if isinstance(v, (list, tuple)):
                 continue
             if isinstance(v, Identifier):
                 parts.append(f"{f.name}={_ident_to_str(v)}")
@@ -226,27 +351,18 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
     entry_color: dict[str, str] = {}
     color_i = 0
 
-    # High-contrast, wildly varied palette for clear visual separation
     palette = [
-        "#1F77B4",  # vivid blue
-        "#E74C3C",  # bright red
-        "#2ECC71",  # bright green
-        "#F1C40F",  # strong yellow
-        "#9B59B6",  # saturated purple
-        "#16A085",  # teal
-        "#E67E22",  # orange
-        "#00BCD4",  # cyan
-        "#FF00FF",  # magenta
-        "#7FFF00",  # chartreuse
-        "#0B3C5D",  # very dark navy
-        "#641E16",  # deep maroon
-        "#145A32",  # dark forest green
-        "#7D6608",  # dark gold
-        "#4A235A",  # deep violet
-        "#0E6251",  # dark teal
-        "#784212",  # dark brown-orange
+        "#2E86C1",
+        "#8E44AD",
+        "#239B56",
+        "#D68910",
+        "#16A085",
+        "#C0392B",
+        "#7D3C98",
+        "#1F618D",
+        "#117864",
+        "#B9770E",
     ]
-
     neutral = "#444444"
 
     out_nodes.append(
@@ -266,14 +382,12 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         return node_ids[k]
 
     def get_or_assign_structure_color(entry_id: str) -> str:
-        # exit-worthy structures ALWAYS get their own fresh color
         if entry_id not in entry_color:
             entry_color[entry_id] = gen_new_colour()
         return entry_color[entry_id]
 
     def emit(node: ASTNode, *, node_color: str, penwidth: int) -> str:
         n = nid(node)
-
         if _has_ast_children(node) and not isinstance(node, GroupNode):
             out_nodes.append(
                 f'{n} [shape=plain, color="{node_color}", penwidth={penwidth}, label={_container_table_label(node)}];'
@@ -331,22 +445,17 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 prev_exit = c_exit
             return (first_entry, prev_exit)
 
-        # Structure boundary?
         structure_color: Optional[str] = None
         if _has_direct_astnode_field(node):
             structure_color = get_or_assign_structure_color(nid(node))
 
-        # IMPORTANT: now every node gets a border color:
-        # - if this node starts a structure, use its structure color
-        # - else inherit parent structure color if present
-        # - else neutral
         node_color = structure_color or inherited_color or neutral
         penwidth = 2 if structure_color else 1
 
         entry = emit(node, node_color=node_color, penwidth=penwidth)
         exit_ = entry
 
-        # Parameter defaults inherit nearest structure color
+        # Parameter defaults
         if is_dataclass(node) and hasattr(node, "parameters"):
             params = getattr(node, "parameters", None)
             if isinstance(params, list) and (
@@ -371,6 +480,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 if f.name == "parameters" and hasattr(node, "parameters"):
                     continue
                 v = getattr(node, f.name, None)
+
                 for lbl, child in _iter_ast_children(f.name, v):
                     if _skip_node(child):
                         continue

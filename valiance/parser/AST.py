@@ -88,12 +88,15 @@ class ElementArgumentFillNode(ASTNode):
     """
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class LiteralNode(ASTNode):
     """Represents a literal value"""
 
     value: str
     type_: VType
+
+    def __repr__(self):
+        return f"{self.value} [{self.type_.formatthis()}]"
 
 
 @dataclass(frozen=True)
