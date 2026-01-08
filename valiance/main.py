@@ -129,7 +129,9 @@ def main():
         # Graph output (one graph for all top-level ASTs)
         if args.dot or args.svg:
             root = GroupNode(Location(-1, -1), asts)
-            dot_text = ast_to_dot(root, show_locations=False)
+
+            # NOTE: ast_to_dot() no longer accepts show_locations
+            dot_text = ast_to_dot(root)
 
             dot_path = pathlib.Path(args.dot_out)
             write_dot(dot_text, dot_path)
@@ -147,13 +149,11 @@ def main():
                     print(f"Wrote SVG to: {svg_path.resolve()}")
 
                     if args.open_svg:
-                        # Windows (cmd/Explorer) friendly
                         os.startfile(svg_path)  # type: ignore[attr-defined]
                 except Exception as e:
                     print(f"\033[91mFailed to render SVG with Graphviz: {e}\033[0m")
 
         if parser_.errors:
-            # Use a blue color to indicate partial success
             print("\033[94mPartial AST:\033[0m")
 
         if use_pretty:

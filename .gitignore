@@ -70,3 +70,5 @@ build/
 # Optional: ignore typical Uvicorn/Gunicorn runtime files
 *.pid
 *.sock
+ast.svg
+ast.dot
