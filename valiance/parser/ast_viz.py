@@ -443,17 +443,18 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
     color_i = 0
     anon_i = 0
 
+    # High-contrast, wildly varied palette for clear visual separation
     palette = [
-        "#2E86C1",
-        "#8E44AD",
-        "#239B56",
-        "#D68910",
-        "#16A085",
-        "#C0392B",
-        "#7D3C98",
-        "#1F618D",
-        "#117864",
-        "#B9770E",
+        "#1F77B4",  # vivid blue
+        "#E74C3C",  # bright red
+        "#2ECC71",  # bright green
+        "#F1C40F",  # strong yellow
+        "#9B59B6",  # saturated purple
+        "#16A085",  # teal
+        "#E67E22",  # orange
+        "#00BCD4",  # cyan
+        "#FF00FF",  # magenta
+        "#7FFF00",  # chartreuse
     ]
 
     out_nodes.append(
