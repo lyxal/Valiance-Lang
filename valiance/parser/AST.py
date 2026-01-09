@@ -1,6 +1,7 @@
 from abc import ABC
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from enum import Enum
+from typing import Optional, Sequence, Tuple
 
 
 from valiance.lexer.Token import Token
@@ -25,6 +26,12 @@ class Parameter:
 
     def __repr__(self):
         return f"Parameter(name = {self.name}, type = {self.type_}, cast = {self.cast}, default = {self.default})"
+
+
+class Visibility(Enum):
+    PUBLIC = "public"
+    READABLE = "readable"  # default
+    PRIVATE = "private"
 
 
 @dataclass(frozen=True)
@@ -123,33 +130,90 @@ class DefineNode(ASTNode):
     parameters: list[Parameter]
     output: list[VType]
     body: ASTNode
+    visibility: Visibility = (
+        Visibility.PUBLIC
+    )  # 9 times out of 10 this will never be set
 
 
 @dataclass(frozen=True)
 class VariantNode(ASTNode):
-    """Represents a variant type with multiple options"""
+    """Represents a variant (sealed trait with exhaustive set of implementations).
 
-    options: list["ObjectNode"]
-
-
-@dataclass(frozen=True)
-class ObjectNode(ASTNode):
-    """Represents an object definition with generics, name, implemented traits, and body"""
+    Unlike traits (open-world), variants are closed-world:
+    - Only objects defined inside can implement the variant
+    - Enables exhaustive pattern matching
+    - Objects automatically become subtypes of the variant
+    """
 
     generics: list[VType]
     name: Identifier
-    implemented_traits: list[VType]
-    body: ASTNode
+
+    # Trait-like method requirements
+    required_methods: list[DefineNode]  # Empty bodies - must be implemented
+    default_methods: list[DefineNode]  # With bodies - can be overridden
+
+    # Sealed set of implementations
+    variant_objects: list[ObjectDefinitionNode]  # Objects defined inside
+
+    @property
+    def variant_type_names(self) -> list[str]:
+        """Get names of all variant cases for exhaustiveness checking"""
+        return [obj.object_name.name for obj in self.variant_objects]
+
+
+@dataclass(frozen=True)
+class FieldNode(ASTNode):
+    """Represents an object field (must be set by constructor)"""
+
+    visibility: Visibility
+    name: Identifier
+    type_: VType
+
+
+@dataclass(frozen=True)
+class MemberNode(ASTNode):
+    """Represents an object member (must be given initial value at definition)"""
+
+    visibility: Visibility
+    name: Identifier
+    value: ASTNode
+
+
+@dataclass(frozen=True)
+class ObjectDefinitionNode(ASTNode):
+    """Base object definition"""
+
+    generics: list[VType]
+    object_name: Identifier
+    fields: list[
+        FieldNode
+    ]  # Must be set by either default constructor or sub-constructors
+    members: list[MemberNode]  # Given a default value by the object.
+    default_constructor: list[tuple[Parameter, Optional[ASTNode]]] | None
+    methods: list[DefineNode]
+
+
+@dataclass(frozen=True)
+class ObjectTraitImplNode(ASTNode):
+    """Trait implementation for an object"""
+
+    generics: list[VType]
+    object_name: Identifier
+    trait: VType
+    methods: list[DefineNode]
 
 
 @dataclass(frozen=True)
 class TraitNode(ASTNode):
-    """Represents a trait definition with generics, name, other traits, and body"""
+    """Represents a trait definition"""
 
     generics: list[VType]
     name: Identifier
-    other_traits: list[VType]
-    body: ASTNode
+    parent_traits: list[VType]
+
+    # Separate required and default explicitly
+    required_methods: list[DefineNode]  # Empty bodies
+    default_methods: list[DefineNode]  # With implementations
 
 
 @dataclass(frozen=True)

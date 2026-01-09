@@ -157,9 +157,7 @@ def main():
                         fmt="svg",
                         dot_exe=args.dot_exe,
                     )
-                    from valiance.parser.ast_viz import apply_svg_background
 
-                    apply_svg_background(svg_path, color="#0F1115")
                     print(f"Wrote SVG to: {svg_path.resolve()}")
 
                     if args.open_svg:

@@ -1,16 +1,19 @@
 from abc import ABC
 from dataclasses import dataclass
 from typing import Generic, TypeVar
+from valiance.compiler_common.Location import Location
 
 
 class Identifier:
     def __init__(
         self,
+        location: Location = Location(-1, -1),
         name: str = "",
         property: Identifier | None = None,
         is_error: bool = False,
         index: StaticIndex | None = None,
     ):
+        self.location = location
         self.name: str = name
         self.property: Identifier | None = property
         self.error: bool = is_error

@@ -28,15 +28,55 @@ TABLE_KEY_BG = "#1B2230"
 TABLE_VAL_BG = "#121821"
 
 # ---- config knobs ----
+# Show compact inline summaries for these list fields (table only)
 INLINE_AST_LIST_FIELD_NAMES = {
+    # element-call-ish
     "arguments",
     "args",
+    "modifier_args",
+    # common collections
     "items",
     "elements",
-    "modifier_args",
+    "branches",
+    "entries",
+    "variants",
+    # OO collections
+    "required_methods",
+    "default_methods",
+    "variant_objects",
+    "fields",
+    "members",
+    "methods",
+    "parent_traits",
+    # object ctor bits
+    "default_constructor",
 }
 MAX_INLINE_LIST_ITEMS = 6
 MAX_INLINE_STRING = 60
+
+# Cleaner output: group list fields behind a "folder" node, and cap shown items
+GROUP_LIST_FIELDS = {
+    # element-call-ish (keeps large calls readable)
+    "args",
+    "modifier_args",
+    # OO / decl
+    "required_methods",
+    "default_methods",
+    "variant_objects",
+    "fields",
+    "members",
+    "methods",
+    "parent_traits",
+    "variants",
+    # other potentially-big lists
+    "branches",
+    "entries",
+    "items",
+    "elements",
+    # object ctor bits
+    "default_constructor",
+}
+MAX_EDGES_PER_GROUP = 12  # number of children shown per grouped list node
 
 
 def _html_escape(s: str) -> str:
@@ -44,16 +84,12 @@ def _html_escape(s: str) -> str:
 
 
 def _ident_to_str(ident: Any) -> str:
-    # Identifier.__str__ / __repr__ already includes properties and indexes
+    # Identifier.__str__/__repr__ includes properties and indexes (e.g. stdlib.readline)
     return str(ident) if isinstance(ident, Identifier) else str(ident)
 
 
 def _skip_node(node: ASTNode) -> bool:
     return isinstance(node, (AuxiliaryNode, AuxiliaryTokenNode))
-
-
-def _is_ast(x: Any) -> bool:
-    return isinstance(x, ASTNode)
 
 
 def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
@@ -62,14 +98,23 @@ def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
 
 
 def _pretty_scalar(val: Any) -> str:
+    """
+    Pretty-printer for non-AST scalar-ish values.
+    Prefer toString() if present (VType). Use Enum.value if present.
+    """
     if val is None:
         return ""
-    formatthis = getattr(val, "formatthis", None)
-    if callable(formatthis):
+    to_string = getattr(val, "toString", None)
+    if callable(to_string):
         try:
-            return _short(str(formatthis()))
+            return _short(str(to_string()))
         except Exception:
             pass
+
+    enum_value = getattr(val, "value", None)
+    if isinstance(enum_value, str):
+        return _short(enum_value)
+
     if isinstance(val, Identifier):
         return _short(_ident_to_str(val))
     if isinstance(val, str):
@@ -108,6 +153,11 @@ def _ast_signature(node: ASTNode) -> str:
             if isinstance(en, str) and en:
                 return f"{cls}({en})"
 
+        if hasattr(node, "object_name"):
+            on = getattr(node, "object_name", None)
+            if isinstance(on, Identifier):
+                return f"{cls}({_ident_to_str(on)})"
+
     return cls
 
 
@@ -118,6 +168,28 @@ def _is_named_ast_pair(x: Any) -> bool:
         and isinstance(x[0], Identifier)
         and isinstance(x[1], ASTNode)
     )
+
+
+def _is_param_default_pair(x: Any) -> bool:
+    return (
+        isinstance(x, tuple)
+        and len(x) == 2
+        and isinstance(x[0], Parameter)
+        and (x[1] is None or isinstance(x[1], ASTNode))
+    )
+
+
+def _param_sig(p: Parameter) -> str:
+    name = _ident_to_str(getattr(p, "name", "<anon>"))
+    type_s = _pretty_scalar(getattr(p, "type_", None))
+    cast = getattr(p, "cast", None)
+
+    s = f"{name}"
+    if type_s:
+        s += f": {type_s}"
+    if cast is not None:
+        s += f" as {_pretty_scalar(cast)}"
+    return s
 
 
 def _summarize_named_ast_pairs(pairs: list[tuple[Identifier, ASTNode]]) -> str:
@@ -132,9 +204,28 @@ def _summarize_named_ast_pairs(pairs: list[tuple[Identifier, ASTNode]]) -> str:
     return "<BR ALIGN='LEFT'/>".join(bullet_lines)
 
 
+def _summarize_param_default_pairs(
+    pairs: list[tuple[Parameter, Optional[ASTNode]]],
+) -> str:
+    items: list[str] = []
+    for p, default in pairs[:MAX_INLINE_LIST_ITEMS]:
+        if default is None:
+            items.append(_param_sig(p))
+        else:
+            items.append(f"{_param_sig(p)} = {_ast_signature(default)}")
+
+    more = len(pairs) - len(items)
+    bullet_lines = [f"• {_html_escape(s)}" for s in items]
+    if more > 0:
+        bullet_lines.append(f"• … (+{more} more)")
+    return "<BR ALIGN='LEFT'/>".join(bullet_lines)
+
+
 def _summarize_sequence(seq: list[Any]) -> str:
     if seq and all(_is_named_ast_pair(x) for x in seq):
         return _summarize_named_ast_pairs(seq)  # type: ignore[arg-type]
+    if seq and all(_is_param_default_pair(x) for x in seq):
+        return _summarize_param_default_pairs(seq)  # type: ignore[arg-type]
 
     items: list[str] = []
     for x in seq[:MAX_INLINE_LIST_ITEMS]:
@@ -143,6 +234,11 @@ def _summarize_sequence(seq: list[Any]) -> str:
         elif _is_named_ast_pair(x):
             k, v = x
             items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
+        elif _is_param_default_pair(x):
+            p, d = x
+            items.append(
+                _param_sig(p) if d is None else f"{_param_sig(p)} = {_ast_signature(d)}"
+            )
         else:
             items.append(_pretty_scalar(x))
 
@@ -156,20 +252,24 @@ def _summarize_sequence(seq: list[Any]) -> str:
 def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNode]]:
     if value is None:
         return
-    if _is_ast(value):
+    if isinstance(value, ASTNode):
         yield (field_name, value)
         return
+
     if isinstance(value, (list, tuple)):
         for i, item in enumerate(value):
-            if _is_ast(item):
+            if isinstance(item, ASTNode):
                 yield (f"{field_name}[{i}]", item)
             elif isinstance(item, tuple) and len(item) == 2:
                 a, b = item
-                if isinstance(a, Identifier) and _is_ast(b):
+                if isinstance(a, Identifier) and isinstance(b, ASTNode):
                     yield (f"{field_name}[{i}] {_ident_to_str(a)}=", b)
-                elif _is_ast(a) and _is_ast(b):
+                elif isinstance(a, ASTNode) and isinstance(b, ASTNode):
                     yield (f"{field_name}[{i}].0", a)
                     yield (f"{field_name}[{i}].1", b)
+                elif isinstance(a, Parameter) and (b is None or isinstance(b, ASTNode)):
+                    if isinstance(b, ASTNode):
+                        yield (f"{field_name}[{i}] {_param_sig(a)}.default", b)
 
 
 def _has_ast_children(node: ASTNode) -> bool:
@@ -181,19 +281,27 @@ def _has_ast_children(node: ASTNode) -> bool:
         if f.name == "location":
             continue
         v = getattr(node, f.name, None)
-        if _is_ast(v):
+        if isinstance(v, ASTNode):
             return True
         if isinstance(v, (list, tuple)):
             for item in v:
-                if _is_ast(item):
+                if isinstance(item, ASTNode):
+                    return True
+                if _is_named_ast_pair(item):
+                    return True
+                if _is_param_default_pair(item) and item[1] is not None:
                     return True
                 if (
                     isinstance(item, tuple)
                     and len(item) == 2
-                    and any(_is_ast(x) for x in item)
+                    and any(isinstance(x, ASTNode) for x in item)
                 ):
                     return True
     return False
+
+
+def _is_object_definition_node(node: ASTNode) -> bool:
+    return type(node).__name__ == "ObjectDefinitionNode"
 
 
 def _has_direct_astnode_field(node: ASTNode) -> bool:
@@ -208,17 +316,17 @@ def _has_direct_astnode_field(node: ASTNode) -> bool:
     return False
 
 
-def _param_to_line(p: Parameter) -> str:
-    name = _ident_to_str(p.name) if getattr(p, "name", None) is not None else "<anon>"
-    type_s = _pretty_scalar(getattr(p, "type_", None))
-    cast = getattr(p, "cast", None)
-    default = getattr(p, "default", None)
+def _has_exit(node: ASTNode) -> bool:
+    return _has_direct_astnode_field(node) or _is_object_definition_node(node)
 
-    s = f"{name}"
-    if type_s:
-        s += f": {type_s}"
-    if cast is not None:
-        s += f" as {_pretty_scalar(cast)}"
+
+def _needs_forced_exit(node: ASTNode) -> bool:
+    return _is_object_definition_node(node)
+
+
+def _param_to_line(p: Parameter) -> str:
+    default = getattr(p, "default", None)
+    s = _param_sig(p)
     if default is not None:
         s += " = <default>"
     return s
@@ -254,16 +362,11 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
-            if (
-                name == "args"
-                and isinstance(v, list)
-                and (not v or _is_named_ast_pair(v[0]))
-            ):
-                rows.append((name.capitalize(), _summarize_sequence(v)))
-                continue
-
             if isinstance(v, (list, tuple)) and any(
-                isinstance(x, ASTNode) or _is_named_ast_pair(x) for x in v
+                isinstance(x, ASTNode)
+                or _is_named_ast_pair(x)
+                or _is_param_default_pair(x)
+                for x in v
             ):
                 if name in INLINE_AST_LIST_FIELD_NAMES:
                     rows.append((name.capitalize(), _summarize_sequence(list(v))))
@@ -317,6 +420,11 @@ def _simple_box_label(node: ASTNode) -> str:
 
 
 def _exit_display_name(node: ASTNode) -> str:
+    if is_dataclass(node) and hasattr(node, "object_name"):
+        on = getattr(node, "object_name", None)
+        if isinstance(on, Identifier):
+            return f"{type(node).__name__}({_ident_to_str(on)})"
+
     if is_dataclass(node) and hasattr(node, "name"):
         nm = getattr(node, "name", None)
         if isinstance(nm, Identifier):
@@ -333,6 +441,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
     exit_ids: dict[str, str] = {}
     entry_color: dict[str, str] = {}
     color_i = 0
+    anon_i = 0
 
     palette = [
         "#2E86C1",
@@ -363,6 +472,11 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
             node_ids[k] = f"n{len(node_ids)}"
         return node_ids[k]
 
+    def new_anon(prefix: str) -> str:
+        nonlocal anon_i
+        anon_i += 1
+        return f"{prefix}_{anon_i}"
+
     def get_or_assign_structure_color(entry_id: str) -> str:
         if entry_id not in entry_color:
             entry_color[entry_id] = gen_new_colour()
@@ -380,6 +494,23 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
             )
         return n
 
+    def emit_folder(*, title: str, count: int, node_color: str) -> str:
+        fid = new_anon("fld")
+        label = f"{title} ({count})"
+        out_nodes.append(
+            f'{fid} [shape=box, style="rounded", penwidth=1, color="{node_color}", '
+            f'fontcolor="{FG}", label="{_html_escape(label)}"];'
+        )
+        return fid
+
+    def emit_more(*, hidden_count: int, node_color: str) -> str:
+        mid = new_anon("more")
+        out_nodes.append(
+            f'{mid} [shape=box, style="rounded,dashed", penwidth=1, color="{node_color}", '
+            f'fontcolor="{MUTED}", label="{_html_escape("… (+" + str(hidden_count) + " more)")}"];'
+        )
+        return mid
+
     def link(a: str, b: str, label: str, *, color: Optional[str] = None) -> None:
         c = color or MUTED
         out_edges.append(
@@ -387,9 +518,8 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         )
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
-        out_edges.append(
-            f'{a} -> {b} [style=dotted, color="{color}", constraint=false, arrowhead=none];'
-        )
+        # IMPORTANT: keep constraint=true (default) so EXIT nodes stay near their structure
+        out_edges.append(f'{a} -> {b} [style=dotted, color="{color}", arrowhead=none];')
 
     def emit_exit_marker(entry_id: str, node: ASTNode, *, color: str) -> str:
         if entry_id in exit_ids:
@@ -426,7 +556,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
             return (first_entry, prev_exit)
 
         structure_color: Optional[str] = None
-        if _has_direct_astnode_field(node):
+        if _has_exit(node):
             structure_color = get_or_assign_structure_color(nid(node))
 
         node_color = structure_color or inherited_color or NEUTRAL_BORDER
@@ -458,7 +588,38 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                     continue
                 if f.name == "parameters" and hasattr(node, "parameters"):
                     continue
+
                 v = getattr(node, f.name, None)
+                if v is None:
+                    continue
+
+                if f.name in GROUP_LIST_FIELDS and isinstance(v, (list, tuple)):
+                    children = list(_iter_ast_children(f.name, v))
+                    if children:
+                        folder = emit_folder(
+                            title=f.name, count=len(children), node_color=node_color
+                        )
+                        link(entry, folder, f.name, color=node_color)
+
+                        shown = children[:MAX_EDGES_PER_GROUP]
+                        for lbl, child in shown:
+                            if _skip_node(child):
+                                continue
+                            c_entry, c_exit = walk(child, node_color)
+                            if c_entry is None:
+                                continue
+
+                            short_lbl = lbl.removeprefix(f"{f.name}")
+                            short_lbl = short_lbl.lstrip()
+                            if not short_lbl:
+                                short_lbl = "item"
+                            link(folder, c_entry, short_lbl, color=node_color)
+
+                        hidden = len(children) - len(shown)
+                        if hidden > 0:
+                            more = emit_more(hidden_count=hidden, node_color=node_color)
+                            link(folder, more, "more", color=node_color)
+                        continue
 
                 for lbl, child in _iter_ast_children(f.name, v):
                     if _skip_node(child):
@@ -470,15 +631,18 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                     if isinstance(child, GroupNode) and c_exit is not None:
                         exit_ = c_exit
 
-        if _has_direct_astnode_field(node) and exit_ is not None and exit_ != entry:
+        # EXIT marker: continuation of 'next'
+        # - sequential structures: last node's exit -> EXIT
+        # - objects: entry -> EXIT (so it can be used as the "exit_" for next-chaining)
+        if _has_exit(node):
             assert structure_color is not None
             exit_marker = emit_exit_marker(entry, node, color=structure_color)
-            link(
-                exit_,
-                exit_marker,
-                f"exit {_exit_display_name(node)}",
-                color=structure_color,
-            )
+
+            if exit_ != entry:
+                link(exit_, exit_marker, "next", color=structure_color)
+            elif _needs_forced_exit(node):
+                link(entry, exit_marker, "next", color=structure_color)
+
             exit_ = exit_marker
 
         return (entry, exit_)
@@ -505,8 +669,8 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 out.append(x)
         return out
 
-    out_nodes = dedupe(out_nodes)
-    out_edges = dedupe(out_edges)
+    out_nodes[:] = dedupe(out_nodes)
+    out_edges[:] = dedupe(out_edges)
 
     dot_lines.extend("  " + s for s in out_nodes)
     dot_lines.extend("  " + s for s in out_edges)
@@ -535,32 +699,3 @@ def render_with_graphviz(
 
     subprocess.run([exe, f"-T{fmt}", str(dot_path), "-o", str(out_path)], check=True)
     return out_path
-
-
-def apply_svg_background(svg_path: str | Path, *, color: str = "#0F1115") -> None:
-    """
-    Ensure the entire SVG canvas has a background color.
-    Inserts a <rect> immediately after the opening <svg ...> tag.
-    """
-    p = Path(svg_path)
-    text = p.read_text(encoding="utf-8")
-
-    # Already patched?
-    if 'id="__graph_bg__"' in text:
-        return
-
-    svg_start = text.find("<svg")
-    if svg_start == -1:
-        raise ValueError("No <svg> tag found in SVG output")
-
-    svg_tag_end = text.find(">", svg_start)
-    if svg_tag_end == -1:
-        raise ValueError("Malformed <svg> tag in SVG output")
-
-    insert = (
-        f'\n  <rect id="__graph_bg__" x="0" y="0" width="100%" height="100%" '
-        f'fill="{color}"/>\n'
-    )
-
-    text = text[: svg_tag_end + 1] + insert + text[svg_tag_end + 1 :]
-    p.write_text(text, encoding="utf-8")

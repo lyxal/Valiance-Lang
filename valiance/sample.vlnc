@@ -1,6 +1,7 @@
-$x = parseInt(stdlib.readline()) or(0)
-if ($x 5 <) {
-  println("x is less than 5")
-} else {
-  println("x was not less than 5")
+object[T] Stack {
+  $items = []
+  define push(item: T) {$items: append($item)}
 }
+
+$myStack = Stack[Number]
+$myStack push(6)

@@ -25,6 +25,7 @@ class TokenType(enum.Enum):
     EAGER = "eager"
     ELSE = "else"
     ENUM = "enum"
+    FIELD = "field"
     FN = "fn"
     FOREACH = "foreach"
     HANDLE = "handle"

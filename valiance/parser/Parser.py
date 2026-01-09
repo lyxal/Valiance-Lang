@@ -599,6 +599,7 @@ class Parser:
                     # Restore any popped tokens
                     self.tokens = popped_tokens + self.tokens
                     return False
+
         # Restore any popped tokens
         self.tokens = popped_tokens + self.tokens
         return True
@@ -938,7 +939,7 @@ class Parser:
             Identifier: The parsed identifier fragment.
         """
 
-        identifier = Identifier()
+        identifier = Identifier(self.tokens[0].location)
         while self.head_in(
             *identifier_set,
             TokenType.WORD,
@@ -1273,7 +1274,7 @@ class Parser:
             # Get the name and type of the parameter
             # Note that name may be empty
 
-            parameter_name = self.parse_identifier()
+            parameter_name = self.parse_identifier_fragment()
             parameter_type: VType
             if self.head_equals(TokenType.COLON):
                 self.discard()
@@ -1377,6 +1378,20 @@ class Parser:
         self.eat(TokenType.RIGHT_PAREN)
 
         return (parameters, group_wrap(condition))
+
+    def parse_generics(self) -> list[VType]:
+        return self.parse_items(
+            TokenType.LEFT_SQUARE,
+            TokenType.COMMA,
+            TokenType.RIGHT_SQUARE,
+            lambda: VTypes.type_name_to_vtype(
+                self.parse_identifier(), ([], []), [], []
+            ),
+            lambda t: isinstance(t, VTypes.ErrorType),
+            lambda _: VTypes.ErrorType(),
+            singleton=True,
+            validate=None,
+        )
 
     class NumberParser(ParserStrategy):
         name: str = "Number"
@@ -1545,7 +1560,7 @@ class Parser:
                     "Parsing element argument, head token: %s",
                     self.parser.head(),
                 )
-                name = Identifier("")
+                name = Identifier(location=self.parser.tokens[0].location)
                 args: list[ASTNode] = []
                 if self.parser.lookahead_pattern_equals(
                     [
@@ -1734,18 +1749,7 @@ class Parser:
             generics: list[VTypes.VType] = []
 
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
-                generics = self.parser.parse_items(
-                    TokenType.LEFT_SQUARE,
-                    TokenType.COMMA,
-                    TokenType.RIGHT_SQUARE,
-                    lambda: VTypes.type_name_to_vtype(
-                        self.parser.parse_identifier(), ([], []), [], []
-                    ),
-                    lambda t: isinstance(t, VTypes.ErrorType),
-                    lambda _: VTypes.ErrorType(),
-                    singleton=True,
-                    validate=None,
-                )
+                generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
             parameters: list[Parameter] = []
@@ -1806,7 +1810,9 @@ class Parser:
         def parse(self) -> ASTNode:
             variable_token = self.parser.pop()
 
-            name_components: list[Identifier] = [Identifier()]
+            name_components: list[Identifier] = [
+                Identifier(self.parser.tokens[0].location)
+            ]
 
             while self.parser.head_in(
                 TokenType.WORD,
@@ -1833,7 +1839,7 @@ class Parser:
                             self.parser.head(),
                         )
                         break
-                    name_components.append(Identifier())
+                    name_components.append(Identifier(self.parser.tokens[0].location))
                 else:
                     name_components[-1].index = self.parser.parse_index()
                     if not self.parser.head_equals(TokenType.DOT, care_about_eof=False):
@@ -1842,6 +1848,7 @@ class Parser:
             variable_name: Identifier = name_components.pop()
             for component in reversed(name_components):
                 variable_name = Identifier(
+                    location=component.location,
                     name=component.name,
                     index=component.index,
                     property=variable_name,
@@ -2105,24 +2112,12 @@ class Parser:
             self.parser.eat_whitespace()
 
             generics: list[VTypes.VType] = []
+
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
-                generics = self.parser.parse_items(
-                    TokenType.LEFT_SQUARE,
-                    TokenType.COMMA,
-                    TokenType.RIGHT_SQUARE,
-                    lambda: VTypes.type_name_to_vtype(
-                        self.parser.parse_identifier(), ([], []), [], []
-                    ),
-                    lambda t: isinstance(t, VTypes.ErrorType),
-                    lambda _: VTypes.ErrorType(),
-                    singleton=True,
-                    validate=None,
-                )
+                generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
             self.parser.eat_whitespace()
-
-            print("Getting define name", self.parser.head())
 
             name = self.parser.parse_identifier()
             parameters: list[Parameter] = []
@@ -2152,3 +2147,147 @@ class Parser:
                 returns,
                 body,
             )
+
+    class ObjectParser(ParserStrategy):
+        name: str = "Object"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.OBJECT)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()
+
+            generics: list[VType] = []
+            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                generics = self.parser.parse_generics()
+                self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            self.parser.eat_whitespace()
+
+            object_name = self.parser.parse_identifier()
+
+            default_constructor: list[tuple[Parameter, Optional[ASTNode]]] | None = None
+            if self.parser.head_equals(TokenType.LEFT_BRACE):
+                # Parse default constructor
+                pass
+
+            trait_implemented: VType | None = None
+            if self.parser.head_equals(TokenType.AS):
+                # Parse trait impl
+                pass
+
+            if default_constructor and trait_implemented:
+                # If there is a default constructor, this object will be analysed
+                # as if it were a normal object. BUT, still add an error
+                self.parser.add_error(
+                    "Cannot have default constructor and trait implementation at the same time",
+                    location_token,
+                )
+                trait_implemented = None
+
+            fields: list[FieldNode] = []
+            members: list[MemberNode] = []
+            methods: list[DefineNode] = []
+
+            if not self.parser.eat(TokenType.LEFT_BRACE):
+                self.parser.sync(TokenType.RIGHT_BRACE)
+                return ErrorNode(location_token.location, location_token)
+
+            # Manually parse until RIGHT_BRACE because just normal
+            # parse_block does not capture the semantic details
+            # of an object definition
+            while not self.parser.head_equals(TokenType.RIGHT_BRACE):
+                # Store whether the next member/field/method is visibility modified.
+                visibility_modifier: Visibility | None = None
+                if self.parser.head_in(
+                    TokenType.PRIVATE, TokenType.READABLE, TokenType.PUBLIC
+                ):
+                    visibility_modifier = Visibility(self.parser.pop().value)
+
+                if self.parser.head_equals(TokenType.FIELD):
+
+                    if trait_implemented:
+                        self.parser.add_error(
+                            "Cannot define new field in trait implementation."
+                        )
+                    field_name = self.parser.parse_identifier_fragment()
+                    self.parser.eat(TokenType.COLON)
+                    field_type = self.parser.parse_type()
+                    fields.append(
+                        FieldNode(
+                            field_name.location,
+                            visibility_modifier or Visibility.READABLE,
+                            field_name,
+                            field_type,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.VARIABLE):
+                    if trait_implemented:
+                        self.parser.add_error(
+                            "Cannot declare/set members in trait implementation"
+                        )
+                    variable_node = self.parser.VariableParser(self.parser).parse()
+                    if not trait_implemented and not isinstance(
+                        variable_node, VariableSetNode
+                    ):
+                        # Only report an error if it's plausible for the error to exist
+                        self.parser.add_error(
+                            "Member must be given value in object definition",
+                            variable_node.location,
+                        )
+                    assert isinstance(variable_node, VariableSetNode)
+                    members.append(
+                        MemberNode(
+                            variable_node.location,
+                            visibility_modifier or Visibility.READABLE,
+                            variable_node.name,
+                            variable_node.value,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.DEFINE):
+                    method = self.parser.DefineParser(self.parser).parse()
+                    if visibility_modifier == Visibility.READABLE:
+                        self.parser.add_error(
+                            "Object method can only be public or private. A 'readable' method makes no sense",
+                            method.location,
+                        )
+                    assert isinstance(method, DefineNode)
+                    method = replace(
+                        method, visibility=visibility_modifier or Visibility.PUBLIC
+                    )
+                    methods.append(method)
+                elif self.parser.SkipTokenParser(self.parser).can_parse():
+                    self.parser.discard()
+                else:
+                    self.parser.add_error(
+                        f"Unexpected item in ~~bagging area~~ object definition. Expected field/member/define. Found {self.parser.head()}",
+                        self.parser.head().location,
+                    )
+                    self.parser.sync(
+                        TokenType.RIGHT_BRACE,
+                        TokenType.VARIABLE,
+                        TokenType.FIELD,
+                        TokenType.PUBLIC,
+                        TokenType.READABLE,
+                        TokenType.PRIVATE,
+                        TokenType.DEFINE,
+                    )
+            self.parser.eat(TokenType.RIGHT_BRACE)
+            if trait_implemented:
+                return ObjectTraitImplNode(
+                    location_token.location,
+                    generics,
+                    object_name,
+                    trait_implemented,
+                    methods,
+                )
+            else:
+                return ObjectDefinitionNode(
+                    location_token.location,
+                    generics,
+                    object_name,
+                    fields,
+                    members,
+                    default_constructor,
+                    methods,
+                )
