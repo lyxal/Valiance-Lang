@@ -127,6 +127,7 @@ class DefineNode(ASTNode):
 
     generics: list[VType]
     name: Identifier
+    element_tags: list[ElementTag]
     parameters: list[Parameter]
     output: list[VType]
     body: ASTNode

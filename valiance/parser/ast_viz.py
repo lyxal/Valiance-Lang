@@ -16,6 +16,7 @@ from valiance.parser.AST import (
     Parameter,
 )
 from valiance.compiler_common.Identifier import Identifier
+from valiance.vtypes.VTypes import DataTag, ElementTag, NegateElementTag
 
 
 # ---- dark theme ----
@@ -115,6 +116,15 @@ def _pretty_scalar(val: Any) -> str:
     enum_value = getattr(val, "value", None)
     if isinstance(enum_value, str):
         return _short(enum_value)
+
+    if isinstance(val, ElementTag):
+        return _short("+ " + val.name.name)
+
+    if isinstance(val, NegateElementTag):
+        return _short("- " + val.name.name)
+
+    if isinstance(val, DataTag):
+        return _short("#" + val.name.name + f" (depth={val.depth})")
 
     if isinstance(val, Identifier):
         return _short(_ident_to_str(val))
@@ -437,6 +447,16 @@ def _container_table_label(node: ASTNode) -> str:
                     else ""
                 )
                 rows.append((name.capitalize(), cell))
+                continue
+
+            # DefineNode.element_tags: join on " + "
+            if name == "element_tags" and isinstance(v, list):
+                rows.append(
+                    (
+                        name.capitalize(),
+                        _html_escape(" ".join(_pretty_scalar(t) for t in v)),
+                    )
+                )
                 continue
 
             if isinstance(v, (list, tuple)) and any(

@@ -2132,6 +2132,17 @@ class Parser:
                 if not self.parser.eat(TokenType.RIGHT_PAREN):
                     self.parser.sync(TokenType.EQUALS, TokenType.LEFT_BRACE)
 
+            element_tags: list[VTypes.ElementTag] = []
+            if self.parser.head_equals(TokenType.COLON):
+                self.parser.pop()
+                while self.parser.head_equals(TokenType.WORD):
+                    tag_name = self.parser.parse_identifier()
+                    element_tags.append(VTypes.ElementTag(name=tag_name))
+                    if self.parser.head_equals(TokenType.PLUS):
+                        self.parser.pop()
+                    else:
+                        break
+
             returns: list[VTypes.VType] = []
             if self.parser.head_equals(TokenType.ARROW):
                 self.parser.eat(TokenType.ARROW)
@@ -2148,6 +2159,7 @@ class Parser:
                 location_token.location,
                 generics,
                 name,
+                element_tags,
                 parameters,
                 returns,
                 body,
@@ -2217,8 +2229,8 @@ class Parser:
 
             trait_implemented: VType | None = None
             if self.parser.head_equals(TokenType.AS):
-                # Parse trait impl
-                pass
+                self.parser.discard()
+                trait_implemented = self.parser.parse_type()
 
             if default_constructor and trait_implemented:
                 # If there is a default constructor, this object will be analysed
@@ -2253,7 +2265,8 @@ class Parser:
                     self.parser.eat_whitespace()
                     if trait_implemented:
                         self.parser.add_error(
-                            "Cannot define new field in trait implementation."
+                            "Cannot define new field in trait implementation.",
+                            location_token.location,
                         )
                     field_name = self.parser.parse_identifier_fragment()
                     self.parser.eat(TokenType.COLON)
@@ -2270,7 +2283,8 @@ class Parser:
                 elif self.parser.head_equals(TokenType.VARIABLE):
                     if trait_implemented:
                         self.parser.add_error(
-                            "Cannot declare/set members in trait implementation"
+                            "Cannot declare/set members in trait implementation",
+                            location_token.location,
                         )
                     variable_node = self.parser.VariableParser(self.parser).parse()
                     if not trait_implemented and not isinstance(
