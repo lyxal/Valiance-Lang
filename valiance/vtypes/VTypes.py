@@ -35,7 +35,6 @@ class VType(ABC):
         pass
 
     def formatthis(self):
-        print(self)
         # Data tags is a space separated list of tag names
         data_tags_str = " ".join("#" + tag.name.name for tag in self.data_tags)
         # Element tags is a space separated list of tag names, with negation if applicable

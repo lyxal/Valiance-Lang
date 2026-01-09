@@ -137,7 +137,14 @@ $brainrot = "6 7"
   - Basically hashmaps.
   - Keys can be any value though.
  - Type = `Dictionary[<KeyType> -> <ValueType>]`
-- Syntax = `[key = value]`
+
+- Instead of special syntax, constructed from a list of tuples.
+- Example:
+
+```
+[("a", 1), ("b", 2), ("c", 3)] Dictionary
+#? Dictionary[String -> Number]
+```
 
 ## 3.5. None
 - A value representing the absence of any other values.
@@ -2443,6 +2450,116 @@ tag disjoin #empty #nonempty
   #sorted
 }
 ```
+
+## 19.8. Data Tag Validation
+- Say you want to model a `Vector3`.
+- You might write:
+
+```vlnc
+object Vector3 {
+  field x: Number
+  field y: Number
+  field z: Number
+  define Vector3($x: Number, $y: Number, $z: Number) {}
+  define Vector3(:Number+) {
+    assert {length 3 ==}
+    $(x, y, z) = ~[0, 1, 2]
+  }
+  define asList -> Number+ {[$x, $y, $z]}
+  define cross(other: Vector3) -> Vector3 {
+    Vector3(
+	  {$y $other.z *} {$z $other.y *} -,
+	  {$z $other.x *} {$x $other.z *} -,
+	  {$x $other.y *} {$y $other.x *} -
+	)
+  }
+}
+
+Vector3(2, 3, 4) Vector3(5, 6, 7) cross
+#? Vector3(-3, 6, -3)
+```
+
+- But then you'd also need to redefine all of the other numerical operations:
+
+```
+define +(other: Vector3) -> Vector3 {
+  [$x, $y, $z] $other asList +
+  Vector3
+}
+...
+```
+
+- That's rather tedious.
+- Instead, you may think that tags are a good fit:
+
+```
+tag constructed #Vector3
+@tagdef define cross(lhs: #Vector3 Number+, rhs: #Vector3 Number+) -> #Vector3 Number+ {
+  fork: (
+    correspond: (rotate(1), rotate(-1))
+    correspond: (rotate(-1), rotate(1))
+  )
+  both: *
+  -
+  #? Automatically a #Vector3 by tag propagation
+}
+
+[2, 3, 4] #Vector3
+[5, 6, 7] #Vector3
+cross
+
+#? #Vector3 Number+ [-3, 6, -3]
+```
+
+- However, there's a new problem:
+
+```
+[1, 2, 3, 4] #Vector3
+"a string!" #Vector3
+```
+
+- That's semantically invalid, but Valiance will let you do that without any problems.
+- Tags are designed to be able to be added without any checks - requiring verification that a `#sorted` list is actually sorted defeats the purpose. If you have a method that sorts and then adds `#sorted`, you don't want to verify what's just been done.
+- However, there's clearly a need to allow _some_ verification.
+- `define #${tagname}` allows for tag verification
+
+```
+define #${tagname}(${arg}) {${body}}
+```
+
+- When `tagname` is applied to a value, it will run `body`. Note that if a value does not match any `arg`, then there's a compiler error.
+- If `body` exits without panicking, the tag is applied.
+- You can have multple overloads of tag verification.
+- `#Vector3` example:
+
+```
+define #Vector3(:Number+) {
+  assert {length 3 ==}
+}
+```
+
+- Whenever `#Vector3` is applied, the verification is executed.
+
+```
+[1, 2, 3] #Vector3 #? Valid!
+[1, 2, 3, 4] #Vector3 #? Runtime error.
+"a string!" #Vector3 #? Compile error
+```
+
+- If no verifications are defined, the tag is always added. This makes it so that you can freely specify if a tag needs to be verified.
+
+### 19.8.1. An Interesting Side Note
+
+- While you may not want to validate the contents of a value before tag application, you may want to verify the type.
+- For example, `5 #sorted` is semantically meaningless, and can be cleanly caught without runtime overhead. 
+- But `[5, 1, 3] #sorted`, though semantically invalid, _would_ incur runtime overhead if it's contents were verified. Given `#sorted` is supposed to enable runtime optimisations based on information that's otherwise expensive to compute, sortedness verification would be a waste.
+- So what you can do is:
+
+```
+define[T] #sorted(:T+) {}
+```
+
+- This makes it so that the tag can only be applied to lists without needing to do any contents verification.
 
 # 19.a. Element Tags
 

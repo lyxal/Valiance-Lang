@@ -179,6 +179,17 @@ def _is_param_default_pair(x: Any) -> bool:
     )
 
 
+def _is_field_default_pair(x: Any) -> bool:
+    # default_constructor: list[tuple[FieldNode, Optional[ASTNode]]]
+    return (
+        isinstance(x, tuple)
+        and len(x) == 2
+        and isinstance(x[0], ASTNode)
+        and type(x[0]).__name__ == "FieldNode"
+        and (x[1] is None or isinstance(x[1], ASTNode))
+    )
+
+
 def _param_sig(p: Parameter) -> str:
     name = _ident_to_str(getattr(p, "name", "<anon>"))
     type_s = _pretty_scalar(getattr(p, "type_", None))
@@ -190,6 +201,32 @@ def _param_sig(p: Parameter) -> str:
     if cast is not None:
         s += f" as {_pretty_scalar(cast)}"
     return s
+
+
+def _field_sig(field_node: Any) -> str:
+    """
+    FieldNode: visibility, name, type_
+    Display: "<visibility> <name>: <type>" (visibility omitted if missing)
+    """
+    vis = getattr(field_node, "visibility", None)
+    vis_s = _pretty_scalar(vis) if vis is not None else ""
+
+    name = _ident_to_str(getattr(field_node, "name", "<field>"))
+    type_s = _pretty_scalar(getattr(field_node, "type_", None))
+
+    left = f"{vis_s} {name}".strip()
+    return f"{left}: {type_s}" if type_s else left
+
+
+def _member_sig(member_node: Any) -> str:
+    """
+    MemberNode: visibility, name, value
+    Display: "<visibility> <name>" (value is shown via edge/signature elsewhere)
+    """
+    vis = getattr(member_node, "visibility", None)
+    vis_s = _pretty_scalar(vis) if vis is not None else ""
+    name = _ident_to_str(getattr(member_node, "name", "<member>"))
+    return f"{vis_s} {name}".strip()
 
 
 def _summarize_named_ast_pairs(pairs: list[tuple[Identifier, ASTNode]]) -> str:
@@ -221,16 +258,40 @@ def _summarize_param_default_pairs(
     return "<BR ALIGN='LEFT'/>".join(bullet_lines)
 
 
+def _summarize_field_default_pairs(pairs: list[tuple[Any, Optional[ASTNode]]]) -> str:
+    items: list[str] = []
+    for fld, default in pairs[:MAX_INLINE_LIST_ITEMS]:
+        if default is None:
+            items.append(_field_sig(fld))
+        else:
+            items.append(f"{_field_sig(fld)} = {_ast_signature(default)}")
+
+    more = len(pairs) - len(items)
+    bullet_lines = [f"• {_html_escape(s)}" for s in items]
+    if more > 0:
+        bullet_lines.append(f"• … (+{more} more)")
+    return "<BR ALIGN='LEFT'/>".join(bullet_lines)
+
+
 def _summarize_sequence(seq: list[Any]) -> str:
     if seq and all(_is_named_ast_pair(x) for x in seq):
         return _summarize_named_ast_pairs(seq)  # type: ignore[arg-type]
     if seq and all(_is_param_default_pair(x) for x in seq):
         return _summarize_param_default_pairs(seq)  # type: ignore[arg-type]
+    if seq and all(_is_field_default_pair(x) for x in seq):
+        return _summarize_field_default_pairs(seq)  # type: ignore[arg-type]
 
     items: list[str] = []
     for x in seq[:MAX_INLINE_LIST_ITEMS]:
         if isinstance(x, ASTNode):
-            items.append(_ast_signature(x))
+            # Special-case FieldNode / MemberNode signatures so visibility appears in summaries too
+            tn = type(x).__name__
+            if tn == "FieldNode":
+                items.append(_field_sig(x))
+            elif tn == "MemberNode":
+                items.append(_member_sig(x))
+            else:
+                items.append(_ast_signature(x))
         elif _is_named_ast_pair(x):
             k, v = x
             items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
@@ -238,6 +299,11 @@ def _summarize_sequence(seq: list[Any]) -> str:
             p, d = x
             items.append(
                 _param_sig(p) if d is None else f"{_param_sig(p)} = {_ast_signature(d)}"
+            )
+        elif _is_field_default_pair(x):
+            f, d = x
+            items.append(
+                _field_sig(f) if d is None else f"{_field_sig(f)} = {_ast_signature(d)}"
             )
         else:
             items.append(_pretty_scalar(x))
@@ -270,6 +336,14 @@ def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNo
                 elif isinstance(a, Parameter) and (b is None or isinstance(b, ASTNode)):
                     if isinstance(b, ASTNode):
                         yield (f"{field_name}[{i}] {_param_sig(a)}.default", b)
+                elif (
+                    isinstance(a, ASTNode)
+                    and type(a).__name__ == "FieldNode"
+                    and (b is None or isinstance(b, ASTNode))
+                ):
+                    # Only link to the default value AST (FieldNode itself is already in 'fields')
+                    if isinstance(b, ASTNode):
+                        yield (f"{field_name}[{i}] {_field_sig(a)}.default", b)
 
 
 def _has_ast_children(node: ASTNode) -> bool:
@@ -290,6 +364,8 @@ def _has_ast_children(node: ASTNode) -> bool:
                 if _is_named_ast_pair(item):
                     return True
                 if _is_param_default_pair(item) and item[1] is not None:
+                    return True
+                if _is_field_default_pair(item) and item[1] is not None:
                     return True
                 if (
                     isinstance(item, tuple)
@@ -366,6 +442,7 @@ def _container_table_label(node: ASTNode) -> str:
                 isinstance(x, ASTNode)
                 or _is_named_ast_pair(x)
                 or _is_param_default_pair(x)
+                or _is_field_default_pair(x)
                 for x in v
             ):
                 if name in INLINE_AST_LIST_FIELD_NAMES:
@@ -401,7 +478,17 @@ def _container_table_label(node: ASTNode) -> str:
 
 def _simple_box_label(node: ASTNode) -> str:
     parts = [type(node).__name__]
+
     if is_dataclass(node):
+        # Special-case Field/Member nodes so the small box shows visibility too.
+        tn = type(node).__name__
+        if tn == "FieldNode":
+            parts.append(_field_sig(node))
+            return "\\n".join(_html_escape(p) for p in parts)
+        if tn == "MemberNode":
+            parts.append(_member_sig(node))
+            return "\\n".join(_html_escape(p) for p in parts)
+
         for f in fields(node):
             if f.name in ("location",):
                 continue
@@ -416,6 +503,7 @@ def _simple_box_label(node: ASTNode) -> str:
                 parts.append(f"{f.name}={_ident_to_str(v)}")
             elif isinstance(v, (str, int, float, bool)):
                 parts.append(f"{f.name}={v}")
+
     return "\\n".join(_html_escape(p) for p in parts)
 
 
@@ -455,6 +543,14 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         "#00BCD4",  # cyan
         "#FF00FF",  # magenta
         "#7FFF00",  # chartreuse
+        "#0B3C5D",  # very dark navy
+        "#641E16",  # deep maroon
+        "#145A32",  # dark forest green
+        "#7D6608",  # dark gold
+        "#4A235A",  # deep violet
+        "#0E6251",  # dark teal
+        "#784212",  # dark brown-orange
+        "#1B2631",  # near-black blue-gray
     ]
 
     out_nodes.append(
@@ -519,7 +615,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         )
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
-        # IMPORTANT: keep constraint=true (default) so EXIT nodes stay near their structure
+        # keep constraint=true (default) so EXIT nodes stay near their structure
         out_edges.append(f'{a} -> {b} [style=dotted, color="{color}", arrowhead=none];')
 
     def emit_exit_marker(entry_id: str, node: ASTNode, *, color: str) -> str:
@@ -633,8 +729,6 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                         exit_ = c_exit
 
         # EXIT marker: continuation of 'next'
-        # - sequential structures: last node's exit -> EXIT
-        # - objects: entry -> EXIT (so it can be used as the "exit_" for next-chaining)
         if _has_exit(node):
             assert structure_color is not None
             exit_marker = emit_exit_marker(entry, node, color=structure_color)
@@ -652,7 +746,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
 
     dot_lines = [
         "digraph AST {",
-        f"  rankdir={rankdir};",
+        f"  rankdir=TB;",
         f'  graph [bgcolor="{BG}", fontname="Consolas"];',
         f'  node [fontname="Consolas", fontcolor="{FG}"];',
         f'  edge [fontname="Consolas", fontcolor="{MUTED}", color="{MUTED}"];',

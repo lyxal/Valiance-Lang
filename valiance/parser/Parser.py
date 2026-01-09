@@ -1264,7 +1264,6 @@ class Parser:
             self.eat(TokenType.LEFT_PAREN)
 
         if self.head_equals(TokenType.RIGHT_PAREN):
-            self.discard()
             return parameters
 
         # Track the number of anonymous generics in this parameter list
@@ -1480,6 +1479,12 @@ class Parser:
             location_token = self.parser.head()
 
             name = self.parser.parse_identifier(*ELEMENT_TOKENS)
+
+            if name.name == "=":
+                self.parser.add_error(
+                    "Element name cannot be '='.", location_token.location
+                )
+                return ErrorNode(location_token.location, location_token)
 
             # Handle potential type arguments for the element
             args: list[VTypes.VType] = []
@@ -2166,10 +2171,49 @@ class Parser:
 
             object_name = self.parser.parse_identifier()
 
-            default_constructor: list[tuple[Parameter, Optional[ASTNode]]] | None = None
-            if self.parser.head_equals(TokenType.LEFT_BRACE):
-                # Parse default constructor
-                pass
+            default_constructor: list[tuple[FieldNode, Optional[ASTNode]]] | None = None
+            if self.parser.head_equals(TokenType.LEFT_PAREN):
+                default_constructor = []
+                self.parser.eat(TokenType.LEFT_PAREN)
+                while not self.parser.head_equals(TokenType.RIGHT_PAREN):
+                    visibility_modifier: Visibility | None = None
+                    if self.parser.head_in(
+                        TokenType.PRIVATE, TokenType.READABLE, TokenType.PUBLIC
+                    ):
+                        visibility_modifier = Visibility(self.parser.pop().value)
+                    self.parser.eat(TokenType.VARIABLE)
+                    self.parser.eat_whitespace()
+                    field_name = self.parser.parse_identifier_fragment()
+                    if not self.parser.eat(
+                        TokenType.COLON,
+                        f"Expected type after field name {field_name.name}",
+                    ):
+                        self.parser.sync(
+                            TokenType.EQUALS, TokenType.COMMA, TokenType.RIGHT_PAREN
+                        )
+                        field_type = VTypes.ErrorType()
+                    else:
+                        field_type = self.parser.parse_type()
+                    field_value: ASTNode | None = None
+                    if self.parser.head_equals(TokenType.EQUALS):
+                        self.parser.eat(TokenType.EQUALS)
+                        field_value = self.parser.parse_next()
+                    default_constructor.append(
+                        (
+                            FieldNode(
+                                field_name.location,
+                                visibility_modifier or Visibility.READABLE,
+                                field_name,
+                                field_type,
+                            ),
+                            field_value,
+                        )
+                    )
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
+                    else:
+                        break
+                self.parser.eat(TokenType.RIGHT_PAREN)
 
             trait_implemented: VType | None = None
             if self.parser.head_equals(TokenType.AS):
@@ -2205,13 +2249,15 @@ class Parser:
                     visibility_modifier = Visibility(self.parser.pop().value)
 
                 if self.parser.head_equals(TokenType.FIELD):
-
+                    self.parser.discard()
+                    self.parser.eat_whitespace()
                     if trait_implemented:
                         self.parser.add_error(
                             "Cannot define new field in trait implementation."
                         )
                     field_name = self.parser.parse_identifier_fragment()
                     self.parser.eat(TokenType.COLON)
+                    self.parser.eat_whitespace()
                     field_type = self.parser.parse_type()
                     fields.append(
                         FieldNode(
@@ -2235,15 +2281,17 @@ class Parser:
                             "Member must be given value in object definition",
                             variable_node.location,
                         )
-                    assert isinstance(variable_node, VariableSetNode)
-                    members.append(
-                        MemberNode(
-                            variable_node.location,
-                            visibility_modifier or Visibility.READABLE,
-                            variable_node.name,
-                            variable_node.value,
+                    else:
+                        # assert for type checker
+                        assert isinstance(variable_node, VariableSetNode)
+                        members.append(
+                            MemberNode(
+                                variable_node.location,
+                                visibility_modifier or Visibility.READABLE,
+                                variable_node.name,
+                                variable_node.value,
+                            )
                         )
-                    )
                 elif self.parser.head_equals(TokenType.DEFINE):
                     method = self.parser.DefineParser(self.parser).parse()
                     if visibility_modifier == Visibility.READABLE:

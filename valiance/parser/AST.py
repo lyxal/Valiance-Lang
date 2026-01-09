@@ -189,7 +189,7 @@ class ObjectDefinitionNode(ASTNode):
         FieldNode
     ]  # Must be set by either default constructor or sub-constructors
     members: list[MemberNode]  # Given a default value by the object.
-    default_constructor: list[tuple[Parameter, Optional[ASTNode]]] | None
+    default_constructor: list[tuple[FieldNode, Optional[ASTNode]]] | None
     methods: list[DefineNode]
 
 

@@ -1,7 +1,1 @@
-object[T] Stack {
-  $items = []
-  define push(item: T) {$items: append($item)}
-}
-
-$myStack = Stack[Number]
-$myStack push(6)
+["a" = 1, "b" = 2, "c" = 3]
