@@ -123,16 +123,13 @@ def is_expressionable(nodes: list[ASTNode]) -> bool:
     Returns:
         bool: Whether the nodes can be treated as an expression
     """
-
-    if isinstance(nodes, GroupNode):
-        nodes = nodes.elements
-
     for node in nodes:
+
         if isinstance(node, GroupNode):
             for inner_node in node.elements:
                 if not is_expressionable([inner_node]):
                     return False
-        if not isinstance(
+        elif not isinstance(
             node,
             (
                 LiteralNode,
@@ -1073,9 +1070,14 @@ class Parser:
 
         left = self.parse_primary_type()
 
+        if self.tokens[0].type == TokenType.EOF:
+            return left
+
         postfix_modifiers: list[Token] = []
 
-        if self.lookahead_equals([TokenType.PLUS, TokenType.VARIABLE]):
+        if self.lookahead_equals(
+            [TokenType.PLUS, TokenType.VARIABLE], care_about_eof=False
+        ):
             self.eat(TokenType.PLUS)
             var_token = self.pop()
             left = VTypes.ExactRankType(left, var_token.value)
@@ -1087,6 +1089,7 @@ class Parser:
                 TokenType.QUESTION,
                 TokenType.NUMBER,
                 TokenType.EXCLAMATION,
+                care_about_eof=False,
             ):
                 if self.head_equals(TokenType.NUMBER):
                     number = self.pop()
@@ -1199,7 +1202,7 @@ class Parser:
             right_type_args: list[VTypes.VType] = []
 
             # Parse type arguments if present
-            if self.head_equals(TokenType.LEFT_SQUARE):
+            if self.head_equals(TokenType.LEFT_SQUARE, care_about_eof=False):
                 self.eat(TokenType.LEFT_SQUARE)
                 # Parse left type arguments
                 while not self.head_equals(TokenType.COLON) and not self.head_equals(
@@ -1223,7 +1226,7 @@ class Parser:
 
             element_tags: list[VTypes.ElementTag] = []
             negate_next = False
-            if self.head_equals(TokenType.COLON):
+            if self.head_equals(TokenType.COLON, care_about_eof=False):
                 self.pop()  # Pop the colon
                 if self.head_equals(TokenType.MINUS):
                     self.pop()  # Pop the MINUS
@@ -2352,4 +2355,121 @@ class Parser:
                     members,
                     default_constructor,
                     methods,
+                )
+
+    class AsParser(ParserStrategy):
+        name: str = "As Expression"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.AS)
+
+        def parse(self) -> ASTNode:
+            as_token = self.parser.pop()  # Pop the 'as' token
+            self.parser.eat_whitespace()
+            type_ = self.parser.parse_type()
+            return SafeTypeCastNode(as_token.location, type_)
+
+    class AsUnsafeParser(ParserStrategy):
+        name: str = "As Unsafe Expression"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.AS_UNSAFE)
+
+        def parse(self) -> ASTNode:
+            as_token = self.parser.pop()  # Pop the 'as_unsafe' token
+            self.parser.eat_whitespace()
+            type_ = self.parser.parse_type()
+            return UnsafeTypeCastNode(as_token.location, type_)
+
+    class ImportParser(ParserStrategy):
+        name: str = "Import Statement"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.IMPORT)
+
+        def parse(self) -> ASTNode:
+            import_token = self.parser.pop()  # Pop the 'import' token
+            self.parser.eat_whitespace()
+            module_name = self.parser.parse_identifier()
+            if not self.parser.head_equals(TokenType.AS):
+                return ModuleImportNode(import_token.location, module_name)
+            self.parser.eat(TokenType.AS)  # Pop the 'as' token
+            self.parser.eat_whitespace()
+            alias_name = self.parser.parse_identifier()
+            return AliasedImportNode(import_token.location, module_name, alias_name)
+
+    class TraitParser(ParserStrategy):
+        name: str = "Trait Definition"
+
+        # Note that traits can implement other traits, just like objects.
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.TRAIT)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'trait' token
+
+            generics: list[VTypes.VType] = []
+
+            if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                generics = self.parser.parse_generics()
+                self.parser.eat(TokenType.RIGHT_SQUARE)
+
+            self.parser.eat_whitespace()
+
+            trait_name = self.parser.parse_identifier()
+
+            parent_trait: VType | None = None
+            if self.parser.head_equals(TokenType.AS):
+                self.parser.discard()
+                self.parser.eat_whitespace()
+                parent_trait = self.parser.parse_type()
+
+            required_methods: list[DefineNode] = []
+            default_methods: list[DefineNode] = []
+
+            if not self.parser.eat(TokenType.LEFT_BRACE):
+                self.parser.sync(TokenType.RIGHT_BRACE)
+                return ErrorNode(location_token.location, location_token)
+
+            # Manually parse until RIGHT_BRACE because just normal
+            # parse_block does not capture the semantic details
+            # of a trait definition
+            while not self.parser.head_equals(TokenType.RIGHT_BRACE):
+                if self.parser.head_equals(TokenType.DEFINE):
+                    method = self.parser.DefineParser(self.parser).parse()
+                    assert isinstance(method, DefineNode)
+                    if isinstance(method.body, AuxiliaryNode):
+                        required_methods.append(method)
+                    else:
+                        default_methods.append(method)
+                elif self.parser.SkipTokenParser(self.parser).can_parse():
+                    self.parser.discard()
+                else:
+                    self.parser.add_error(
+                        f"Unexpected item in trait definition. Expected define. Found {self.parser.head()}",
+                        self.parser.head().location,
+                    )
+                    self.parser.sync(
+                        TokenType.RIGHT_BRACE,
+                        TokenType.DEFINE,
+                    )
+            self.parser.eat(TokenType.RIGHT_BRACE)
+
+            if parent_trait:
+                return TraitImplTraitNode(
+                    location_token.location,
+                    generics,
+                    trait_name,
+                    parent_trait,
+                    required_methods,
+                    default_methods,
+                )
+            else:
+                return TraitNode(
+                    location_token.location,
+                    generics,
+                    trait_name,
+                    required_methods,
+                    default_methods,
                 )

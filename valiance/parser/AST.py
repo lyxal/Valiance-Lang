@@ -210,11 +210,21 @@ class TraitNode(ASTNode):
 
     generics: list[VType]
     name: Identifier
-    parent_traits: list[VType]
-
     # Separate required and default explicitly
     required_methods: list[DefineNode]  # Empty bodies
     default_methods: list[DefineNode]  # With implementations
+
+
+@dataclass(frozen=True)
+class TraitImplTraitNode(ASTNode):
+    """Trait implementation for a trait (trait inheritance)"""
+
+    generics: list[VType]
+    trait_name: Identifier
+    parent_trait: VType
+
+    required_methods: list[DefineNode]
+    default_methods: list[DefineNode]
 
 
 @dataclass(frozen=True)
@@ -323,7 +333,6 @@ class ModuleImportNode(ASTNode):
     """Represents a module import statement"""
 
     module_name: Identifier
-    components: list[Identifier]
 
 
 @dataclass(frozen=True)

@@ -135,6 +135,27 @@ def _pretty_scalar(val: Any) -> str:
     return _short(str(val))
 
 
+def _trait_impl_trait_label(node: ASTNode) -> Optional[str]:
+    """
+    TraitImplTraitNode label: "<trait_name> : <parent_trait>"
+    parent_trait is a VType, displayed via _pretty_scalar (toString()).
+    """
+    if type(node).__name__ != "TraitImplTraitNode":
+        return None
+    if not is_dataclass(node):
+        return None
+
+    trait_name = getattr(node, "trait_name", None)
+    parent_trait = getattr(node, "parent_trait", None)
+
+    if not isinstance(trait_name, Identifier):
+        return None
+    parent_s = _pretty_scalar(parent_trait)
+    if parent_s:
+        return f"{_ident_to_str(trait_name)} : {parent_s}"
+    return _ident_to_str(trait_name)
+
+
 def _ast_signature(node: ASTNode) -> str:
     if isinstance(node, GroupNode):
         try:
@@ -150,12 +171,22 @@ def _ast_signature(node: ASTNode) -> str:
             if not isinstance(v, ASTNode):
                 return f"{cls}({_pretty_scalar(v)})"
 
+        # TraitImplTraitNode: include parent trait in signature
+        impl_lbl = _trait_impl_trait_label(node)
+        if impl_lbl is not None:
+            return f"{cls}({_html_escape(impl_lbl)})"
+
         if hasattr(node, "name"):
             nm = getattr(node, "name", None)
             if isinstance(nm, Identifier):
                 return f"{cls}({_ident_to_str(nm)})"
             if isinstance(nm, str) and nm:
                 return f"{cls}({nm})"
+
+        if hasattr(node, "trait_name"):
+            tn = getattr(node, "trait_name", None)
+            if isinstance(tn, Identifier):
+                return f"{cls}({_ident_to_str(tn)})"
 
         if hasattr(node, "element_name"):
             en = getattr(node, "element_name", None)
@@ -295,7 +326,6 @@ def _summarize_sequence(seq: list[Any]) -> str:
     items: list[str] = []
     for x in seq[:MAX_INLINE_LIST_ITEMS]:
         if isinstance(x, ASTNode):
-            # Special-case FieldNode / MemberNode signatures so visibility appears in summaries too
             tn = type(x).__name__
             if tn == "FieldNode":
                 items.append(_field_sig(x))
@@ -352,7 +382,6 @@ def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNo
                     and type(a).__name__ == "FieldNode"
                     and (b is None or isinstance(b, ASTNode))
                 ):
-                    # Only link to the default value AST (FieldNode itself is already in 'fields')
                     if isinstance(b, ASTNode):
                         yield (f"{field_name}[{i}] {_field_sig(a)}.default", b)
 
@@ -387,10 +416,6 @@ def _has_ast_children(node: ASTNode) -> bool:
     return False
 
 
-def _is_object_definition_node(node: ASTNode) -> bool:
-    return type(node).__name__ == "ObjectDefinitionNode"
-
-
 def _has_direct_astnode_field(node: ASTNode) -> bool:
     if not is_dataclass(node):
         return False
@@ -403,12 +428,22 @@ def _has_direct_astnode_field(node: ASTNode) -> bool:
     return False
 
 
+def _is_forced_exit_scope(node: ASTNode) -> bool:
+    # Scopes that should have an EXIT marker even without a linear "exit_" chain
+    return type(node).__name__ in {
+        "ObjectDefinitionNode",
+        "ObjectTraitImplNode",
+        "TraitNode",
+        "TraitImplTraitNode",
+    }
+
+
 def _has_exit(node: ASTNode) -> bool:
-    return _has_direct_astnode_field(node) or _is_object_definition_node(node)
+    return _has_direct_astnode_field(node) or _is_forced_exit_scope(node)
 
 
 def _needs_forced_exit(node: ASTNode) -> bool:
-    return _is_object_definition_node(node)
+    return _is_forced_exit_scope(node)
 
 
 def _param_to_line(p: Parameter) -> str:
@@ -449,12 +484,12 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
-            # DefineNode.element_tags: join on " + "
+            # DefineNode.element_tags: join on " + " (no surrounding spaces needed; tags include prefix)
             if name == "element_tags" and isinstance(v, list):
                 rows.append(
                     (
                         name.capitalize(),
-                        _html_escape(" ".join(_pretty_scalar(t) for t in v)),
+                        _html_escape(" + ".join(_pretty_scalar(t) for t in v)),
                     )
                 )
                 continue
@@ -501,7 +536,6 @@ def _simple_box_label(node: ASTNode) -> str:
     parts = [type(node).__name__]
 
     if is_dataclass(node):
-        # Special-case Field/Member nodes so the small box shows visibility too.
         tn = type(node).__name__
         if tn == "FieldNode":
             parts.append(_field_sig(node))
@@ -518,21 +552,42 @@ def _simple_box_label(node: ASTNode) -> str:
                 continue
             if isinstance(v, (ASTNode, GroupNode)):
                 continue
+
+            # Show small string-label lists (used by Swap/Dup/Pop)
             if isinstance(v, (list, tuple)):
+                if all(isinstance(x, str) for x in v):
+                    joined = ",".join(v)
+                    parts.append(f"{f.name}=[{joined}]")
                 continue
+
             if isinstance(v, Identifier):
                 parts.append(f"{f.name}={_ident_to_str(v)}")
             elif isinstance(v, (str, int, float, bool)):
                 parts.append(f"{f.name}={v}")
+            else:
+                # e.g. VType / ElementTag-like objects
+                to_string = getattr(v, "toString", None)
+                if callable(to_string):
+                    parts.append(f"{f.name}={_pretty_scalar(v)}")
 
     return "\\n".join(_html_escape(p) for p in parts)
 
 
 def _exit_display_name(node: ASTNode) -> str:
+    # TraitImplTraitNode: "<trait_name> : <parent_trait>"
+    impl = _trait_impl_trait_label(node)
+    if impl is not None:
+        return f"{type(node).__name__}({impl})"
+
     if is_dataclass(node) and hasattr(node, "object_name"):
         on = getattr(node, "object_name", None)
         if isinstance(on, Identifier):
             return f"{type(node).__name__}({_ident_to_str(on)})"
+
+    if is_dataclass(node) and hasattr(node, "trait_name"):
+        tn = getattr(node, "trait_name", None)
+        if isinstance(tn, Identifier):
+            return f"{type(node).__name__}({_ident_to_str(tn)})"
 
     if is_dataclass(node) and hasattr(node, "name"):
         nm = getattr(node, "name", None)
@@ -636,7 +691,6 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         )
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
-        # keep constraint=true (default) so EXIT nodes stay near their structure
         out_edges.append(f'{a} -> {b} [style=dotted, color="{color}", arrowhead=none];')
 
     def emit_exit_marker(entry_id: str, node: ASTNode, *, color: str) -> str:
@@ -727,10 +781,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                             if c_entry is None:
                                 continue
 
-                            short_lbl = lbl.removeprefix(f"{f.name}")
-                            short_lbl = short_lbl.lstrip()
-                            if not short_lbl:
-                                short_lbl = "item"
+                            short_lbl = lbl.removeprefix(f"{f.name}").lstrip() or "item"
                             link(folder, c_entry, short_lbl, color=node_color)
 
                         hidden = len(children) - len(shown)
@@ -767,7 +818,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
 
     dot_lines = [
         "digraph AST {",
-        f"  rankdir=TB;",
+        "  rankdir=TB;",
         f'  graph [bgcolor="{BG}", fontname="Consolas"];',
         f'  node [fontname="Consolas", fontcolor="{FG}"];',
         f'  edge [fontname="Consolas", fontcolor="{MUTED}", color="{MUTED}"];',
