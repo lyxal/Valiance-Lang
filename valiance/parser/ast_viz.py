@@ -86,7 +86,6 @@ def _html_escape(s: str) -> str:
 
 
 def _ident_to_str(ident: Any) -> str:
-    # Identifier.__str__/__repr__ includes properties and indexes (e.g. stdlib.readline)
     return str(ident) if isinstance(ident, Identifier) else str(ident)
 
 
@@ -100,10 +99,6 @@ def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
 
 
 def _pretty_scalar(val: Any) -> str:
-    """
-    Pretty-printer for non-AST scalar-ish values.
-    Prefer toString() if present (VType). Use Enum.value if present.
-    """
     if val is None:
         return ""
     to_string = getattr(val, "toString", None)
@@ -119,10 +114,8 @@ def _pretty_scalar(val: Any) -> str:
 
     if isinstance(val, ElementTag):
         return _short("+ " + val.name.name)
-
     if isinstance(val, NegateElementTag):
         return _short("- " + val.name.name)
-
     if isinstance(val, DataTag):
         return _short("#" + val.name.name + f" (depth={val.depth})")
 
@@ -135,11 +128,93 @@ def _pretty_scalar(val: Any) -> str:
     return _short(str(val))
 
 
+# -------- MatchBranch support --------
+
+
+def _is_match_branch(obj: Any) -> bool:
+    """
+    MatchBranch objects are not dataclasses. Identify by duck-typing:
+    - has a body: ASTNode
+    - class name starts with "Match" and ends with "Branch" (keeps it conservative)
+    """
+    if obj is None:
+        return False
+    if is_dataclass(obj):
+        return False
+    tn = type(obj).__name__
+    if not (tn.startswith("Match") and tn.endswith("Branch")):
+        return False
+    return isinstance(getattr(obj, "body", None), ASTNode)
+
+
+def _match_branch_label(branch: Any) -> str:
+    tn = type(branch).__name__
+    if tn == "MatchExactBranch":
+        vals = getattr(branch, "values", None)
+        if isinstance(vals, list):
+            return f"exact[{len(vals)}]"
+        return "exact"
+    if tn == "MatchIfBranch":
+        return "if"
+    if tn == "MatchPatternBranch":
+        return "pattern"
+    if tn == "MatchAsBranch":
+        name = getattr(branch, "name", None)
+        type_ = getattr(branch, "type_", None)
+        parts: list[str] = []
+        if isinstance(name, Identifier):
+            parts.append(_ident_to_str(name))
+        if type_ is not None:
+            parts.append(_pretty_scalar(type_))
+        inner = ": ".join(parts) if parts else "as"
+        return f"as({inner})"
+    if tn == "MatchDefaultBranch":
+        return "default"
+    return tn.removesuffix("Branch").removeprefix("Match").lower() or tn
+
+
+def _iter_match_branch_children(
+    prefix: str, branch: Any
+) -> Iterable[tuple[str, ASTNode]]:
+    """
+    Yield AST children for a branch object.
+    """
+    tn = type(branch).__name__
+
+    # shared body
+    body = getattr(branch, "body", None)
+    if isinstance(body, ASTNode):
+        yield (f"{prefix}.body", body)
+
+    if tn == "MatchExactBranch":
+        values = getattr(branch, "values", None)
+        if isinstance(values, list):
+            for i, v in enumerate(values):
+                if isinstance(v, ASTNode):
+                    yield (f"{prefix}.values[{i}]", v)
+
+    elif tn == "MatchIfBranch":
+        cond = getattr(branch, "condition", None)
+        if isinstance(cond, ASTNode):
+            yield (f"{prefix}.condition", cond)
+
+    elif tn == "MatchPatternBranch":
+        pat = getattr(branch, "pattern", None)
+        if isinstance(pat, ASTNode):
+            yield (f"{prefix}.pattern", pat)
+
+    elif tn == "MatchAsBranch":
+        # name/type_ are scalar-ish; only body is AST, already handled above
+        pass
+
+    elif tn == "MatchDefaultBranch":
+        pass
+
+
+# -------- core formatting / signature --------
+
+
 def _trait_impl_trait_label(node: ASTNode) -> Optional[str]:
-    """
-    TraitImplTraitNode label: "<trait_name> : <parent_trait>"
-    parent_trait is a VType, displayed via _pretty_scalar (toString()).
-    """
     if type(node).__name__ != "TraitImplTraitNode":
         return None
     if not is_dataclass(node):
@@ -171,10 +246,9 @@ def _ast_signature(node: ASTNode) -> str:
             if not isinstance(v, ASTNode):
                 return f"{cls}({_pretty_scalar(v)})"
 
-        # TraitImplTraitNode: include parent trait in signature
         impl_lbl = _trait_impl_trait_label(node)
         if impl_lbl is not None:
-            return f"{cls}({_html_escape(impl_lbl)})"
+            return f"{cls}({impl_lbl})"
 
         if hasattr(node, "name"):
             nm = getattr(node, "name", None)
@@ -222,7 +296,6 @@ def _is_param_default_pair(x: Any) -> bool:
 
 
 def _is_field_default_pair(x: Any) -> bool:
-    # default_constructor: list[tuple[FieldNode, Optional[ASTNode]]]
     return (
         isinstance(x, tuple)
         and len(x) == 2
@@ -246,10 +319,6 @@ def _param_sig(p: Parameter) -> str:
 
 
 def _field_sig(field_node: Any) -> str:
-    """
-    FieldNode: visibility, name, type_
-    Display: "<visibility> <name>: <type>" (visibility omitted if missing)
-    """
     vis = getattr(field_node, "visibility", None)
     vis_s = _pretty_scalar(vis) if vis is not None else ""
 
@@ -261,10 +330,6 @@ def _field_sig(field_node: Any) -> str:
 
 
 def _member_sig(member_node: Any) -> str:
-    """
-    MemberNode: visibility, name, value
-    Display: "<visibility> <name>" (value is shown via edge/signature elsewhere)
-    """
     vis = getattr(member_node, "visibility", None)
     vis_s = _pretty_scalar(vis) if vis is not None else ""
     name = _ident_to_str(getattr(member_node, "name", "<member>"))
@@ -323,6 +388,17 @@ def _summarize_sequence(seq: list[Any]) -> str:
     if seq and all(_is_field_default_pair(x) for x in seq):
         return _summarize_field_default_pairs(seq)  # type: ignore[arg-type]
 
+    # Special-case match branches (non-dataclass objects)
+    if seq and all(_is_match_branch(x) for x in seq):
+        items = [
+            f"• {_html_escape(_match_branch_label(b))}"
+            for b in seq[:MAX_INLINE_LIST_ITEMS]
+        ]
+        more = len(seq) - min(len(seq), MAX_INLINE_LIST_ITEMS)
+        if more > 0:
+            items.append(f"• … (+{more} more)")
+        return "<BR ALIGN='LEFT'/>".join(items)
+
     items: list[str] = []
     for x in seq[:MAX_INLINE_LIST_ITEMS]:
         if isinstance(x, ASTNode):
@@ -333,6 +409,8 @@ def _summarize_sequence(seq: list[Any]) -> str:
                 items.append(_member_sig(x))
             else:
                 items.append(_ast_signature(x))
+        elif _is_match_branch(x):
+            items.append(_match_branch_label(x))
         elif _is_named_ast_pair(x):
             k, v = x
             items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
@@ -359,12 +437,25 @@ def _summarize_sequence(seq: list[Any]) -> str:
 def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNode]]:
     if value is None:
         return
+
     if isinstance(value, ASTNode):
         yield (field_name, value)
         return
 
+    # MatchBranch objects
+    if _is_match_branch(value):
+        yield from _iter_match_branch_children(field_name, value)
+        return
+
     if isinstance(value, (list, tuple)):
         for i, item in enumerate(value):
+            # list of MatchBranch objects
+            if _is_match_branch(item):
+                yield from _iter_match_branch_children(
+                    f"{field_name}[{i}] {_match_branch_label(item)}", item
+                )
+                continue
+
             if isinstance(item, ASTNode):
                 yield (f"{field_name}[{i}]", item)
             elif isinstance(item, tuple) and len(item) == 2:
@@ -397,9 +488,13 @@ def _has_ast_children(node: ASTNode) -> bool:
         v = getattr(node, f.name, None)
         if isinstance(v, ASTNode):
             return True
+        if _is_match_branch(v):
+            return True
         if isinstance(v, (list, tuple)):
             for item in v:
                 if isinstance(item, ASTNode):
+                    return True
+                if _is_match_branch(item):
                     return True
                 if _is_named_ast_pair(item):
                     return True
@@ -429,12 +524,12 @@ def _has_direct_astnode_field(node: ASTNode) -> bool:
 
 
 def _is_forced_exit_scope(node: ASTNode) -> bool:
-    # Scopes that should have an EXIT marker even without a linear "exit_" chain
     return type(node).__name__ in {
         "ObjectDefinitionNode",
         "ObjectTraitImplNode",
         "TraitNode",
         "TraitImplTraitNode",
+        "MatchNode",
     }
 
 
@@ -484,7 +579,7 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
-            # DefineNode.element_tags: join on " + " (no surrounding spaces needed; tags include prefix)
+            # DefineNode.element_tags: join on " + "
             if name == "element_tags" and isinstance(v, list):
                 rows.append(
                     (
@@ -496,6 +591,7 @@ def _container_table_label(node: ASTNode) -> str:
 
             if isinstance(v, (list, tuple)) and any(
                 isinstance(x, ASTNode)
+                or _is_match_branch(x)
                 or _is_named_ast_pair(x)
                 or _is_param_default_pair(x)
                 or _is_field_default_pair(x)
@@ -553,11 +649,10 @@ def _simple_box_label(node: ASTNode) -> str:
             if isinstance(v, (ASTNode, GroupNode)):
                 continue
 
-            # Show small string-label lists (used by Swap/Dup/Pop)
+            # Show small string-label lists (Swap/Dup/Pop)
             if isinstance(v, (list, tuple)):
                 if all(isinstance(x, str) for x in v):
-                    joined = ",".join(v)
-                    parts.append(f"{f.name}=[{joined}]")
+                    parts.append(f"{f.name}=[{','.join(v)}]")
                 continue
 
             if isinstance(v, Identifier):
@@ -565,7 +660,7 @@ def _simple_box_label(node: ASTNode) -> str:
             elif isinstance(v, (str, int, float, bool)):
                 parts.append(f"{f.name}={v}")
             else:
-                # e.g. VType / ElementTag-like objects
+                # e.g. VType
                 to_string = getattr(v, "toString", None)
                 if callable(to_string):
                     parts.append(f"{f.name}={_pretty_scalar(v)}")
@@ -574,10 +669,9 @@ def _simple_box_label(node: ASTNode) -> str:
 
 
 def _exit_display_name(node: ASTNode) -> str:
-    # TraitImplTraitNode: "<trait_name> : <parent_trait>"
-    impl = _trait_impl_trait_label(node)
-    if impl is not None:
-        return f"{type(node).__name__}({impl})"
+    impl_lbl = _trait_impl_trait_label(node)
+    if impl_lbl is not None:
+        return f"{type(node).__name__}({impl_lbl})"
 
     if is_dataclass(node) and hasattr(node, "object_name"):
         on = getattr(node, "object_name", None)
@@ -780,7 +874,6 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                             c_entry, c_exit = walk(child, node_color)
                             if c_entry is None:
                                 continue
-
                             short_lbl = lbl.removeprefix(f"{f.name}").lstrip() or "item"
                             link(folder, c_entry, short_lbl, color=node_color)
 
@@ -800,7 +893,6 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                     if isinstance(child, GroupNode) and c_exit is not None:
                         exit_ = c_exit
 
-        # EXIT marker: continuation of 'next'
         if _has_exit(node):
             assert structure_color is not None
             exit_marker = emit_exit_marker(entry, node, color=structure_color)

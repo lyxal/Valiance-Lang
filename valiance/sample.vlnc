@@ -1,10 +1,14 @@
-define fizzbuzzFor(x: Number) -> String {
-    $res = ""
-    if ($x 3 divides?) {$res: {"Fizz" +}}
-    if ($x 5 divides?) {$res: {"Buzz" +}}
-    if ($res "" ==) {$res = {$x toString}}
-    $res
+import std
+std.readLine parseInt match {
+  as :Number -> {
+    match {
+      exactly 0 -> "Zero!",
+      exactly 1 -> "One!",
+      if inrange(2, 10) -> "Between two and ten!",
+      _ -> "What kind of number is that?"
+    }
+  },
+  as :None   -> "Not a number!",
 }
 
-range(1, 100) map: fizzbuzzFor
-foreach (s) {println(s)}
+println

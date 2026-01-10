@@ -360,11 +360,51 @@ class IfNode(ASTNode):
     else_branch: ASTNode | None
 
 
+class MatchBranch:
+    body: ASTNode
+
+
+class MatchExactBranch(MatchBranch):
+    def __init__(self, values: list[ASTNode], body: ASTNode):
+        self.values = values
+        self.body = body
+
+
+class MatchIfBranch(MatchBranch):
+    def __init__(self, condition: ASTNode, body: ASTNode):
+        self.condition = condition
+        self.body = body
+
+
+class MatchPatternBranch(MatchBranch):
+    # TODO: Figure out better pattern representation
+    # -> ASTNode isn't rich enough
+    def __init__(self, pattern: ASTNode, body: ASTNode):
+        self.pattern = pattern
+        self.body = body
+
+
+class MatchAsBranch(MatchBranch):
+    def __init__(self, name: Identifier | None, type_: VType | None, body: ASTNode):
+        if name is None and type_ is None:
+            raise ValueError(
+                "At least one of name or type_ must be provided for MatchAsBranch"
+            )
+        self.name = name
+        self.type_ = type_
+        self.body = body
+
+
+class MatchDefaultBranch(MatchBranch):
+    def __init__(self, body: ASTNode):
+        self.body = body
+
+
 @dataclass(frozen=True)
 class MatchNode(ASTNode):
     """Represents a match operation with multiple branches"""
 
-    branches: list[Tuple[ASTNode, ASTNode]]
+    branches: list[MatchBranch]
 
 
 @dataclass(frozen=True)

@@ -355,6 +355,7 @@ class Parser:
 
         while self.head_in(
             TokenType.WHITESPACE,
+            TokenType.NEWLINE,
             eat_whitespace=False,
             care_about_eof=False,
         ):
@@ -2473,3 +2474,170 @@ class Parser:
                     required_methods,
                     default_methods,
                 )
+
+    class MatchExpressionParser(ParserStrategy):
+        name: str = "Match Expression"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.MATCH) and not self.parser.lookahead_equals(
+                [TokenType.MATCH, TokenType.CHANNELS]
+            )
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'match' token
+            if not self.parser.eat(TokenType.LEFT_BRACE):
+                self.parser.sync(TokenType.RIGHT_BRACE)
+                return ErrorNode(location_token.location, location_token)
+
+            branches: list[MatchBranch] = []
+            while not self.parser.head_equals(TokenType.RIGHT_BRACE):
+                # First, verify that the branch type is valid
+                if not self.parser.head_in(
+                    TokenType.EXACTLY,
+                    TokenType.IF,
+                    TokenType.PATTERN,
+                    TokenType.AS,
+                    TokenType.UNDERSCORE,
+                ):
+                    self.parser.add_error(
+                        f"Expected branch type in match expression. Found {self.parser.head()}",
+                        self.parser.head(),
+                    )
+                    self.parser.sync(TokenType.COMMA)
+                    continue
+
+                if self.parser.head_equals(TokenType.EXACTLY):
+                    values: list[ASTNode] = self.parser.parse_items(
+                        TokenType.EXACTLY,
+                        TokenType.COMMA,
+                        TokenType.ARROW,
+                        self.parser.parse_next,
+                        lambda t: not is_expressionable([t]),
+                        lambda t: ErrorNode(t.location, t),
+                        multi_item_wrap=group_wrap,
+                    )
+                    self.parser.eat(TokenType.ARROW)
+                    body = group_wrap(
+                        self.parser.parse_until(
+                            TokenType.COMMA,
+                            TokenType.RIGHT_BRACE,
+                        )
+                    )
+                    if not is_expressionable([body]):
+                        self.parser.add_error(
+                            "Match branch body must be expressionable.",
+                            body.location,
+                        )
+                        body = ErrorNode(body.location, location_token)
+                    branches.append(
+                        MatchExactBranch(
+                            values,
+                            body,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.IF):
+                    self.parser.pop()  # Pop the IF token
+                    condition = group_wrap(self.parser.parse_until(TokenType.ARROW))
+                    self.parser.eat(TokenType.ARROW)
+                    body = group_wrap(
+                        self.parser.parse_until(
+                            TokenType.COMMA,
+                            TokenType.RIGHT_BRACE,
+                        )
+                    )
+                    if not is_expressionable([body]):
+                        self.parser.add_error(
+                            "Match branch body must be expressionable.",
+                            body.location,
+                        )
+                        body = ErrorNode(body.location, location_token)
+                    branches.append(
+                        MatchIfBranch(
+                            condition,
+                            body,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.PATTERN):
+                    self.parser.pop()  # Pop the PATTERN token
+                    # TODO: Dedicated pattern parser
+                    pattern = self.parser.parse_next()
+                    self.parser.eat(TokenType.ARROW)
+                    body = group_wrap(
+                        self.parser.parse_until(
+                            TokenType.COMMA,
+                            TokenType.RIGHT_BRACE,
+                        )
+                    )
+                    if not is_expressionable([body]):
+                        self.parser.add_error(
+                            "Match branch body must be expressionable.",
+                            body.location,
+                        )
+                        body = ErrorNode(body.location, location_token)
+                    branches.append(
+                        MatchPatternBranch(
+                            pattern,
+                            body,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.AS):
+                    self.parser.pop()  # Pop the AS token
+                    name = Identifier()
+                    type_: VType | None = None
+                    if self.parser.head_equals(TokenType.COLON):
+                        self.parser.eat(TokenType.COLON)
+                        type_ = self.parser.parse_type()
+                    else:
+                        name = self.parser.parse_identifier()
+                        if self.parser.head_equals(TokenType.COLON):
+                            self.parser.eat(TokenType.COLON)
+                            type_ = self.parser.parse_type()
+                    self.parser.eat(TokenType.ARROW)
+                    body = group_wrap(
+                        self.parser.parse_until(
+                            TokenType.COMMA,
+                            TokenType.RIGHT_BRACE,
+                        )
+                    )
+                    if not is_expressionable([body]):
+                        self.parser.add_error(
+                            "Match branch body must be expressionable.",
+                            body.location,
+                        )
+                        body = ErrorNode(body.location, location_token)
+                    branches.append(
+                        MatchAsBranch(
+                            name,
+                            type_,
+                            body,
+                        )
+                    )
+                elif self.parser.head_equals(TokenType.UNDERSCORE):
+                    self.parser.pop()  # Pop the UNDERSCORE token
+                    self.parser.eat(TokenType.ARROW)
+                    body = group_wrap(
+                        self.parser.parse_until(
+                            TokenType.COMMA,
+                            TokenType.RIGHT_BRACE,
+                        )
+                    )
+                    if not is_expressionable([body]):
+                        self.parser.add_error(
+                            "Match branch body must be expressionable.",
+                            body.location,
+                        )
+                        body = ErrorNode(body.location, location_token)
+                    branches.append(
+                        MatchDefaultBranch(
+                            body,
+                        )
+                    )
+                else:
+                    raise RuntimeError("Unreachable code in MatchExpressionParser")
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.eat(TokenType.COMMA)
+            self.parser.eat(TokenType.RIGHT_BRACE)
+            return MatchNode(
+                location_token.location,
+                branches,
+            )
