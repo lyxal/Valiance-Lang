@@ -365,39 +365,90 @@ class MatchBranch:
 
 
 class MatchExactBranch(MatchBranch):
-    def __init__(self, values: list[ASTNode], body: ASTNode):
+    def __init__(self, values: list[ASTNode]):
         self.values = values
-        self.body = body
 
 
 class MatchIfBranch(MatchBranch):
-    def __init__(self, condition: ASTNode, body: ASTNode):
+    def __init__(self, condition: ASTNode):
         self.condition = condition
-        self.body = body
 
 
 class MatchPatternBranch(MatchBranch):
-    # TODO: Figure out better pattern representation
-    # -> ASTNode isn't rich enough
-    def __init__(self, pattern: ASTNode, body: ASTNode):
+    def __init__(self, pattern: MatchPattern, predicate: ASTNode | None = None):
         self.pattern = pattern
-        self.body = body
+        self.predicate = predicate
+
+
+# A pattern component class to represent the different parts of a pattern
+
+
+@dataclass(frozen=True)
+class PatternComponent(ABC):
+    pass
+
+
+@dataclass(frozen=True)
+class ASTComponent(PatternComponent):
+    node: ASTNode
+
+
+@dataclass(frozen=True)
+class WildcardComponent(PatternComponent):
+    name: Identifier | None
+
+
+@dataclass(frozen=True)
+class GreedyComponent(PatternComponent):
+    name: Identifier | None
+
+
+# A pattern class to represent different types of patterns
+@dataclass(frozen=True)
+class MatchPattern(ABC):
+    pass
+
+
+@dataclass(frozen=True)
+class StringPattern(MatchPattern):
+    value: ASTNode
+
+
+@dataclass(frozen=True)
+class ListPattern(MatchPattern):
+    elements: Sequence[PatternComponent]
+
+
+@dataclass(frozen=True)
+class TuplePattern(MatchPattern):
+    elements: Sequence[PatternComponent]
+
+
+@dataclass(frozen=True)
+class ErrorPattern(MatchPattern):
+    """Represents an error in pattern matching"""
+
+    pass
 
 
 class MatchAsBranch(MatchBranch):
-    def __init__(self, name: Identifier | None, type_: VType | None, body: ASTNode):
+    def __init__(
+        self,
+        name: Identifier | None,
+        type_: VType | None,
+        predicate: ASTNode | None = None,
+    ):
         if name is None and type_ is None:
             raise ValueError(
                 "At least one of name or type_ must be provided for MatchAsBranch"
             )
         self.name = name
         self.type_ = type_
-        self.body = body
+        self.predicate = predicate
 
 
 class MatchDefaultBranch(MatchBranch):
-    def __init__(self, body: ASTNode):
-        self.body = body
+    pass
 
 
 @dataclass(frozen=True)

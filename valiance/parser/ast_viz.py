@@ -30,19 +30,15 @@ TABLE_KEY_BG = "#1B2230"
 TABLE_VAL_BG = "#121821"
 
 # ---- config knobs ----
-# Show compact inline summaries for these list fields (table only)
 INLINE_AST_LIST_FIELD_NAMES = {
-    # element-call-ish
     "arguments",
     "args",
     "modifier_args",
-    # common collections
     "items",
     "elements",
     "branches",
     "entries",
     "variants",
-    # OO collections
     "required_methods",
     "default_methods",
     "variant_objects",
@@ -50,18 +46,14 @@ INLINE_AST_LIST_FIELD_NAMES = {
     "members",
     "methods",
     "parent_traits",
-    # object ctor bits
     "default_constructor",
 }
 MAX_INLINE_LIST_ITEMS = 6
 MAX_INLINE_STRING = 60
 
-# Cleaner output: group list fields behind a "folder" node, and cap shown items
 GROUP_LIST_FIELDS = {
-    # element-call-ish (keeps large calls readable)
     "args",
     "modifier_args",
-    # OO / decl
     "required_methods",
     "default_methods",
     "variant_objects",
@@ -70,15 +62,15 @@ GROUP_LIST_FIELDS = {
     "methods",
     "parent_traits",
     "variants",
-    # other potentially-big lists
     "branches",
     "entries",
     "items",
     "elements",
-    # object ctor bits
     "default_constructor",
 }
-MAX_EDGES_PER_GROUP = 12  # number of children shown per grouped list node
+MAX_EDGES_PER_GROUP = 12
+
+LABEL_NON_FLOW_EDGES = False
 
 
 def _html_escape(s: str) -> str:
@@ -104,7 +96,9 @@ def _pretty_scalar(val: Any) -> str:
     to_string = getattr(val, "toString", None)
     if callable(to_string):
         try:
-            return _short(str(to_string()))
+            s = str(to_string())
+            if s:
+                return _short(s)
         except Exception:
             pass
 
@@ -125,21 +119,15 @@ def _pretty_scalar(val: Any) -> str:
         return _short(val)
     if isinstance(val, (int, float, bool)):
         return str(val)
+
     return _short(str(val))
 
 
-# -------- MatchBranch support --------
+# -------- MatchBranch + MatchPattern support --------
 
 
 def _is_match_branch(obj: Any) -> bool:
-    """
-    MatchBranch objects are not dataclasses. Identify by duck-typing:
-    - has a body: ASTNode
-    - class name starts with "Match" and ends with "Branch" (keeps it conservative)
-    """
-    if obj is None:
-        return False
-    if is_dataclass(obj):
+    if obj is None or is_dataclass(obj):
         return False
     tn = type(obj).__name__
     if not (tn.startswith("Match") and tn.endswith("Branch")):
@@ -147,44 +135,133 @@ def _is_match_branch(obj: Any) -> bool:
     return isinstance(getattr(obj, "body", None), ASTNode)
 
 
+def _is_match_pattern(obj: Any) -> bool:
+    # MatchPattern dataclasses: StringPattern, ListPattern, TuplePattern, ErrorPattern
+    return (
+        obj is not None and is_dataclass(obj) and type(obj).__name__.endswith("Pattern")
+    )
+
+
+def _is_pattern_component(obj: Any) -> bool:
+    # PatternComponent dataclasses: ASTComponent, WildcardComponent, GreedyComponent
+    return (
+        obj is not None
+        and is_dataclass(obj)
+        and type(obj).__name__.endswith("Component")
+    )
+
+
+def _vtype_str(v: Any) -> str:
+    s = _pretty_scalar(v)
+    return s if s else ("" if v is None else str(v))
+
+
+def _pattern_component_label(comp: Any) -> str:
+    tn = type(comp).__name__
+    if tn == "ASTComponent":
+        node = getattr(comp, "node", None)
+        if isinstance(node, ASTNode):
+            return _ast_signature(node)
+        return "ast"
+    if tn == "WildcardComponent":
+        name = getattr(comp, "name", None)
+        return f"*{_ident_to_str(name)}" if isinstance(name, Identifier) else "*"
+    if tn == "GreedyComponent":
+        name = getattr(comp, "name", None)
+        return f"...{_ident_to_str(name)}" if isinstance(name, Identifier) else "..."
+    return tn.removesuffix("Component")
+
+
+def _pattern_label(pat: Any) -> str:
+    tn = type(pat).__name__
+    if tn == "StringPattern":
+        return "string"
+    if tn == "ListPattern":
+        elems = getattr(pat, "elements", None)
+        n = len(elems) if elems is not None else 0
+        return f"list[{n}]"
+    if tn == "TuplePattern":
+        elems = getattr(pat, "elements", None)
+        n = len(elems) if elems is not None else 0
+        return f"tuple[{n}]"
+    if tn == "ErrorPattern":
+        return "error"
+    return tn.removesuffix("Pattern").lower() or tn
+
+
+def _iter_match_pattern_children(
+    prefix: str, pat: Any
+) -> Iterable[tuple[str, ASTNode]]:
+    tn = type(pat).__name__
+
+    if tn == "StringPattern":
+        v = getattr(pat, "value", None)
+        if isinstance(v, ASTNode):
+            yield (f"{prefix}.value", v)
+        return
+
+    if tn in ("ListPattern", "TuplePattern"):
+        elems = getattr(pat, "elements", None)
+        if elems is None:
+            return
+        for i, comp in enumerate(elems):
+            if type(comp).__name__ == "ASTComponent":
+                node = getattr(comp, "node", None)
+                if isinstance(node, ASTNode):
+                    yield (
+                        f"{prefix}.elements[{i}] {_pattern_component_label(comp)}",
+                        node,
+                    )
+        return
+
+    # ErrorPattern has no children
+
+
 def _match_branch_label(branch: Any) -> str:
     tn = type(branch).__name__
+    has_pred = isinstance(getattr(branch, "predicate", None), ASTNode)
+
     if tn == "MatchExactBranch":
         vals = getattr(branch, "values", None)
-        if isinstance(vals, list):
-            return f"exact[{len(vals)}]"
-        return "exact"
+        n = len(vals) if isinstance(vals, list) else 0
+        return f"exact[{n}]"
+
     if tn == "MatchIfBranch":
         return "if"
+
     if tn == "MatchPatternBranch":
-        return "pattern"
+        pat = getattr(branch, "pattern", None)
+        inner = _pattern_label(pat) if _is_match_pattern(pat) else "pattern"
+        return f"{inner}?" if has_pred else inner
+
     if tn == "MatchAsBranch":
         name = getattr(branch, "name", None)
         type_ = getattr(branch, "type_", None)
-        parts: list[str] = []
-        if isinstance(name, Identifier):
-            parts.append(_ident_to_str(name))
-        if type_ is not None:
-            parts.append(_pretty_scalar(type_))
-        inner = ": ".join(parts) if parts else "as"
-        return f"as({inner})"
+
+        name_s = _ident_to_str(name) if isinstance(name, Identifier) else ""
+        type_s = _vtype_str(type_) if type_ is not None else ""
+
+        if name_s and type_s:
+            inner = f"{name_s}: {type_s}"
+        elif name_s:
+            inner = name_s
+        elif type_s:
+            inner = type_s
+        else:
+            inner = "as"
+
+        return f"as({inner})" + ("?" if has_pred else "")
+
     if tn == "MatchDefaultBranch":
         return "default"
+
     return tn.removesuffix("Branch").removeprefix("Match").lower() or tn
 
 
 def _iter_match_branch_children(
     prefix: str, branch: Any
 ) -> Iterable[tuple[str, ASTNode]]:
-    """
-    Yield AST children for a branch object.
-    """
     tn = type(branch).__name__
-
-    # shared body
-    body = getattr(branch, "body", None)
-    if isinstance(body, ASTNode):
-        yield (f"{prefix}.body", body)
 
     if tn == "MatchExactBranch":
         values = getattr(branch, "values", None)
@@ -200,15 +277,22 @@ def _iter_match_branch_children(
 
     elif tn == "MatchPatternBranch":
         pat = getattr(branch, "pattern", None)
-        if isinstance(pat, ASTNode):
-            yield (f"{prefix}.pattern", pat)
+        if _is_match_pattern(pat):
+            yield from _iter_match_pattern_children(
+                f"{prefix}.pattern({_pattern_label(pat)})", pat
+            )
+        pred = getattr(branch, "predicate", None)
+        if isinstance(pred, ASTNode):
+            yield (f"{prefix}.predicate", pred)
 
     elif tn == "MatchAsBranch":
-        # name/type_ are scalar-ish; only body is AST, already handled above
-        pass
+        pred = getattr(branch, "predicate", None)
+        if isinstance(pred, ASTNode):
+            yield (f"{prefix}.predicate", pred)
 
-    elif tn == "MatchDefaultBranch":
-        pass
+    body = getattr(branch, "body", None)
+    if isinstance(body, ASTNode):
+        yield (f"{prefix}.body", body)
 
 
 # -------- core formatting / signature --------
@@ -388,7 +472,6 @@ def _summarize_sequence(seq: list[Any]) -> str:
     if seq and all(_is_field_default_pair(x) for x in seq):
         return _summarize_field_default_pairs(seq)  # type: ignore[arg-type]
 
-    # Special-case match branches (non-dataclass objects)
     if seq and all(_is_match_branch(x) for x in seq):
         items = [
             f"• {_html_escape(_match_branch_label(b))}"
@@ -437,27 +520,22 @@ def _summarize_sequence(seq: list[Any]) -> str:
 def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNode]]:
     if value is None:
         return
-
     if isinstance(value, ASTNode):
         yield (field_name, value)
         return
 
-    # MatchBranch objects
     if _is_match_branch(value):
         yield from _iter_match_branch_children(field_name, value)
         return
 
     if isinstance(value, (list, tuple)):
         for i, item in enumerate(value):
-            # list of MatchBranch objects
-            if _is_match_branch(item):
+            if isinstance(item, ASTNode):
+                yield (f"{field_name}[{i}]", item)
+            elif _is_match_branch(item):
                 yield from _iter_match_branch_children(
                     f"{field_name}[{i}] {_match_branch_label(item)}", item
                 )
-                continue
-
-            if isinstance(item, ASTNode):
-                yield (f"{field_name}[{i}]", item)
             elif isinstance(item, tuple) and len(item) == 2:
                 a, b = item
                 if isinstance(a, Identifier) and isinstance(b, ASTNode):
@@ -579,7 +657,6 @@ def _container_table_label(node: ASTNode) -> str:
                 rows.append((name.capitalize(), cell))
                 continue
 
-            # DefineNode.element_tags: join on " + "
             if name == "element_tags" and isinstance(v, list):
                 rows.append(
                     (
@@ -649,7 +726,6 @@ def _simple_box_label(node: ASTNode) -> str:
             if isinstance(v, (ASTNode, GroupNode)):
                 continue
 
-            # Show small string-label lists (Swap/Dup/Pop)
             if isinstance(v, (list, tuple)):
                 if all(isinstance(x, str) for x in v):
                     parts.append(f"{f.name}=[{','.join(v)}]")
@@ -660,7 +736,6 @@ def _simple_box_label(node: ASTNode) -> str:
             elif isinstance(v, (str, int, float, bool)):
                 parts.append(f"{f.name}={v}")
             else:
-                # e.g. VType
                 to_string = getattr(v, "toString", None)
                 if callable(to_string):
                     parts.append(f"{f.name}={_pretty_scalar(v)}")
@@ -701,26 +776,25 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
     color_i = 0
     anon_i = 0
 
-    # High-contrast, wildly varied palette for clear visual separation
     palette = [
-        "#1F77B4",  # vivid blue
-        "#E74C3C",  # bright red
-        "#2ECC71",  # bright green
-        "#F1C40F",  # strong yellow
-        "#9B59B6",  # saturated purple
-        "#16A085",  # teal
-        "#E67E22",  # orange
-        "#00BCD4",  # cyan
-        "#FF00FF",  # magenta
-        "#7FFF00",  # chartreuse
-        "#0B3C5D",  # very dark navy
-        "#641E16",  # deep maroon
-        "#145A32",  # dark forest green
-        "#7D6608",  # dark gold
-        "#4A235A",  # deep violet
-        "#0E6251",  # dark teal
-        "#784212",  # dark brown-orange
-        "#1B2631",  # near-black blue-gray
+        "#1F77B4",
+        "#E74C3C",
+        "#2ECC71",
+        "#F1C40F",
+        "#9B59B6",
+        "#16A085",
+        "#E67E22",
+        "#00BCD4",
+        "#FF00FF",
+        "#7FFF00",
+        "#0B3C5D",
+        "#641E16",
+        "#145A32",
+        "#7D6608",
+        "#4A235A",
+        "#0E6251",
+        "#784212",
+        "#1B2631",
     ]
 
     out_nodes.append(
@@ -763,26 +837,43 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
 
     def emit_folder(*, title: str, count: int, node_color: str) -> str:
         fid = new_anon("fld")
-        label = f"{title} ({count})"
         out_nodes.append(
-            f'{fid} [shape=box, style="rounded", penwidth=1, color="{node_color}", '
-            f'fontcolor="{FG}", label="{_html_escape(label)}"];'
+            f'{fid} [shape=box, style="rounded", penwidth=1, color="{node_color}", fontcolor="{FG}", label="{_html_escape(title)} ({count})"];'
         )
         return fid
 
     def emit_more(*, hidden_count: int, node_color: str) -> str:
         mid = new_anon("more")
         out_nodes.append(
-            f'{mid} [shape=box, style="rounded,dashed", penwidth=1, color="{node_color}", '
-            f'fontcolor="{MUTED}", label="{_html_escape("… (+" + str(hidden_count) + " more)")}"];'
+            f'{mid} [shape=box, style="rounded,dashed", penwidth=1, color="{node_color}", fontcolor="{MUTED}", '
+            f'label="{_html_escape("… (+" + str(hidden_count) + " more)")}"];'
         )
         return mid
 
-    def link(a: str, b: str, label: str, *, color: Optional[str] = None) -> None:
-        c = color or MUTED
-        out_edges.append(
-            f'{a} -> {b} [label="{_html_escape(label)}", color="{c}", fontcolor="{c}"];'
+    def emit_branch_hub(*, text: str, node_color: str) -> str:
+        bid = new_anon("br")
+        out_nodes.append(
+            f'{bid} [shape=box, style="rounded", penwidth=1, color="{node_color}", fontcolor="{FG}", label="{_html_escape(text)}"];'
         )
+        return bid
+
+    def link(
+        a: str,
+        b: str,
+        label: str,
+        *,
+        color: Optional[str] = None,
+        show_label: bool = True,
+        weight: Optional[int] = None,
+    ) -> None:
+        c = color or MUTED
+        w = f", weight={weight}" if weight is not None else ""
+        if show_label and label:
+            out_edges.append(
+                f'{a} -> {b} [label="{_html_escape(label)}", color="{c}", fontcolor="{c}"{w}];'
+            )
+        else:
+            out_edges.append(f'{a} -> {b} [color="{c}"{w}];')
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
         out_edges.append(f'{a} -> {b} [style=dotted, color="{color}", arrowhead=none];')
@@ -792,11 +883,10 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
             return exit_ids[entry_id]
         eid = f"{entry_id}_exit"
         exit_ids[entry_id] = eid
-
         who = _exit_display_name(node)
         out_nodes.append(
-            f'{eid} [shape=box, style="rounded,dashed", penwidth=2, color="{color}", '
-            f'fontcolor="{color}", label="{_html_escape("EXIT " + who)}"];'
+            f'{eid} [shape=box, style="rounded,dashed", penwidth=2, color="{color}", fontcolor="{color}", '
+            f'label="{_html_escape("EXIT " + who)}"];'
         )
         link_dotted(entry_id, eid, color=color)
         return eid
@@ -817,7 +907,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 if first_entry is None:
                     first_entry = c_entry
                 if prev_exit is not None:
-                    link(prev_exit, c_entry, "next", color=inherited_color)
+                    link(prev_exit, c_entry, "next", color=inherited_color, weight=5)
                 prev_exit = c_exit
             return (first_entry, prev_exit)
 
@@ -859,6 +949,63 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 if v is None:
                     continue
 
+                if (
+                    f.name == "branches"
+                    and isinstance(v, list)
+                    and v
+                    and all(_is_match_branch(x) for x in v)
+                ):
+                    folder = emit_folder(
+                        title="branches", count=len(v), node_color=node_color
+                    )
+                    link(entry, folder, "branches", color=node_color)
+
+                    shown_branches = v[:MAX_EDGES_PER_GROUP]
+                    for br in shown_branches:
+                        hub = emit_branch_hub(
+                            text=_match_branch_label(br), node_color=node_color
+                        )
+                        link(folder, hub, "", color=node_color, show_label=False)
+
+                        prev = hub
+
+                        tests: list[tuple[str, ASTNode]] = []
+                        body_node: Optional[ASTNode] = None
+                        for lbl, child in _iter_match_branch_children("branch", br):
+                            if _skip_node(child):
+                                continue
+                            if lbl.endswith(".body"):
+                                body_node = child
+                                continue
+                            tests.append((lbl, child))
+
+                        for lbl, child in tests:
+                            c_entry, _ = walk(child, node_color)
+                            if c_entry is None:
+                                continue
+                            short = lbl.removeprefix("branch.")
+                            short = short.replace("values[", "v").replace("]", "")
+                            short = short.replace("condition", "cond")
+                            short = short.replace("pattern", "pat")
+                            short = short.replace("predicate", "pred")
+                            short = short.replace(".value", ".value")
+                            # keep it short and consistent
+                            short = short.replace("pattern(", "").replace(")", "")
+                            link(prev, c_entry, short, color=node_color, weight=3)
+                            prev = c_entry
+
+                        if body_node is not None:
+                            b_entry, _ = walk(body_node, node_color)
+                            if b_entry is not None:
+                                link(prev, b_entry, "body", color=node_color, weight=3)
+                                prev = b_entry
+
+                    hidden = len(v) - len(shown_branches)
+                    if hidden > 0:
+                        more = emit_more(hidden_count=hidden, node_color=node_color)
+                        link(folder, more, "more", color=node_color)
+                    continue
+
                 if f.name in GROUP_LIST_FIELDS and isinstance(v, (list, tuple)):
                     children = list(_iter_ast_children(f.name, v))
                     if children:
@@ -875,7 +1022,13 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                             if c_entry is None:
                                 continue
                             short_lbl = lbl.removeprefix(f"{f.name}").lstrip() or "item"
-                            link(folder, c_entry, short_lbl, color=node_color)
+                            link(
+                                folder,
+                                c_entry,
+                                short_lbl if LABEL_NON_FLOW_EDGES else "",
+                                color=node_color,
+                                show_label=LABEL_NON_FLOW_EDGES,
+                            )
 
                         hidden = len(children) - len(shown)
                         if hidden > 0:
@@ -889,7 +1042,13 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                     c_entry, c_exit = walk(child, node_color)
                     if c_entry is None:
                         continue
-                    link(entry, c_entry, lbl, color=node_color)
+                    link(
+                        entry,
+                        c_entry,
+                        lbl if LABEL_NON_FLOW_EDGES else "",
+                        color=node_color,
+                        show_label=LABEL_NON_FLOW_EDGES,
+                    )
                     if isinstance(child, GroupNode) and c_exit is not None:
                         exit_ = c_exit
 
@@ -898,9 +1057,9 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
             exit_marker = emit_exit_marker(entry, node, color=structure_color)
 
             if exit_ != entry:
-                link(exit_, exit_marker, "next", color=structure_color)
+                link(exit_, exit_marker, "next", color=structure_color, weight=5)
             elif _needs_forced_exit(node):
-                link(entry, exit_marker, "next", color=structure_color)
+                link(entry, exit_marker, "next", color=structure_color, weight=5)
 
             exit_ = exit_marker
 
@@ -910,8 +1069,8 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
 
     dot_lines = [
         "digraph AST {",
-        "  rankdir=TB;",
-        f'  graph [bgcolor="{BG}", fontname="Consolas"];',
+        f"  rankdir={rankdir};",
+        f'  graph [bgcolor="{BG}", fontname="Consolas", nodesep=0.35, ranksep=0.6];',
         f'  node [fontname="Consolas", fontcolor="{FG}"];',
         f'  edge [fontname="Consolas", fontcolor="{MUTED}", color="{MUTED}"];',
     ]

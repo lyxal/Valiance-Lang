@@ -31,6 +31,11 @@ OPEN_CLOSE_TOKEN_MAP: dict[TokenType, TokenType] = {
     TokenType.LEFT_SQUARE: TokenType.RIGHT_SQUARE,
 }
 
+DEFAULT_EAT_NEWLINES_LOCK_STATE = (
+    -1,
+    True,
+)  # By default, consider newlines == whitespace
+
 # A helper function to generate a depth-tracking table for
 # token synchronisation.
 sync_table = lambda: {_type: 0 for _type in OPEN_CLOSE_TOKEN_MAP}
@@ -169,6 +174,7 @@ class ParserStrategy:
 
     def __init__(self, parser: Parser):
         self.parser = parser
+        self.lock_id = self.parser.gen_new_lock()
 
     @abstractmethod
     def can_parse(self) -> bool:
@@ -224,6 +230,14 @@ class Parser:
         self.strategies: list[ParserStrategy] = []
         self.tokens = tokens
 
+        # Allow strategies to define whether they should treat
+        # newlines as something that should be eaten. Note that
+        # if a strategy declares newlines should be eaten, then
+        # any calls to substrategies must NOT overwrite that.
+        # Hence the need for a lock bound to the strategy's id.
+        self.lock_id = 0
+        self.eat_newlines = DEFAULT_EAT_NEWLINES_LOCK_STATE  # (lock_id, eat_newlines)
+
         self._collect_strategies()
 
     def _collect_strategies(self) -> None:
@@ -232,6 +246,25 @@ class Parser:
             self.strategies.append(subclass(self))
         for subclass in self.LabelledStackShuffleParser.__subclasses__():
             self.strategies.append(subclass(self))
+
+    def gen_new_lock(self) -> int:
+        """Generate a new id for a strategy. Used solely for determining
+        whether eating newlines should be toggled.
+
+        Returns:
+            int: The lock id for the parser strategy
+        """
+        temp = self.lock_id
+        self.lock_id += 1
+        return temp
+
+    def set_eat_newlines(self, strategy_id: int, to: bool):
+        # Allowed to update if id matches OR current id == -1
+        if (
+            self.eat_newlines[0] == strategy_id
+            or self.eat_newlines[0] == DEFAULT_EAT_NEWLINES_LOCK_STATE[0]
+        ):
+            self.eat_newlines = (strategy_id, to)
 
     def add_error(self, message: str, location: Token | Location | None) -> None:
         """Add an error to the current error stack
@@ -355,7 +388,7 @@ class Parser:
 
         while self.head_in(
             TokenType.WHITESPACE,
-            TokenType.NEWLINE,
+            TokenType.NEWLINE if self.eat_newlines[1] else TokenType.WHITESPACE,
             eat_whitespace=False,
             care_about_eof=False,
         ):
@@ -832,6 +865,10 @@ class Parser:
                         self.head().location if self.head_opt() else Location(-1, -1),
                         self.head_opt() or Token(TokenType.EOF, "", -1, -1),
                     )
+            # Clear the strategy's lock on the eat newlines variable if it currently
+            # has one
+            if self.eat_newlines[0] == strategy.lock_id:
+                self.eat_newlines = DEFAULT_EAT_NEWLINES_LOCK_STATE  # Ready for the next strategy to lock
         # If no strategy could parse the current token, it's an unexpected token
         # Add an error if we aren't inside a strategy already
         # Otherwise, it's up to the strategy to handle the unexpected token
@@ -907,6 +944,7 @@ class Parser:
             Identifier: The parsed identifier.
         """
 
+        self.eat_whitespace()
         identifier = self.parse_identifier_fragment(*identifier_set)
 
         if identifier.name == "":
@@ -937,6 +975,7 @@ class Parser:
             Identifier: The parsed identifier fragment.
         """
 
+        self.eat_whitespace()
         identifier = Identifier(self.tokens[0].location)
         while self.head_in(
             *identifier_set,
@@ -1168,6 +1207,8 @@ class Parser:
         """
 
         data_tags: list[VTypes.DataTag] = []
+
+        self.eat_whitespace()
 
         # First, handle data tags
         while self.head_equals(TokenType.TAG_TOKEN):
@@ -1880,7 +1921,7 @@ class Parser:
                 )
             # Variable assignment
             self.parser.eat(TokenType.EQUALS)  # Pop the EQUALS token
-
+            self.parser.set_eat_newlines(self.lock_id, False)
             values = self.parser.parse_until(
                 TokenType.SEMICOLON,
                 TokenType.NEWLINE,
@@ -1957,7 +1998,7 @@ class Parser:
 
             if not self.parser.eat(TokenType.EQUALS):  # Pop the EQUALS token
                 return ErrorNode(multi_variable_token.location, multi_variable_token)
-
+            self.parser.set_eat_newlines(self.lock_id, False)
             values: list[ASTNode] = self.parser.parse_until(
                 TokenType.SEMICOLON, TokenType.NEWLINE, TokenType.EOF
             )
@@ -2098,8 +2139,7 @@ class Parser:
             index: Identifier | None = None
             if self.parser.head_equals(TokenType.COMMA):
                 self.parser.discard()
-                self.parser.eat_whitespace()
-                index = self.parser.parse_identifier()
+                index = self.parser.parse_identifier_fragment()
             self.parser.eat(TokenType.RIGHT_PAREN)
             body = self.parser.parse_block()
             return ForNode(
@@ -2118,15 +2158,11 @@ class Parser:
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()  # Pop the 'define' token
 
-            self.parser.eat_whitespace()
-
             generics: list[VTypes.VType] = []
 
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
                 generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
-
-            self.parser.eat_whitespace()
 
             name = self.parser.parse_identifier()
             parameters: list[Parameter] = []
@@ -2183,8 +2219,6 @@ class Parser:
                 generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
-            self.parser.eat_whitespace()
-
             object_name = self.parser.parse_identifier()
 
             default_constructor: list[tuple[FieldNode, Optional[ASTNode]]] | None = None
@@ -2198,7 +2232,6 @@ class Parser:
                     ):
                         visibility_modifier = Visibility(self.parser.pop().value)
                     self.parser.eat(TokenType.VARIABLE)
-                    self.parser.eat_whitespace()
                     field_name = self.parser.parse_identifier_fragment()
                     if not self.parser.eat(
                         TokenType.COLON,
@@ -2266,7 +2299,6 @@ class Parser:
 
                 if self.parser.head_equals(TokenType.FIELD):
                     self.parser.discard()
-                    self.parser.eat_whitespace()
                     if trait_implemented:
                         self.parser.add_error(
                             "Cannot define new field in trait implementation.",
@@ -2274,7 +2306,6 @@ class Parser:
                         )
                     field_name = self.parser.parse_identifier_fragment()
                     self.parser.eat(TokenType.COLON)
-                    self.parser.eat_whitespace()
                     field_type = self.parser.parse_type()
                     fields.append(
                         FieldNode(
@@ -2366,7 +2397,6 @@ class Parser:
 
         def parse(self) -> ASTNode:
             as_token = self.parser.pop()  # Pop the 'as' token
-            self.parser.eat_whitespace()
             type_ = self.parser.parse_type()
             return SafeTypeCastNode(as_token.location, type_)
 
@@ -2378,7 +2408,6 @@ class Parser:
 
         def parse(self) -> ASTNode:
             as_token = self.parser.pop()  # Pop the 'as_unsafe' token
-            self.parser.eat_whitespace()
             type_ = self.parser.parse_type()
             return UnsafeTypeCastNode(as_token.location, type_)
 
@@ -2390,12 +2419,10 @@ class Parser:
 
         def parse(self) -> ASTNode:
             import_token = self.parser.pop()  # Pop the 'import' token
-            self.parser.eat_whitespace()
             module_name = self.parser.parse_identifier()
             if not self.parser.head_equals(TokenType.AS):
                 return ModuleImportNode(import_token.location, module_name)
             self.parser.eat(TokenType.AS)  # Pop the 'as' token
-            self.parser.eat_whitespace()
             alias_name = self.parser.parse_identifier()
             return AliasedImportNode(import_token.location, module_name, alias_name)
 
@@ -2416,14 +2443,11 @@ class Parser:
                 generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
 
-            self.parser.eat_whitespace()
-
             trait_name = self.parser.parse_identifier()
 
             parent_trait: VType | None = None
             if self.parser.head_equals(TokenType.AS):
                 self.parser.discard()
-                self.parser.eat_whitespace()
                 parent_trait = self.parser.parse_type()
 
             required_methods: list[DefineNode] = []
@@ -2491,153 +2515,161 @@ class Parser:
 
             branches: list[MatchBranch] = []
             while not self.parser.head_equals(TokenType.RIGHT_BRACE):
-                # First, verify that the branch type is valid
-                if not self.parser.head_in(
-                    TokenType.EXACTLY,
-                    TokenType.IF,
-                    TokenType.PATTERN,
-                    TokenType.AS,
-                    TokenType.UNDERSCORE,
-                ):
-                    self.parser.add_error(
-                        f"Expected branch type in match expression. Found {self.parser.head()}",
-                        self.parser.head(),
-                    )
-                    self.parser.sync(TokenType.COMMA)
-                    continue
+                # Parse a single branch of the match expression
+                # First, get all the cases before the arrow
+                cases: list[MatchBranch] = []
+                while not self.parser.head_equals(TokenType.ARROW):
+                    match (self.parser.head().type):
+                        case TokenType.EXACTLY:
+                            cases.append(self.exact_case())
+                        case TokenType.AS:
+                            cases.append(self.as_case())
+                        case TokenType.IF:
+                            cases.append(self.if_case())
+                        case TokenType.PATTERN:
+                            cases.append(self.pattern_case())
+                        case TokenType.UNDERSCORE:
+                            cases.append(MatchDefaultBranch())
+                            self.parser.discard()
+                        case _:
+                            self.parser.add_error(
+                                f"Unexpected token in match branch: {self.parser.head()}",
+                                self.parser.head(),
+                            )
+                            self.parser.discard()
+                            self.parser.sync(TokenType.COMMA, TokenType.ARROW)
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
 
-                if self.parser.head_equals(TokenType.EXACTLY):
-                    values: list[ASTNode] = self.parser.parse_items(
-                        TokenType.EXACTLY,
-                        TokenType.COMMA,
-                        TokenType.ARROW,
-                        self.parser.parse_next,
-                        lambda t: not is_expressionable([t]),
-                        lambda t: ErrorNode(t.location, t),
-                        multi_item_wrap=group_wrap,
-                    )
-                    self.parser.eat(TokenType.ARROW)
-                    body = group_wrap(
-                        self.parser.parse_until(
-                            TokenType.COMMA,
-                            TokenType.RIGHT_BRACE,
-                        )
-                    )
-                    if not is_expressionable([body]):
-                        self.parser.add_error(
-                            "Match branch body must be expressionable.",
-                            body.location,
-                        )
-                        body = ErrorNode(body.location, location_token)
-                    branches.append(
-                        MatchExactBranch(
-                            values,
-                            body,
-                        )
-                    )
-                elif self.parser.head_equals(TokenType.IF):
-                    self.parser.pop()  # Pop the IF token
-                    condition = group_wrap(self.parser.parse_until(TokenType.ARROW))
-                    self.parser.eat(TokenType.ARROW)
-                    body = group_wrap(
-                        self.parser.parse_until(
-                            TokenType.COMMA,
-                            TokenType.RIGHT_BRACE,
-                        )
-                    )
-                    if not is_expressionable([body]):
-                        self.parser.add_error(
-                            "Match branch body must be expressionable.",
-                            body.location,
-                        )
-                        body = ErrorNode(body.location, location_token)
-                    branches.append(
-                        MatchIfBranch(
-                            condition,
-                            body,
-                        )
-                    )
-                elif self.parser.head_equals(TokenType.PATTERN):
-                    self.parser.pop()  # Pop the PATTERN token
-                    # TODO: Dedicated pattern parser
-                    pattern = self.parser.parse_next()
-                    self.parser.eat(TokenType.ARROW)
-                    body = group_wrap(
-                        self.parser.parse_until(
-                            TokenType.COMMA,
-                            TokenType.RIGHT_BRACE,
-                        )
-                    )
-                    if not is_expressionable([body]):
-                        self.parser.add_error(
-                            "Match branch body must be expressionable.",
-                            body.location,
-                        )
-                        body = ErrorNode(body.location, location_token)
-                    branches.append(
-                        MatchPatternBranch(
-                            pattern,
-                            body,
-                        )
-                    )
-                elif self.parser.head_equals(TokenType.AS):
-                    self.parser.pop()  # Pop the AS token
-                    name = Identifier()
-                    type_: VType | None = None
-                    if self.parser.head_equals(TokenType.COLON):
-                        self.parser.eat(TokenType.COLON)
-                        type_ = self.parser.parse_type()
-                    else:
-                        name = self.parser.parse_identifier()
-                        if self.parser.head_equals(TokenType.COLON):
-                            self.parser.eat(TokenType.COLON)
-                            type_ = self.parser.parse_type()
-                    self.parser.eat(TokenType.ARROW)
-                    body = group_wrap(
-                        self.parser.parse_until(
-                            TokenType.COMMA,
-                            TokenType.RIGHT_BRACE,
-                        )
-                    )
-                    if not is_expressionable([body]):
-                        self.parser.add_error(
-                            "Match branch body must be expressionable.",
-                            body.location,
-                        )
-                        body = ErrorNode(body.location, location_token)
-                    branches.append(
-                        MatchAsBranch(
-                            name,
-                            type_,
-                            body,
-                        )
-                    )
-                elif self.parser.head_equals(TokenType.UNDERSCORE):
-                    self.parser.pop()  # Pop the UNDERSCORE token
-                    self.parser.eat(TokenType.ARROW)
-                    body = group_wrap(
-                        self.parser.parse_until(
-                            TokenType.COMMA,
-                            TokenType.RIGHT_BRACE,
-                        )
-                    )
-                    if not is_expressionable([body]):
-                        self.parser.add_error(
-                            "Match branch body must be expressionable.",
-                            body.location,
-                        )
-                        body = ErrorNode(body.location, location_token)
-                    branches.append(
-                        MatchDefaultBranch(
-                            body,
-                        )
-                    )
-                else:
-                    raise RuntimeError("Unreachable code in MatchExpressionParser")
+                if not self.parser.eat(TokenType.ARROW):  # Pop the ARROW token
+                    self.parser.sync(TokenType.COMMA, TokenType.RIGHT_BRACE)
+                    continue
+                # Now, parse the body of the branch
+                body = group_wrap(
+                    self.parser.parse_until(TokenType.COMMA, TokenType.RIGHT_BRACE)
+                )
+
+                for case in cases:
+                    case.body = body
+                    branches.append(case)
                 if self.parser.head_equals(TokenType.COMMA):
                     self.parser.eat(TokenType.COMMA)
             self.parser.eat(TokenType.RIGHT_BRACE)
-            return MatchNode(
-                location_token.location,
-                branches,
+            return MatchNode(location_token.location, branches)
+
+        def exact_case(self) -> MatchExactBranch:
+            self.parser.eat(TokenType.EXACTLY)  # Pop the 'exactly' token
+            values: list[ASTNode] = []
+            while True:
+                value = group_wrap(
+                    self.parser.parse_until(
+                        TokenType.PIPE, TokenType.COMMA, TokenType.ARROW
+                    )
+                )
+                values.append(value)
+                if self.parser.head_equals(TokenType.PIPE):
+                    self.parser.eat(TokenType.PIPE)
+                else:
+                    break
+            return MatchExactBranch(values)
+
+        def as_case(self) -> MatchAsBranch:
+            self.parser.eat(TokenType.AS)  # Pop the 'as' token
+            name = Identifier()
+            if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
+                name = self.parser.parse_identifier()
+
+            type_: VType | None = None
+            if self.parser.head_equals(TokenType.COLON):
+                self.parser.eat(TokenType.COLON)
+                type_ = self.parser.parse_type()
+
+            if self.parser.head_equals(TokenType.IF):
+                self.parser.eat(TokenType.IF)
+                predicate = group_wrap(
+                    self.parser.parse_until(TokenType.COMMA, TokenType.ARROW)
+                )
+                return MatchAsBranch(name, type_, predicate)
+
+            return MatchAsBranch(name, type_)
+
+        def if_case(self) -> MatchIfBranch:
+            self.parser.eat(TokenType.IF)  # Pop the 'if' token
+            condition = group_wrap(
+                self.parser.parse_until(TokenType.COMMA, TokenType.ARROW)
             )
+            return MatchIfBranch(condition)
+
+        def pattern_case(self) -> MatchPatternBranch:
+            self.parser.eat(TokenType.PATTERN)  # Pop the 'pattern' token
+            pattern: MatchPattern
+            if self.parser.head_equals(TokenType.STRING):
+                pattern = StringPattern(self.parser.parse_next())
+            elif self.parser.head_equals(TokenType.LEFT_SQUARE):
+                pattern = ListPattern(self.parse_pattern(TokenType.RIGHT_SQUARE))
+            elif self.parser.head_equals(TokenType.LEFT_PAREN):
+                pattern = TuplePattern(self.parse_pattern(TokenType.RIGHT_PAREN))
+            else:
+                self.parser.add_error(
+                    f"Unexpected token in pattern match: {self.parser.head()}",
+                    self.parser.head(),
+                )
+                pattern = ErrorPattern()
+                self.parser.sync(TokenType.COMMA, TokenType.ARROW)
+            predicate: ASTNode | None = None
+            if self.parser.head_equals(TokenType.IF):
+                self.parser.eat(TokenType.IF)
+                predicate = group_wrap(
+                    self.parser.parse_until(TokenType.COMMA, TokenType.ARROW)
+                )
+            return MatchPatternBranch(pattern, predicate)
+
+        def parse_pattern(self, end_token_type: TokenType) -> list[PatternComponent]:
+            self.parser.discard()  # Remove the opening token
+            items: list[PatternComponent] = []
+            while not self.parser.head_equals(end_token_type):
+                # First, check if this is a named wildcard or greedy
+                # pattern component
+                if self.parser.head_equals(TokenType.VARIABLE):
+                    self.parser.discard()
+                    variable_name = self.parser.parse_identifier_fragment()
+
+                    # If there's no equals, then just consume until
+                    # comma or closing, and push an ASTComponent
+                    if not self.parser.head_equals(TokenType.EQUALS):
+                        value = group_wrap(
+                            [VariableGetNode(variable_name.location, variable_name)]
+                            + self.parser.parse_until(TokenType.COMMA, end_token_type)
+                        )
+                        items.append(ASTComponent(value))
+                    else:
+                        # It's either a wildcard or greedy component
+                        self.parser.eat(TokenType.EQUALS)
+                        if self.parser.head_equals(TokenType.UNDERSCORE):
+                            self.parser.eat(TokenType.UNDERSCORE)
+                            items.append(WildcardComponent(variable_name))
+                        elif self.parser.head_equals(TokenType.PASS):
+                            self.parser.eat(TokenType.PASS)
+                            items.append(GreedyComponent(variable_name))
+                        else:
+                            self.parser.add_error(
+                                f"Expected '_' or '*' after '=' in pattern component. Found {self.parser.head()}",
+                                self.parser.head(),
+                            )
+                            self.parser.sync(TokenType.COMMA, end_token_type)
+                # Next, check for unnamed wildcard or greedy
+                elif self.parser.head_equals(TokenType.UNDERSCORE):
+                    self.parser.eat(TokenType.UNDERSCORE)
+                    items.append(WildcardComponent(None))
+                elif self.parser.head_equals(TokenType.PASS):
+                    self.parser.eat(TokenType.PASS)
+                    items.append(GreedyComponent(None))
+                else:
+                    value = group_wrap(
+                        self.parser.parse_until(TokenType.COMMA, end_token_type)
+                    )
+                    items.append(ASTComponent(value))
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.eat(TokenType.COMMA)
+            self.parser.eat(end_token_type)
+            return items
