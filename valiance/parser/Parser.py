@@ -2794,7 +2794,7 @@ class Parser:
                                     output_types,
                                 )
                             )
-            self.parser.eat(TokenType.RIGHT_BRACE)
+                self.parser.eat(TokenType.RIGHT_BRACE)
             if (
                 tag_category is None
             ):  # Tag category is None only if this is a tag extension
@@ -2828,3 +2828,17 @@ class Parser:
                 self.parser.eat(TokenType.RIGHT_PAREN)
 
             return (input_types, output_types)
+
+    class TagDisjointParser(ParserStrategy):
+        name: str = "Tag Disjoint Declaration"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.TAG_DISJOINT)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'tag disjoint' token
+            self.parser.eat(TokenType.HASH)  # Eat the # token
+            parent_tag = self.parser.parse_identifier()
+            self.parser.eat(TokenType.HASH)
+            child_tag = self.parser.parse_identifier()
+            return TagDisjointNode(location_token.location, parent_tag, child_tag)

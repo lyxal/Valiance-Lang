@@ -1,10 +1,4 @@
-tag computed #sorted {
-  (take, drop)[T]: (#sorted T+, Number) -> #sorted T+
-}
+tag computed #empty
+tag computed #nonempty
 
-tag extend #sorted {
-  filter[T]: {
-    (#sorted T+, Function[T -> #boolean Number]) -> #sorted T+,
-    (#sorted T+, Function[T -> Number]) -> #sorted T+
-  }
-}
+tag disjoint #empty #nonempty
