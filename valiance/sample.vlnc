@@ -1,4 +1,3 @@
-tag computed #empty
-tag computed #nonempty
-
-tag disjoint #empty #nonempty
+define foo(x: Number) -> Number {
+    $x $x +
+}

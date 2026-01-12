@@ -3,6 +3,7 @@ import logging
 import pathlib
 import os
 
+from valiance.analyser.Analyser import Analyser
 from valiance.parser.AST import AuxiliaryNode, GroupNode
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
@@ -10,7 +11,6 @@ from valiance.parser.Parser import Parser
 from valiance.parser.PrettyPrinter import pretty_print_ast
 
 from valiance.loglib.logging_config import setup_logging
-from valiance.loglib.log_block import log_block
 
 # AST graph output
 from valiance.parser.ast_viz import ast_to_dot, write_dot, render_with_graphviz
@@ -22,163 +22,218 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--lex", action="store_true", help="Run lexer only (skip parser)"
+    parser = argparse.ArgumentParser(description="Valiance compiler")
+
+    # Pipeline stages (mutually exclusive)
+    pipeline = parser.add_mutually_exclusive_group()
+    pipeline.add_argument(
+        "--lex-only", "-l", action="store_true", help="Run lexer only"
+    )
+    pipeline.add_argument(
+        "--parse-only", "-p", action="store_true", help="Run lexer + parser only"
+    )
+    pipeline.add_argument(
+        "--analyze-only",
+        "-a",
+        action="store_true",
+        help="Run lexer + parser + static analysis only",
     )
 
+    # Input source
+    parser.add_argument("--file", "-f", type=str, help="Read code from specified file")
+    parser.add_argument(
+        "--test",
+        "-t",
+        action="store_true",
+        help="Read code from sample.vlnc (for quick testing)",
+    )
+
+    # Output options
+    parser.add_argument(
+        "--svg",
+        "-s",
+        action="store_true",
+        help="Generate DOT and render SVG of the AST",
+    )
+    parser.add_argument(
+        "--svg-out",
+        default="ast.svg",
+        help="Output path for SVG file (default: ast.svg)",
+    )
+    parser.add_argument(
+        "--open-svg",
+        "-o",
+        action="store_true",
+        help="Open the generated SVG after rendering (requires --svg)",
+    )
+    parser.add_argument(
+        "--pretty", action="store_true", help="Pretty print the AST (when using parser)"
+    )
+
+    # Logging
     parser.add_argument(
         "--log",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level",
-    )
-
-    parser.add_argument(
-        "--rawast", action="store_true", help="Disable pretty print for parser"
-    )
-
-    parser.add_argument(
-        "--f", action="store_true", help="Read code from the file 'sample.vlnc'"
-    )
-
-    # Graphviz AST output options
-    parser.add_argument(
-        "--dot",
-        action="store_true",
-        help="Write Graphviz DOT output of the parsed AST (ast.dot by default)",
-    )
-    parser.add_argument(
-        "--svg",
-        action="store_true",
-        help="Render SVG from DOT using Graphviz (requires dot.exe)",
-    )
-    parser.add_argument(
-        "--dot-out",
-        default="ast.dot",
-        help="Output path for DOT file (default: ast.dot). SVG will use same base name.",
-    )
-    parser.add_argument(
-        "--dot-exe",
-        default=None,
-        help=r"Path to Graphviz dot.exe (e.g. C:\Program Files\Graphviz\bin\dot.exe). "
-        r"If omitted, we try to find 'dot' on PATH.",
-    )
-    parser.add_argument(
-        "--open-svg",
-        action="store_true",
-        help="Open the generated SVG after rendering (Windows: uses os.startfile). Requires --svg.",
-    )
-
-    parser.add_argument(
-        "--F",
-        action="store_true",
-        help="Read code from the file 'sample.vlnc' and set --svg --open-svg",
+        help="Set the logging level (default: INFO)",
     )
 
     args = parser.parse_args()
 
-    if args.F:
-        args.f = True
-        args.svg = True
-        args.open_svg = True
-
     setup_logging(args.log)
-
     logger = logging.getLogger(__name__)
     logger.info("Application started")
 
-    use_pretty = not args.rawast
+    # Determine input source
+    if args.test and args.file:
+        logger.error("Cannot specify both --test and --file")
+        return
 
+    if args.test:
+        input_file = BASE_DIR / "sample.vlnc"
+    elif args.file:
+        input_file = pathlib.Path(args.file)
+    else:
+        input_file = None
+
+    # Determine pipeline stage (default to furthest implemented)
+    run_lex_only = args.lex_only
+    run_parse_only = args.parse_only
+    run_analyze_only = args.analyze_only
+
+    # If no pipeline flags given, run the full implemented pipeline
+    if not (run_lex_only or run_parse_only or run_analyze_only):
+        run_analyze_only = True
+
+    # Main loop (REPL if no file, single run if file)
     while True:
         try:
-            if args.f:
-                with open(BASE_DIR / "sample.vlnc", "r", encoding="utf-8") as f:
+            if input_file:
+                with open(input_file, "r", encoding="utf-8") as f:
                     source = f.read()
             else:
                 source = input(">> ")
         except EOFError:
             break
+        except FileNotFoundError:
+            logger.error(f"File not found: {input_file}")
+            break
 
+        # Lexer
         scanner = Scanner(source)
         tokens = scanner.scan_tokens()
 
-        if args.lex:
+        if run_lex_only:
             for token in tokens:
                 print(token)
-            if args.f:
+            if input_file:
                 break
             continue
 
+        # Parser
         parser_ = Parser(tokens)
         asts = parser_.parse()
 
+        # Print errors
         if parser_.errors:
             print("\033[91mThere were problems.\033[0m")
-
-            global_errors: list[GenericParseError] = []
-
-            for error_category, errors in parser_.errors:
-                if error_category == "Global":
-                    global_errors.extend(errors)
-                    continue
-                print(f"\033[93mErrors while parsing {error_category}:\033[0m")
-                for error in errors:
-                    print(f"  {error}")
-
-            if global_errors:
-                print(f"\033[93mGlobal Errors:\033[0m")
-                for error in global_errors:
-                    print(f"  {error}")
+            _print_parser_errors(parser_.errors)
 
         if not asts:
             print("\033[91mNo AST generated.\033[0m")
-            if args.f:
+            if input_file:
                 break
             continue
 
-        # Graph output (one graph for all top-level ASTs)
-        if args.dot or args.svg:
-            root = GroupNode(Location(-1, -1), asts)
+        # Generate SVG if requested
+        if args.svg:
+            _generate_svg(asts, args.svg_out, args.open_svg)
 
-            # NOTE: ast_to_dot() no longer accepts show_locations
-            dot_text = ast_to_dot(root)
+        # Print AST if we're stopping at parse stage
+        if run_parse_only:
+            if parser_.errors:
+                print("\033[94mPartial AST:\033[0m")
 
-            dot_path = pathlib.Path(args.dot_out)
-            write_dot(dot_text, dot_path)
-            print(f"Wrote DOT to: {dot_path.resolve()}")
+            if args.pretty:
+                for ast in asts:
+                    if isinstance(ast, AuxiliaryNode):
+                        continue
+                    print(pretty_print_ast(ast))
+            else:
+                for ast in asts:
+                    print(ast)
 
-            if args.svg:
-                svg_path = dot_path.with_suffix(".svg")
-                try:
-                    render_with_graphviz(
-                        dot_path,
-                        svg_path,
-                        fmt="svg",
-                        dot_exe=args.dot_exe,
-                    )
+            if input_file:
+                break
+            continue
 
-                    print(f"Wrote SVG to: {svg_path.resolve()}")
+        # Static Analysis
+        if run_analyze_only:
+            analyser = Analyser(asts)
+            tasts = analyser.analyse()
 
-                    if args.open_svg:
-                        os.startfile(svg_path)  # type: ignore[attr-defined]
-                except Exception as e:
-                    print(f"\033[91mFailed to render SVG with Graphviz: {e}\033[0m")
+            # First, print all collected symbols
+            print("\033[92mCollected Symbols:\033[0m")
+            for ident, symbol in analyser.symbols.items():
+                print(f"{ident}: {symbol}")
 
-        if parser_.errors:
-            print("\033[94mPartial AST:\033[0m")
+            print("\033[92mTyped AST:\033[0m")
+            for tast in tasts:
+                print(tast)
+            if input_file:
+                break
+            continue
 
-        if use_pretty:
-            for ast in asts:
-                if isinstance(ast, AuxiliaryNode):
-                    continue
-                print(pretty_print_ast(ast))
-        else:
-            for ast in asts:
-                print(ast)
+        # Full pipeline (TODO: implement remaining stages)
+        # When you implement optimizer/codegen, this will become the default
+        # tasts = analyzer.analyze(asts)
+        # optimized = optimizer.optimize(tasts)
+        # bytecode = codegen.generate(optimized)
+        print("\033[93mFull pipeline not yet implemented.\033[0m")
 
-        if args.f:
+        if input_file:
             break
+
+
+def _print_parser_errors(errors):
+    """Print parser errors in a formatted way."""
+    global_errors: list[GenericParseError] = []
+
+    for error_category, error_list in errors:
+        if error_category == "Global":
+            global_errors.extend(error_list)
+            continue
+        print(f"\033[93mErrors while parsing {error_category}:\033[0m")
+        for error in error_list:
+            print(f"  {error}")
+
+    if global_errors:
+        print(f"\033[93mGlobal Errors:\033[0m")
+        for error in global_errors:
+            print(f"  {error}")
+
+
+def _generate_svg(asts, svg_path_str, open_after):
+    """Generate DOT and render SVG from AST."""
+    root = GroupNode(Location(-1, -1), asts)
+    dot_text = ast_to_dot(root)
+
+    svg_path = pathlib.Path(svg_path_str)
+    dot_path = svg_path.with_suffix(".dot")
+
+    # Write DOT
+    write_dot(dot_text, dot_path)
+    print(f"Wrote DOT to: {dot_path.resolve()}")
+
+    # Render SVG
+    try:
+        render_with_graphviz(dot_path, svg_path, fmt="svg")
+        print(f"Wrote SVG to: {svg_path.resolve()}")
+
+        if open_after:
+            os.startfile(svg_path)  # type: ignore[attr-defined]
+    except Exception as e:
+        print(f"\033[91mFailed to render SVG: {e}\033[0m")
 
 
 if __name__ == "__main__":

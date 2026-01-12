@@ -147,7 +147,7 @@ class DictionaryType(VType):
 @dataclass()
 class FunctionType(VType):
     fully_typed: bool
-    generics: list[str]
+    generics: list[VType]
     param_types: list[VType]
     return_types: list[VType]
     where_clauses: list[str]  # Placeholder for where clauses
