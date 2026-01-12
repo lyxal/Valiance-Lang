@@ -523,20 +523,31 @@ class IndexNode(ASTNode):
     dump: bool = False
 
 
-@dataclass(frozen=True)
-class TagDefinitionNode(ASTNode):
-    """Represents a tag definition"""
+class OverlayRule:
+    def __init__(
+        self,
+        element: Identifier,
+        generics: list[VType],
+        arguments: list[VType],
+        returns: list[VType],
+    ):
+        self.element = element
+        self.generics = generics
+        self.arguments = arguments
+        self.returns = returns
 
-    name: Identifier
+
+@dataclass(frozen=True)
+class TagCreationNode(ASTNode):
+    tag_name: Identifier
     category: TagCategory
+    rules: list[OverlayRule]
 
 
 @dataclass(frozen=True)
-class TagOverlayNode(ASTNode):
-    """Represents a tag overlay operation"""
-
-    name: Identifier
-    # TODO: Figure out what goes here
+class TagExtendNode(ASTNode):
+    tag_name: Identifier
+    rules: list[OverlayRule]
 
 
 @dataclass(frozen=True)
@@ -603,3 +614,10 @@ class UnsafeTypeCastNode(ASTNode):
     """Represents an unsafe type cast operation"""
 
     target_type: VType
+
+
+@dataclass(frozen=True)
+class BreakNode(ASTNode):
+    """Represents a break operation in loops"""
+
+    values: list[ASTNode] | None

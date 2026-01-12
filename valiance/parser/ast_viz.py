@@ -47,6 +47,10 @@ INLINE_AST_LIST_FIELD_NAMES = {
     "methods",
     "parent_traits",
     "default_constructor",
+    # control flow payloads
+    "values",  # BreakNode(values)
+    # tags
+    "rules",
 }
 MAX_INLINE_LIST_ITEMS = 6
 MAX_INLINE_STRING = 60
@@ -67,9 +71,14 @@ GROUP_LIST_FIELDS = {
     "items",
     "elements",
     "default_constructor",
+    # control flow payloads
+    "values",  # BreakNode(values)
+    # tags
+    "rules",
 }
 MAX_EDGES_PER_GROUP = 12
 
+# keep the diagram readable
 LABEL_NON_FLOW_EDGES = False
 
 
@@ -91,8 +100,24 @@ def _short(s: str, n: int = MAX_INLINE_STRING) -> str:
 
 
 def _pretty_scalar(val: Any) -> str:
+    """
+    Pretty-printer for non-AST scalar-ish values.
+
+    NOTE: Your VType.toString() does NOT include tags.
+    Your VType.formatthis() DOES include tags, so prefer it when present.
+    """
     if val is None:
         return ""
+
+    fmt = getattr(val, "formatthis", None)
+    if callable(fmt):
+        try:
+            s = str(fmt())
+            if s:
+                return _short(s)
+        except Exception:
+            pass
+
     to_string = getattr(val, "toString", None)
     if callable(to_string):
         try:
@@ -123,6 +148,63 @@ def _pretty_scalar(val: Any) -> str:
     return _short(str(val))
 
 
+# -------- OverlayRule support (non-dataclass) --------
+
+
+def _is_overlay_rule(obj: Any) -> bool:
+    # class OverlayRule: element: Identifier, generics: list[VType], arguments: list[VType], returns: list[VType]
+    return (
+        obj is not None
+        and not is_dataclass(obj)
+        and type(obj).__name__ == "OverlayRule"
+        and isinstance(getattr(obj, "element", None), Identifier)
+    )
+
+
+def _overlay_rule_parts(r: Any) -> tuple[str, str, str]:
+    element = _ident_to_str(getattr(r, "element", "<element>"))
+    generics = getattr(r, "generics", None) or []
+    arguments = getattr(r, "arguments", None) or []
+    returns = getattr(r, "returns", None) or []
+
+    g = ""
+    if generics:
+        g = "[" + ", ".join(_pretty_scalar(t) for t in generics) + "] "
+
+    # IMPORTANT: _pretty_scalar now prefers VType.formatthis(), so tags show here.
+    inputs = g + "(" + ", ".join(_pretty_scalar(t) for t in arguments) + ")"
+    outputs = ", ".join(_pretty_scalar(t) for t in returns)
+    return (element, inputs, outputs)
+
+
+def _overlay_rule_table_label(r: Any) -> str:
+    # 3-column mini table: Element | Inputs | Outputs
+    element, inputs, outputs = _overlay_rule_parts(r)
+    header = "OverlayRule"
+    return (
+        "<"
+        "<TABLE BORDER='1' CELLBORDER='1' CELLSPACING='0' CELLPADDING='6'>"
+        f"<TR><TD COLSPAN='3' BGCOLOR='{TABLE_HDR_BG}' ALIGN='LEFT'><B>{_html_escape(header)}</B></TD></TR>"
+        f"<TR>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_KEY_BG}'><B>Element</B></TD>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_KEY_BG}'><B>Inputs</B></TD>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_KEY_BG}'><B>Outputs</B></TD>"
+        f"</TR>"
+        f"<TR>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_VAL_BG}'>{_html_escape(element)}</TD>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_VAL_BG}'>{_html_escape(inputs)}</TD>"
+        f"<TD ALIGN='LEFT' BGCOLOR='{TABLE_VAL_BG}'>{_html_escape(outputs)}</TD>"
+        f"</TR>"
+        "</TABLE>"
+        ">"
+    )
+
+
+def _overlay_rule_inline_sig(r: Any) -> str:
+    element, inputs, outputs = _overlay_rule_parts(r)
+    return f"{element}: {inputs} -> {outputs}"
+
+
 # -------- MatchBranch + MatchPattern support --------
 
 
@@ -132,44 +214,19 @@ def _is_match_branch(obj: Any) -> bool:
     tn = type(obj).__name__
     if not (tn.startswith("Match") and tn.endswith("Branch")):
         return False
+    # parser sets body for all cases
     return isinstance(getattr(obj, "body", None), ASTNode)
 
 
 def _is_match_pattern(obj: Any) -> bool:
-    # MatchPattern dataclasses: StringPattern, ListPattern, TuplePattern, ErrorPattern
     return (
         obj is not None and is_dataclass(obj) and type(obj).__name__.endswith("Pattern")
-    )
-
-
-def _is_pattern_component(obj: Any) -> bool:
-    # PatternComponent dataclasses: ASTComponent, WildcardComponent, GreedyComponent
-    return (
-        obj is not None
-        and is_dataclass(obj)
-        and type(obj).__name__.endswith("Component")
     )
 
 
 def _vtype_str(v: Any) -> str:
     s = _pretty_scalar(v)
     return s if s else ("" if v is None else str(v))
-
-
-def _pattern_component_label(comp: Any) -> str:
-    tn = type(comp).__name__
-    if tn == "ASTComponent":
-        node = getattr(comp, "node", None)
-        if isinstance(node, ASTNode):
-            return _ast_signature(node)
-        return "ast"
-    if tn == "WildcardComponent":
-        name = getattr(comp, "name", None)
-        return f"*{_ident_to_str(name)}" if isinstance(name, Identifier) else "*"
-    if tn == "GreedyComponent":
-        name = getattr(comp, "name", None)
-        return f"...{_ident_to_str(name)}" if isinstance(name, Identifier) else "..."
-    return tn.removesuffix("Component")
 
 
 def _pattern_label(pat: Any) -> str:
@@ -187,6 +244,22 @@ def _pattern_label(pat: Any) -> str:
     if tn == "ErrorPattern":
         return "error"
     return tn.removesuffix("Pattern").lower() or tn
+
+
+def _pattern_component_label(comp: Any) -> str:
+    tn = type(comp).__name__
+    if tn == "ASTComponent":
+        node = getattr(comp, "node", None)
+        if isinstance(node, ASTNode):
+            return _ast_signature(node)
+        return "ast"
+    if tn == "WildcardComponent":
+        name = getattr(comp, "name", None)
+        return f"*{_ident_to_str(name)}" if isinstance(name, Identifier) else "*"
+    if tn == "GreedyComponent":
+        name = getattr(comp, "name", None)
+        return f"...{_ident_to_str(name)}" if isinstance(name, Identifier) else "..."
+    return tn.removesuffix("Component")
 
 
 def _iter_match_pattern_children(
@@ -213,8 +286,6 @@ def _iter_match_pattern_children(
                         node,
                     )
         return
-
-    # ErrorPattern has no children
 
 
 def _match_branch_label(branch: Any) -> str:
@@ -279,7 +350,7 @@ def _iter_match_branch_children(
         pat = getattr(branch, "pattern", None)
         if _is_match_pattern(pat):
             yield from _iter_match_pattern_children(
-                f"{prefix}.pattern({_pattern_label(pat)})", pat
+                f"{prefix}.pat({_pattern_label(pat)})", pat
             )
         pred = getattr(branch, "predicate", None)
         if isinstance(pred, ASTNode):
@@ -295,7 +366,7 @@ def _iter_match_branch_children(
         yield (f"{prefix}.body", body)
 
 
-# -------- core formatting / signature --------
+# -------- other formatting / signature --------
 
 
 def _trait_impl_trait_label(node: ASTNode) -> Optional[str]:
@@ -482,6 +553,16 @@ def _summarize_sequence(seq: list[Any]) -> str:
             items.append(f"• … (+{more} more)")
         return "<BR ALIGN='LEFT'/>".join(items)
 
+    if seq and all(_is_overlay_rule(x) for x in seq):
+        items = [
+            f"• {_html_escape(_overlay_rule_inline_sig(r))}"
+            for r in seq[:MAX_INLINE_LIST_ITEMS]
+        ]
+        more = len(seq) - min(len(seq), MAX_INLINE_LIST_ITEMS)
+        if more > 0:
+            items.append(f"• … (+{more} more)")
+        return "<BR ALIGN='LEFT'/>".join(items)
+
     items: list[str] = []
     for x in seq[:MAX_INLINE_LIST_ITEMS]:
         if isinstance(x, ASTNode):
@@ -494,6 +575,8 @@ def _summarize_sequence(seq: list[Any]) -> str:
                 items.append(_ast_signature(x))
         elif _is_match_branch(x):
             items.append(_match_branch_label(x))
+        elif _is_overlay_rule(x):
+            items.append(_overlay_rule_inline_sig(x))
         elif _is_named_ast_pair(x):
             k, v = x
             items.append(f"{_ident_to_str(k)} = {_ast_signature(v)}")
@@ -523,6 +606,9 @@ def _iter_ast_children(field_name: str, value: Any) -> Iterable[tuple[str, ASTNo
     if isinstance(value, ASTNode):
         yield (field_name, value)
         return
+
+    # OverlayRule contains no AST children (only VType/Identifier), so nothing to yield.
+    # We render it as its own node via a special-case in walk().
 
     if _is_match_branch(value):
         yield from _iter_match_branch_children(field_name, value)
@@ -602,12 +688,19 @@ def _has_direct_astnode_field(node: ASTNode) -> bool:
 
 
 def _is_forced_exit_scope(node: ASTNode) -> bool:
+    # Make these nodes colored + have EXIT markers
     return type(node).__name__ in {
         "ObjectDefinitionNode",
         "ObjectTraitImplNode",
         "TraitNode",
         "TraitImplTraitNode",
         "MatchNode",
+        "AssertNode",
+        "AssertElseNode",
+        "BreakNode",
+        "TagCreationNode",
+        "TagExtendNode",
+        "TagDisjointNode",
     }
 
 
@@ -665,6 +758,12 @@ def _container_table_label(node: ASTNode) -> str:
                     )
                 )
                 continue
+
+            # Inline summaries for AST-ish lists and OverlayRule lists
+            if isinstance(v, (list, tuple)):
+                if v and all(_is_overlay_rule(x) for x in v):
+                    rows.append((name.capitalize(), _summarize_sequence(list(v))))
+                    continue
 
             if isinstance(v, (list, tuple)) and any(
                 isinstance(x, ASTNode)
@@ -857,6 +956,20 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         )
         return bid
 
+    def emit_small_hub(*, text: str, node_color: str) -> str:
+        hid = new_anon("hub")
+        out_nodes.append(
+            f'{hid} [shape=box, style="rounded", penwidth=1, color="{node_color}", fontcolor="{FG}", label="{_html_escape(text)}"];'
+        )
+        return hid
+
+    def emit_overlay_rule(r: Any, *, node_color: str, penwidth: int = 1) -> str:
+        rid = new_anon("rule")
+        out_nodes.append(
+            f'{rid} [shape=plain, color="{node_color}", penwidth={penwidth}, fontcolor="{FG}", label={_overlay_rule_table_label(r)}];'
+        )
+        return rid
+
     def link(
         a: str,
         b: str,
@@ -865,15 +978,20 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
         color: Optional[str] = None,
         show_label: bool = True,
         weight: Optional[int] = None,
+        style: Optional[str] = None,
+        arrowhead: Optional[str] = None,
     ) -> None:
         c = color or MUTED
         w = f", weight={weight}" if weight is not None else ""
+        st = f', style="{style}"' if style else ""
+        ah = f', arrowhead="{arrowhead}"' if arrowhead else ""
+
         if show_label and label:
             out_edges.append(
-                f'{a} -> {b} [label="{_html_escape(label)}", color="{c}", fontcolor="{c}"{w}];'
+                f'{a} -> {b} [label="{_html_escape(label)}", color="{c}", fontcolor="{c}"{w}{st}{ah}];'
             )
         else:
-            out_edges.append(f'{a} -> {b} [color="{c}"{w}];')
+            out_edges.append(f'{a} -> {b} [color="{c}"{w}{st}{ah}];')
 
     def link_dotted(a: str, b: str, *, color: str) -> None:
         out_edges.append(f'{a} -> {b} [style=dotted, color="{color}", arrowhead=none];')
@@ -949,6 +1067,90 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                 if v is None:
                     continue
 
+                # --- TagCreation/TagExtend rules (OverlayRule list) ---
+                if (
+                    type(node).__name__ in {"TagCreationNode", "TagExtendNode"}
+                    and f.name == "rules"
+                ):
+                    if (
+                        isinstance(v, list)
+                        and v
+                        and all(_is_overlay_rule(x) for x in v)
+                    ):
+                        folder = emit_folder(
+                            title="rules", count=len(v), node_color=node_color
+                        )
+                        link(entry, folder, "rules", color=node_color)
+
+                        shown_rules = v[:MAX_EDGES_PER_GROUP]
+                        for r in shown_rules:
+                            rn = emit_overlay_rule(r, node_color=node_color, penwidth=1)
+                            link(folder, rn, "", color=node_color, show_label=False)
+
+                        hidden = len(v) - len(shown_rules)
+                        if hidden > 0:
+                            more = emit_more(hidden_count=hidden, node_color=node_color)
+                            link(folder, more, "more", color=node_color)
+                        continue
+
+                # --- Assert/AssertElse: make cond/else explicit even when they are GroupNodes ---
+                if (
+                    type(node).__name__ in {"AssertNode", "AssertElseNode"}
+                    and f.name == "condition"
+                ):
+                    if isinstance(v, GroupNode):
+                        hub = emit_small_hub(text="cond", node_color=node_color)
+                        link(
+                            entry,
+                            hub,
+                            "cond",
+                            color=node_color,
+                            show_label=True,
+                            weight=3,
+                        )
+
+                        c_entry, c_exit = walk(v, node_color)
+                        if c_entry is not None:
+                            link(
+                                hub,
+                                c_entry,
+                                "",
+                                color=node_color,
+                                show_label=False,
+                                weight=3,
+                            )
+                        if c_exit is not None:
+                            exit_ = c_exit
+                        continue
+
+                if type(node).__name__ == "AssertElseNode" and f.name == "else_branch":
+                    if isinstance(v, GroupNode):
+                        hub = emit_small_hub(text="else", node_color=node_color)
+                        link(
+                            entry,
+                            hub,
+                            "else",
+                            color=node_color,
+                            show_label=True,
+                            style="dashed",
+                            weight=2,
+                        )
+
+                        e_entry, _e_exit = walk(v, node_color)
+                        if e_entry is not None:
+                            link(
+                                hub,
+                                e_entry,
+                                "",
+                                color=node_color,
+                                show_label=False,
+                                style="dashed",
+                                weight=2,
+                            )
+                        # don't set exit_ from else_branch (else isn't the linear continuation)
+                        continue
+
+                # --- MatchNode.branches: per-branch hub + local spine ---
                 if (
                     f.name == "branches"
                     and isinstance(v, list)
@@ -986,11 +1188,8 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                             short = lbl.removeprefix("branch.")
                             short = short.replace("values[", "v").replace("]", "")
                             short = short.replace("condition", "cond")
-                            short = short.replace("pattern", "pat")
+                            short = short.replace("pat(", "").replace(")", "")
                             short = short.replace("predicate", "pred")
-                            short = short.replace(".value", ".value")
-                            # keep it short and consistent
-                            short = short.replace("pattern(", "").replace(")", "")
                             link(prev, c_entry, short, color=node_color, weight=3)
                             prev = c_entry
 
@@ -1006,6 +1205,7 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                         link(folder, more, "more", color=node_color)
                     continue
 
+                # generic list grouping
                 if f.name in GROUP_LIST_FIELDS and isinstance(v, (list, tuple)):
                     children = list(_iter_ast_children(f.name, v))
                     if children:
@@ -1029,6 +1229,8 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                                 color=node_color,
                                 show_label=LABEL_NON_FLOW_EDGES,
                             )
+                            if isinstance(child, GroupNode) and c_exit is not None:
+                                exit_ = c_exit
 
                         hidden = len(children) - len(shown)
                         if hidden > 0:
@@ -1036,19 +1238,49 @@ def ast_to_dot(root: ASTNode, *, rankdir: str = "TB") -> str:
                             link(folder, more, "more", color=node_color)
                         continue
 
+                # generic edge emission
                 for lbl, child in _iter_ast_children(f.name, v):
                     if _skip_node(child):
                         continue
                     c_entry, c_exit = walk(child, node_color)
                     if c_entry is None:
                         continue
-                    link(
-                        entry,
-                        c_entry,
-                        lbl if LABEL_NON_FLOW_EDGES else "",
-                        color=node_color,
-                        show_label=LABEL_NON_FLOW_EDGES,
-                    )
+
+                    # For asserts, always label if not GroupNode (single node condition / else)
+                    if (
+                        type(node).__name__ in {"AssertNode", "AssertElseNode"}
+                        and f.name == "condition"
+                    ):
+                        link(
+                            entry,
+                            c_entry,
+                            "cond",
+                            color=node_color,
+                            show_label=True,
+                            weight=3,
+                        )
+                    elif (
+                        type(node).__name__ == "AssertElseNode"
+                        and f.name == "else_branch"
+                    ):
+                        link(
+                            entry,
+                            c_entry,
+                            "else",
+                            color=node_color,
+                            show_label=True,
+                            style="dashed",
+                            weight=2,
+                        )
+                    else:
+                        link(
+                            entry,
+                            c_entry,
+                            lbl if LABEL_NON_FLOW_EDGES else "",
+                            color=node_color,
+                            show_label=LABEL_NON_FLOW_EDGES,
+                        )
+
                     if isinstance(child, GroupNode) and c_exit is not None:
                         exit_ = c_exit
 

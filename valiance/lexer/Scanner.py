@@ -157,6 +157,28 @@ class Scanner:
                     self.add_token(TokenType.EQUALS, "=")
                 case _ if self._head_equals(TokenType.AS_UNSAFE.value):
                     self.add_token(TokenType.AS_UNSAFE, TokenType.AS_UNSAFE.value)
+                case _ if self._head_equals(TokenType.TAG_CONSTRUCTED.value):
+                    self.add_token(
+                        TokenType.TAG_CONSTRUCTED, TokenType.TAG_CONSTRUCTED.value
+                    )
+                case _ if self._head_equals(TokenType.TAG_COMPUTED.value):
+                    self.add_token(TokenType.TAG_COMPUTED, TokenType.TAG_COMPUTED.value)
+                case _ if self._head_equals(TokenType.TAG_ELEMENT.value):
+                    self.add_token(TokenType.TAG_ELEMENT, TokenType.TAG_ELEMENT.value)
+                case _ if self._head_equals(TokenType.TAG_COMPANION.value):
+                    self.add_token(
+                        TokenType.TAG_COMPANION, TokenType.TAG_COMPANION.value
+                    )
+                case _ if self._head_equals(TokenType.TAG_EXTEND.value):
+                    self.add_token(TokenType.TAG_EXTEND, TokenType.TAG_EXTEND.value)
+                case _ if self._head_equals(TokenType.TAG_DISJOINT.value):
+                    self.add_token(TokenType.TAG_DISJOINT, TokenType.TAG_DISJOINT.value)
+                case _ if self._head_equals(TokenType.TAG_VARIANT.value):
+                    self.add_token(TokenType.TAG_VARIANT, TokenType.TAG_VARIANT.value)
+                case _ if self._head_equals(TokenType.TAG.value):
+                    raise ValueError(
+                        f'Use of reserved tag token "{TokenType.TAG.value}" without category at line {self.line}, column {self.column}'
+                    )
                 case _ if HEAD in string.ascii_letters:
                     self.scan_element()
                 case "$" if not self._head_equals("$("):

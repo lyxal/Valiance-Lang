@@ -1,8 +1,10 @@
-match {
-  pattern [1, ..., 5] -> "A",
-  pattern [1, $n = _, 3] -> "B",
-  pattern [1, _, _, 4] -> "C",
-  pattern "bruh $moment" -> "D",
-  pattern [[1, 2, 3], [4, 5, _]] -> "E",
-  pattern [$m = ..., ..., _, _, 3] -> "F",
+tag computed #sorted {
+  (take, drop)[T]: (#sorted T+, Number) -> #sorted T+
+}
+
+tag extend #sorted {
+  filter[T]: {
+    (#sorted T+, Function[T -> #boolean Number]) -> #sorted T+,
+    (#sorted T+, Function[T -> Number]) -> #sorted T+
+  }
 }

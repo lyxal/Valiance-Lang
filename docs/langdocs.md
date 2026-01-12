@@ -2365,14 +2365,11 @@ ${element}[${generics}]: {
 - `generics` is optional, and allows for generic type variables to be expressed
 - `parameters` is the overload parameters. No names are needed, just the types.
 - `output` is the return types
-- The data tag being defined can be represented as `#`
-	- Saves repeating tag name
-	- Other tags need to be spelled out
 - The `+` example becomes:
 
 ```
 tag computed #sorted {
-  +: (# Number, Number) -> # Number
+  +: (#sorted Number, Number) -> #sorted Number
 }
 ```
 
@@ -2382,12 +2379,12 @@ tag computed #sorted {
 tag computed #sorted {
   #? Cover the basic math ops that do not change sortedness
   (+, -, /, *): {
-    (# Number, Number) -> # Number,
-    (Number, # Number) -> # Number,
-    (# Number, # Number) -> # Number
+    (#sorted Number, Number) -> #sorted Number,
+    (Number, #sorted Number) -> #sorted Number,
+    (#sorted Number, #sorted Number) -> #sorted Number
   }
   #? Filtering a sorted list does not change sortedness
-  filter[T]: (# T+, Function[T -> #boolean Number]) -> # T+
+  filter[T]: (#sorted T+, Function[T -> #boolean Number]) -> #sorted T+
 }
 ```
 
@@ -2397,7 +2394,7 @@ tag computed #sorted {
 ```
 tag extend #sorted {
   #? Taking the first n items from a sorted list returns a sorted list
-  take[T]: (# T+, Number) -> # T+
+  take[T]: (#sorted T+, Number) -> #sorted T+
 }
 ```
 

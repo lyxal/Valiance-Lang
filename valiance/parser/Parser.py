@@ -4,6 +4,7 @@ import itertools
 from typing import Callable, Optional, TypeVar
 import logging
 
+from valiance.compiler_common import TagCategories
 from valiance.loglib.log_block import log_block
 from valiance.parser.Errors import EndOfFileTokenError, GenericParseError, ParserError
 
@@ -1211,7 +1212,7 @@ class Parser:
         self.eat_whitespace()
 
         # First, handle data tags
-        while self.head_equals(TokenType.TAG_TOKEN):
+        while self.head_equals(TokenType.HASH):
             self.discard()  # Discard the tag token
             tag_name = self.parse_identifier()
             depth = 0
@@ -2673,3 +2674,159 @@ class Parser:
                     self.parser.eat(TokenType.COMMA)
             self.parser.eat(end_token_type)
             return items
+
+    class AssertParser(ParserStrategy):
+        name: str = "Assert Expression"
+
+        def can_parse(self):
+            return self.go(TokenType.ASSERT)
+
+        def parse(self):
+            location_token = self.parser.pop()  # Pop the 'assert' token
+            condition = self.parser.parse_block()
+            if not is_expressionable([condition]):
+                self.parser.add_error(
+                    "Assert condition must be an expression", condition.location
+                )
+                return ErrorNode(location_token.location, location_token)
+
+            if not self.parser.head_equals(TokenType.ELSE):
+                return AssertNode(location_token.location, condition)
+
+            self.parser.eat(TokenType.ELSE)  # Pop the 'else' token
+            else_block = self.parser.parse_block()
+            return AssertElseNode(location_token.location, condition, else_block)
+
+    class BreakParser(ParserStrategy):
+        name: str = "Break Statement"
+
+        def can_parse(self) -> bool:
+            return self.go(TokenType.BREAK)
+
+        def parse(self) -> ASTNode:
+            location_token = self.parser.pop()  # Pop the 'break' token
+            if not self.parser.head_equals(TokenType.LEFT_PAREN):
+                return BreakNode(location_token.location, None)
+
+            values = self.parser.parse_items(
+                TokenType.LEFT_PAREN,
+                TokenType.COMMA,
+                TokenType.RIGHT_PAREN,
+                self.parser.parse_next,
+                lambda x: not is_expressionable([x]),
+                lambda _: ErrorNode(location_token.location, location_token),
+            )
+            return BreakNode(location_token.location, values)
+
+    class TagCreationParser(ParserStrategy):
+        name: str = "Tag Creation"
+
+        def can_parse(self) -> bool:
+            return self.parser.head_in(
+                TokenType.TAG_COMPANION,
+                TokenType.TAG_CONSTRUCTED,
+                TokenType.TAG_COMPUTED,
+                TokenType.TAG_ELEMENT,
+                TokenType.TAG_VARIANT,
+                TokenType.TAG_EXTEND,
+            )
+
+        def parse(self) -> ASTNode:
+            category_token = self.parser.pop()
+
+            # If this is a tag extension, there won't be a tag category
+            # otherwise, set it based on the token
+            tag_category: TagCategory | None = None
+            if not category_token.type == TokenType.TAG_EXTEND:
+                tag_category = TagCategories.tag_category_from_token(
+                    category_token.value
+                )
+            self.parser.eat(TokenType.HASH)  # Eat the # token
+            tag_name = self.parser.parse_identifier()
+            if tag_category in [TagCategory.ELEMENT, TagCategory.COMPANION]:
+                return TagCreationNode(
+                    category_token.location, tag_name, tag_category, []
+                )
+
+            overlays: list[OverlayRule] = []
+            if self.parser.head_equals(TokenType.LEFT_BRACE, care_about_eof=False):
+                self.parser.discard()  # Discard LEFT_BRACE
+                while not self.parser.head_equals(TokenType.RIGHT_BRACE):
+                    elements: list[Identifier] = []
+                    if self.parser.head_equals(TokenType.WORD):
+                        elements.append(self.parser.parse_identifier(*ELEMENT_TOKENS))
+                    else:
+                        elements = self.parser.parse_items(
+                            TokenType.LEFT_PAREN,
+                            TokenType.COMMA,
+                            TokenType.RIGHT_PAREN,
+                            lambda: self.parser.parse_identifier(*ELEMENT_TOKENS),
+                            lambda ident: ident.error,
+                            lambda token: Identifier(token.location, is_error=True),
+                            singleton=True,
+                        )
+                        self.parser.eat(TokenType.RIGHT_PAREN)
+                    generics: list[VType] = []
+
+                    if self.parser.head_equals(TokenType.LEFT_SQUARE):
+                        generics = self.parser.parse_generics()
+                        self.parser.eat(TokenType.RIGHT_SQUARE)
+
+                    if not self.parser.eat(TokenType.COLON):
+                        self.parser.sync(TokenType.COMMA, TokenType.RIGHT_BRACE)
+
+                    # Tuple = input types -> output types
+                    rules: list[Tuple[list[VType], list[VType]]] = []
+                    if self.parser.head_equals(TokenType.LEFT_BRACE):
+                        self.parser.discard()  # Discard LEFT_BRACE
+                        while not self.parser.head_equals(TokenType.RIGHT_BRACE):
+                            rules.append(self.parse_overlay_rule())
+                            if self.parser.head_equals(TokenType.COMMA):
+                                self.parser.eat(TokenType.COMMA)
+                        self.parser.eat(TokenType.RIGHT_BRACE)
+                    else:
+                        rules.append(self.parse_overlay_rule())
+                    for element in elements:
+                        for input_types, output_types in rules:
+                            overlays.append(
+                                OverlayRule(
+                                    element,
+                                    generics,
+                                    input_types,
+                                    output_types,
+                                )
+                            )
+            self.parser.eat(TokenType.RIGHT_BRACE)
+            if (
+                tag_category is None
+            ):  # Tag category is None only if this is a tag extension
+                return TagExtendNode(category_token.location, tag_name, overlays)
+            return TagCreationNode(
+                category_token.location, tag_name, tag_category, overlays
+            )
+
+        def parse_overlay_rule(self) -> Tuple[list[VType], list[VType]]:
+            input_types: list[VType] = []
+            output_types: list[VType] = []
+
+            self.parser.eat(TokenType.LEFT_PAREN)
+            while not self.parser.head_equals(TokenType.RIGHT_PAREN):
+                input_types.append(self.parser.parse_type())
+                if self.parser.head_equals(TokenType.COMMA):
+                    self.parser.eat(TokenType.COMMA)
+            self.parser.eat(TokenType.RIGHT_PAREN)
+
+            if not self.parser.eat(TokenType.ARROW):
+                self.parser.sync(TokenType.COMMA, TokenType.RIGHT_BRACE)
+
+            if not self.parser.head_equals(TokenType.LEFT_PAREN):
+                output_types.append(self.parser.parse_type())
+            else:
+                self.parser.eat(TokenType.LEFT_PAREN)
+                while not self.parser.head_equals(TokenType.RIGHT_PAREN):
+                    output_types.append(self.parser.parse_type())
+                    if self.parser.head_equals(TokenType.COMMA):
+                        self.parser.eat(TokenType.COMMA)
+                self.parser.eat(TokenType.RIGHT_PAREN)
+
+            return (input_types, output_types)
