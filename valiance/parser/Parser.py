@@ -2504,9 +2504,7 @@ class Parser:
         name: str = "Match Expression"
 
         def can_parse(self) -> bool:
-            return self.go(TokenType.MATCH) and not self.parser.lookahead_equals(
-                [TokenType.MATCH, TokenType.CHANNELS]
-            )
+            return self.go(TokenType.MATCH)
 
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()  # Pop the 'match' token
