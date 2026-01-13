@@ -1,2 +1,0 @@
-class TypedAST:
-    pass

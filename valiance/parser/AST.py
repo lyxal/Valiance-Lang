@@ -339,8 +339,8 @@ class ModuleImportNode(ASTNode):
 class AliasedImportNode(ASTNode):
     """Represents an aliased import statement"""
 
-    original_name: Identifier
-    alias_name: Identifier
+    module_name: Identifier
+    alias: Identifier
 
 
 @dataclass(frozen=True)
