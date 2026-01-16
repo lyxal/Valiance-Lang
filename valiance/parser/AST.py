@@ -39,7 +39,14 @@ class ASTNode(ABC):
     """Base class for all AST nodes. Sealed via explicit subclass enumeration."""
 
     location: Location
-    pass
+
+    def inputs(self) -> list[VType] | None:
+        """Get input types for this AST node, if applicable"""
+        return None
+
+    def outputs(self) -> list[VType] | None:
+        """Get output types for this AST node, if applicable"""
+        return None
 
 
 @dataclass(frozen=True)
@@ -128,12 +135,20 @@ class DefineNode(ASTNode):
     generics: list[VType]
     name: Identifier
     element_tags: list[ElementTag]
-    parameters: list[Parameter]
-    output: list[VType]
+    parameters: list[Parameter] | None
+    output: list[VType] | None
     body: ASTNode
     visibility: Visibility = (
         Visibility.PUBLIC
     )  # 9 times out of 10 this will never be set
+
+    def inputs(self):
+        if not self.parameters:
+            return None
+        return [param.type_ for param in self.parameters]
+
+    def outputs(self):
+        return self.output
 
 
 @dataclass(frozen=True)
@@ -239,7 +254,7 @@ class FunctionNode(ASTNode):
     """Represents a function/lambda expression"""
 
     generics: list[VType]
-    parameters: list[Parameter]
+    parameters: list[Parameter] | None
     output: list[VType]
     body: ASTNode
     element_tags: Tuple[ElementTag, ...] = tuple()

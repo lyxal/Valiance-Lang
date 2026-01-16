@@ -31,6 +31,18 @@ class Identifier:
     def __str__(self):
         return self.__repr__()
 
+    def __hash__(self) -> int:
+        return hash((self.name, hash(self.property)))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Identifier):
+            return False
+        return (
+            self.name == other.name
+            and self.property == other.property
+            and self.index == other.index
+        )
+
 
 X = TypeVar("X", bound="ScalarIndex | MDIndex | ScalarVariableIndex | ErrorIndex")
 

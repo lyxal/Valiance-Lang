@@ -3,7 +3,7 @@ import logging
 import pathlib
 import os
 
-from valiance.analyser.Analyser import Analyser
+from valiance.analysis.Analyser import Analyser
 from valiance.parser.AST import AuxiliaryNode, GroupNode
 from valiance.parser.Errors import GenericParseError
 from valiance.lexer.Scanner import Scanner
@@ -170,19 +170,7 @@ def main():
         # Static Analysis
         if run_analyze_only:
             analyser = Analyser(asts)
-            tasts = analyser.analyse()
-
-            # First, print all collected symbols
-            print("\033[92mCollected Symbols:\033[0m")
-            for ident, symbol in analyser.symbols.items():
-                print(f"{ident}: {symbol}")
-
-            print("\033[92mTyped AST:\033[0m")
-            for tast in tasts:
-                print(tast)
-            if input_file:
-                break
-            continue
+            analyser.analyse()
 
         # Full pipeline (TODO: implement remaining stages)
         # When you implement optimizer/codegen, this will become the default

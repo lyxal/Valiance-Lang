@@ -195,6 +195,27 @@ class ErrorType(VType):
         return "Error"
 
 
+@dataclass
+class Overload:
+    params: list[VType]
+    returns: list[VType]
+    arity: int
+    multiplicity: int
+
+
+@dataclass
+class ObjectDef:
+    generics: list[Identifier]
+    members: dict[Identifier, VType]
+    traits: list[Identifier]
+
+
+@dataclass
+class TraitDef:
+    generics: list[Identifier]
+    required_methods: list[Overload]
+
+
 class TypeNames(enum.Enum):
     Number = "Number"
     String = "String"
@@ -246,3 +267,17 @@ def type_name_to_vtype(
             data_tags=tuple(data_tags),
             element_tags=tuple(element_tags),
         )
+
+
+def type_compatible(expected: VType, actual: VType) -> bool:
+    # Placeholder for type compatibility logic
+    return expected == actual
+
+
+def compatible(expected: list[VType], actual: list[VType]) -> bool:
+    if len(expected) != len(actual):
+        return False
+    for exp, act in zip(expected, actual):
+        if not type_compatible(exp, act):
+            return False
+    return True
