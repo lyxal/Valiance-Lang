@@ -623,12 +623,18 @@ class SafeTypeCastNode(ASTNode):
 
     target_type: VType
 
+    def outputs(self) -> list[VType]:
+        return [self.target_type]
+
 
 @dataclass(frozen=True)
 class UnsafeTypeCastNode(ASTNode):
     """Represents an unsafe type cast operation"""
 
     target_type: VType
+
+    def outputs(self) -> list[VType]:
+        return [self.target_type]
 
 
 @dataclass(frozen=True)

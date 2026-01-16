@@ -2,7 +2,15 @@ from dataclasses import dataclass, field
 from valiance.compiler_common.Identifier import Identifier
 from valiance.analysis.Scope import ScopeStack
 from valiance.analysis.StackState import StackState, MultiStack, SingleStack
-from valiance.parser.AST import ASTNode, DefineNode, VariableSetNode
+from valiance.parser.AST import (
+    ASTNode,
+    DefineNode,
+    GroupNode,
+    LiteralNode,
+    SafeTypeCastNode,
+    UnsafeTypeCastNode,
+    VariableSetNode,
+)
 from vtypes.VTypes import FunctionType, Overload, VType
 
 
@@ -39,18 +47,37 @@ class Analyser:
                     outputs = node.outputs()
 
                     if inputs is None or outputs is None:
+                        # `define` nodes that need inference
                         self.scope_stack.add_definition(name, node)
                     else:
+                        # fully typed definitions, ready to be type checked
                         overload = Overload(inputs, outputs, len(inputs), len(outputs))
                         self.scope_stack.add_overload(name, overload)
                 case VariableSetNode():
-                    ...
+                    value = node.value
+                    # Determine if this variable can be typed right away
+                    if isinstance(value, (SafeTypeCastNode, UnsafeTypeCastNode)):
+                        self.scope_stack.declare_variable(node.name, value.outputs()[0])
+                    elif isinstance(value, GroupNode):
+                        final_node = value.elements[-1]
+                        if isinstance(
+                            final_node, (SafeTypeCastNode, UnsafeTypeCastNode)
+                        ):
+                            self.scope_stack.declare_variable(
+                                node.name, final_node.outputs()[0]
+                            )
+                    elif isinstance(value, LiteralNode):
+                        self.scope_stack.declare_variable(node.name, value.type_)
+                    else:
+                        # List node is considered as "needing inference" because
+                        # it could contain other variables
+                        self.scope_stack.add_partial_variable(node.name, value)
                 case _:
                     pass
 
     def _check_all_definitions(self):
-        # Placeholder for checking all definitions
-        pass
+        # Placeholder
+        ...
 
     def _check_top_level(self):
         # Placeholder for checking top-level code

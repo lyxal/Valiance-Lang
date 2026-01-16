@@ -32,6 +32,12 @@ class ScopeStack:
                 return scope.variables[name]
         return None
 
+    def lookup_partial_variable(self, name: Identifier) -> ASTNode | None:
+        for scope in reversed(self.scopes):
+            if name in scope.partial_variables:
+                return scope.partial_variables[name]
+        return None
+
     def lookup_element(self, name: Identifier) -> list[Overload]:
         for scope in reversed(self.scopes):
             if name in scope.elements:
@@ -59,6 +65,9 @@ class ScopeStack:
     # Mutations (add to current/innermost scope)
     def declare_variable(self, name: Identifier, ty: VType):
         self.scopes[-1].variables[name] = ty
+
+    def add_partial_variable(self, name: Identifier, value: ASTNode):
+        self.scopes[-1].partial_variables[name] = value
 
     def add_overload(self, name: Identifier, overload: Overload):
         if name not in self.scopes[-1].elements:
