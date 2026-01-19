@@ -1,89 +1,95 @@
-from parser.AST import ASTNode, DefineNode
 from valiance.compiler_common.Identifier import Identifier
-from valiance.vtypes.VTypes import ObjectDef, Overload, TraitDef, VType
+from valiance.parser.AST import ASTNode
+from valiance.vtypes.VTypes import InferenceTypeVariable, Overload, VType
 
 
 class Scope:
-    def __init__(self, parent: Scope | None = None):
-        self.parent = parent
+    def __init__(self, inputs: list[VType] | None = None, parent: Scope | None = None):
+        self.inputs = list(inputs) if inputs is not None else []
+        self.stack: list[VType] = []
         self.variables: dict[Identifier, VType] = {}
-        self.partial_variables: dict[Identifier, ASTNode] = {}
-        self.elements: dict[Identifier, list[Overload]] = {}
-        self.definitions: dict[Identifier, list[DefineNode]] = {}
-        self.objects: dict[Identifier, ObjectDef] = {}
-        self.traits: dict[Identifier, TraitDef] = {}
+        self.typemap: dict[InferenceTypeVariable, VType | None] = {}
+        self.inference_variable_count = 0
+        self.parent: Scope | None = parent
 
+    def __repr__(self) -> str:
+        stack_str = ", ".join(t.toString() for t in self.stack)
+        return f"Scope(stack=[{stack_str}], variables={self.variables})"
 
-class ScopeStack:
-    def __init__(self):
-        self.scopes: list[Scope] = [Scope()]
+    def push(self, ty: VType):
+        self.stack.append(ty)
 
-    def enter(self):
-        new_scope = Scope(parent=self.scopes[-1])
-        self.scopes.append(new_scope)
+    def pop(self, n: int = 1):
+        if n > len(self.stack):
+            self.stack = []
+        else:
+            self.stack = self.stack[:-n]
 
-    def leave(self):
-        self.scopes.pop()
+    def set_variable(self, ident: Identifier):
+        # Set a variable to the top of this scope's stack
+        if len(self.stack) == 0:
+            ty = InferenceTypeVariable(self.inference_variable_count)
+            self.inference_variable_count += 1
+            self.variables[ident] = ty
+            self.typemap[ty] = None
+        else:
+            self.variables[ident] = self.stack.pop()
 
-    # Queries (search from innermost to outermost)
-    def lookup_variable(self, name: Identifier) -> VType | None:
-        for scope in reversed(self.scopes):
-            if name in scope.variables:
-                return scope.variables[name]
-        return None
+    def get_variable_type(self, ident: Identifier) -> VType | None:
+        # Get the type of a variable in this scope
+        if ident in self.variables:
+            return self.variables[ident]
+        elif self.parent is not None:
+            # Try and find the variable in the parent scope
+            return self.parent.get_variable_type(ident)
+        else:
+            return None
 
-    def lookup_partial_variable(self, name: Identifier) -> ASTNode | None:
-        for scope in reversed(self.scopes):
-            if name in scope.partial_variables:
-                return scope.partial_variables[name]
-        return None
+    def push_variable(self, ident: Identifier):
+        # Push a variable from this scope onto the stack
+        if ident in self.variables:
+            self.stack.append(self.variables[ident])
+        elif self.parent is not None:
+            self.get_variable_type(ident)
+        else:
+            raise KeyError(f"Variable {ident.name} not found in scope")
 
-    def lookup_element(self, name: Identifier) -> list[Overload]:
-        for scope in reversed(self.scopes):
-            if name in scope.elements:
-                return scope.elements[name]
-        return []
+    def apply(self, overload_set: list[Overload]) -> list[Scope]:
+        # Determine the list of scopes that could arise from applying an OverloadSet
+        candidates = filter(lambda o: o.fits(self.stack), overload_set)
+        scopes: list[Scope] = []
+        for candidate in candidates:
+            if len(self.stack) < candidate.arity:
+                self.inputs.extend(
+                    [
+                        InferenceTypeVariable(self.inference_variable_count + i)
+                        for i in range(candidate.arity - len(self.stack))
+                    ]
+                )
+                self.inference_variable_count += candidate.arity - len(self.stack)
+            new_scope = Scope(inputs=self.inputs.copy(), parent=self.parent)
+            new_scope.stack = self.stack[::]
+            new_scope.pop(candidate.arity)
+            for ret in candidate.returns:
+                new_scope.push(ret)
+            scopes.append(new_scope)
+        return scopes
 
-    def lookup_definition(self, name: Identifier) -> list[DefineNode] | None:
-        for scope in reversed(self.scopes):
-            if name in scope.definitions:
-                return scope.definitions[name]
-        return None
+    def as_overload(self) -> Overload:
+        return Overload(
+            params=self.stack.copy(),
+            returns=self.inputs.copy(),
+            arity=len(self.stack),
+            multiplicity=1,
+        )
 
-    def lookup_object(self, name: Identifier) -> ObjectDef | None:
-        for scope in reversed(self.scopes):
-            if name in scope.objects:
-                return scope.objects[name]
-        return None
+    def set_parent(self, parent: Scope):
+        self.parent = parent
 
-    def lookup_trait(self, name: Identifier) -> TraitDef | None:
-        for scope in reversed(self.scopes):
-            if name in scope.traits:
-                return scope.traits[name]
-        return None
-
-    # Mutations (add to current/innermost scope)
-    def declare_variable(self, name: Identifier, ty: VType):
-        self.scopes[-1].variables[name] = ty
-
-    def add_partial_variable(self, name: Identifier, value: ASTNode):
-        self.scopes[-1].partial_variables[name] = value
-
-    def add_overload(self, name: Identifier, overload: Overload):
-        if name not in self.scopes[-1].elements:
-            self.scopes[-1].elements[name] = []
-        self.scopes[-1].elements[name].append(overload)
-
-    def add_definition(self, name: Identifier, definition: DefineNode):
-        if name not in self.scopes[-1].definitions:
-            self.scopes[-1].definitions[name] = []
-        self.scopes[-1].definitions[name].append(definition)
-
-    def add_object(self, name: Identifier, obj: ObjectDef):
-        self.scopes[-1].objects[name] = obj
-
-    def add_object_trait(self, name: Identifier, trait: Identifier):
-        self.scopes[-1].objects[name].traits.append(trait)
-
-    def add_trait(self, name: Identifier, trait: TraitDef):
-        self.scopes[-1].traits[name] = trait
+    def type_of(self, ast: ASTNode) -> VType:
+        # Determine the type of an ASTNode relative to this scope
+        match ast:
+            case _:
+                raise NotImplementedError(
+                    f"Type determination for ASTNode of type {type(ast)} not implemented"
+                )

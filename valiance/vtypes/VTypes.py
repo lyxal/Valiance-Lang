@@ -202,6 +202,14 @@ class Overload:
     arity: int
     multiplicity: int
 
+    def fits(self, stack: list[VType]) -> bool:
+        for expected, actual in zip(
+            reversed(self.params), reversed(stack[-self.arity :])
+        ):
+            if not type_compatible(expected, actual):
+                return False
+        return True
+
 
 @dataclass
 class ObjectDef:
@@ -214,6 +222,14 @@ class ObjectDef:
 class TraitDef:
     generics: list[Identifier]
     required_methods: list[Overload]
+
+
+@dataclass
+class InferenceTypeVariable(VType):
+    _id: int
+
+    def toString(self) -> str:
+        return f"T{self._id}"
 
 
 class TypeNames(enum.Enum):
@@ -281,3 +297,28 @@ def compatible(expected: list[VType], actual: list[VType]) -> bool:
         if not type_compatible(exp, act):
             return False
     return True
+
+
+def union(type1: VType, type2: VType) -> VType:
+    if type1 == type2:
+        return type1
+    return UnionType(left=type1, right=type2)
+
+
+def list_of(element_type: VType) -> VType:
+    if isinstance(element_type, ListType):
+        if isinstance(element_type.rank, int):
+            return ListType(
+                element_type=element_type.element_type,
+                rank=element_type.rank + 1,
+            )
+        else:
+            return ListType(
+                element_type=element_type.element_type,
+                rank=element_type.rank + "+",
+            )
+    else:
+        return ListType(
+            element_type=element_type,
+            rank=1,
+        )

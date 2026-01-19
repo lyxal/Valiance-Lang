@@ -235,7 +235,7 @@ class TraitImplTraitNode(ASTNode):
     """Trait implementation for a trait (trait inheritance)"""
 
     generics: list[VType]
-    trait_name: Identifier
+    name: Identifier
     parent_trait: VType
 
     required_methods: list[DefineNode]

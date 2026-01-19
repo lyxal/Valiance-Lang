@@ -1,120 +1,55 @@
-from dataclasses import dataclass, field
-from valiance.compiler_common.Identifier import Identifier
-from valiance.analysis.Scope import ScopeStack
-from valiance.analysis.StackState import StackState, MultiStack, SingleStack
+from valiance.analysis.Scope import Scope
+from valiance.analysis.ScopeController import ScopeController
 from valiance.parser.AST import (
     ASTNode,
     DefineNode,
-    GroupNode,
+    ElementNode,
+    ListNode,
     LiteralNode,
-    SafeTypeCastNode,
-    UnsafeTypeCastNode,
-    VariableSetNode,
+    ObjectDefinitionNode,
+    TraitNode,
 )
-from vtypes.VTypes import FunctionType, Overload, VType
+from valiance.compiler_common.Primitives import PRIMITIVES
 
 
 class Analyser:
-    def __init__(self, ast: list[ASTNode], inference_needed: bool = False):
-        self.ast = ast
-        self.type_stack: StackState
-        self.scope_stack = ScopeStack()
-        if inference_needed:
-            self.type_stack = MultiStack()
-        else:
-            self.type_stack = SingleStack()
-        self.errors: list[AnalysisError] = []
-        self.register_builtins()
+    def __init__(self, asts: list[ASTNode]):
+        self.asts = asts
+        self.scope_controller = ScopeController()
 
-    def analyse(self) -> "AnalysisResult":
-        self._collect_declarations()
-        self._check_all_definitions()
-        self._check_top_level()
-        return AnalysisResult(
-            ast=self.ast,
-            types={},  # Placeholder for type information
-            scopes=self.scope_stack,
-            errors=self.errors,
-            success=len(self.errors) == 0,
-        )
+        for primitive_ident, overloads in PRIMITIVES.items():
+            self.scope_controller.elements[primitive_ident] = overloads
 
-    def _collect_declarations(self):
-        for node in self.ast:
-            match node:
+    def analyse(self) -> list[list[Scope]]:
+        # 1. Name Collection
+        for ast in self.asts:
+            match ast:
                 case DefineNode():
-                    name = node.name
-                    inputs = node.inputs()
-                    outputs = node.outputs()
-
-                    if inputs is None or outputs is None:
-                        # `define` nodes that need inference
-                        self.scope_stack.add_definition(name, node)
-                    else:
-                        # fully typed definitions, ready to be type checked
-                        overload = Overload(inputs, outputs, len(inputs), len(outputs))
-                        self.scope_stack.add_overload(name, overload)
-                case VariableSetNode():
-                    value = node.value
-                    # Determine if this variable can be typed right away
-                    if isinstance(value, (SafeTypeCastNode, UnsafeTypeCastNode)):
-                        self.scope_stack.declare_variable(node.name, value.outputs()[0])
-                    elif isinstance(value, GroupNode):
-                        final_node = value.elements[-1]
-                        if isinstance(
-                            final_node, (SafeTypeCastNode, UnsafeTypeCastNode)
-                        ):
-                            self.scope_stack.declare_variable(
-                                node.name, final_node.outputs()[0]
-                            )
-                    elif isinstance(value, LiteralNode):
-                        self.scope_stack.declare_variable(node.name, value.type_)
-                    else:
-                        # List node is considered as "needing inference" because
-                        # it could contain other variables
-                        self.scope_stack.add_partial_variable(node.name, value)
+                    self.scope_controller.register_element(ast.name, ast)
+                case ObjectDefinitionNode():
+                    self.scope_controller.register_object(ast.object_name, ast)
+                case TraitNode():
+                    self.scope_controller.register_trait(ast.name, ast)
                 case _:
-                    pass
+                    continue
 
-    def _check_all_definitions(self):
-        # Placeholder
-        ...
+        # 2. Type Checking
+        for ast in self.asts:
+            match ast:
+                case LiteralNode():
+                    self.scope_controller.push(ast.type_)
+                case ListNode():
+                    self.scope_controller.push_type_of(ast)
+                case ElementNode():
+                    overloads = self.scope_controller.get_element(ast.element_name)
+                    if overloads is None:
+                        raise ValueError(
+                            f"Element {ast.element_name.name} not found in scope"
+                        )
+                    self.scope_controller.apply(overloads)
+                case _:
+                    raise NotImplementedError(
+                        f"Type checking for ASTNode of type {type(ast)} not implemented"
+                    )
 
-    def _check_top_level(self):
-        # Placeholder for checking top-level code
-        pass
-
-    def register_builtins(self):
-        import valiance.compiler_common.Primitives as Primitives
-
-        for ident, overloads in Primitives.PRIMITIVES.items():
-            for overload in overloads:
-                self.scope_stack.add_overload(ident, overload)
-
-
-@dataclass
-class AnalysisResult:
-    ast: list[ASTNode]
-    types: dict[int, TypeInfo]  # id(node) → type info
-    scopes: ScopeStack
-    errors: list[AnalysisError]
-    success: bool
-
-    def get_type_of(self, node: ASTNode) -> TypeInfo | None:
-        return self.types.get(id(node), None)
-
-
-@dataclass
-class TypeInfo:
-    inferred_type: VType
-    stack_before: list[VType]
-    stack_after: list[VType]
-    chosen_overload: Overload | None = None
-    signature: FunctionType | None = None
-    data_tags: set[Identifier] = field(default_factory=lambda: set())
-    element_tags: set[Identifier] = field(default_factory=lambda: set())
-
-
-@dataclass
-class AnalysisError:
-    message: str
-    node: ASTNode
+        return list(self.scope_controller.scopes)

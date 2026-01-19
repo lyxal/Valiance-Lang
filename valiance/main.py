@@ -170,13 +170,8 @@ def main():
         # Static Analysis
         if run_analyze_only:
             analyser = Analyser(asts)
-            analyser.analyse()
+            print(analyser.analyse())
 
-        # Full pipeline (TODO: implement remaining stages)
-        # When you implement optimizer/codegen, this will become the default
-        # tasts = analyzer.analyze(asts)
-        # optimized = optimizer.optimize(tasts)
-        # bytecode = codegen.generate(optimized)
         print("\033[93mFull pipeline not yet implemented.\033[0m")
 
         if input_file:

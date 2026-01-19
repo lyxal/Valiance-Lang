@@ -10,7 +10,6 @@ def register_primitive(name: str, inputs: list[VType], outputs: list[VType]):
     if ident not in PRIMITIVES:
         PRIMITIVES[ident] = []
     overload = Overload(
-        name=name,
         params=inputs,
         returns=outputs,
         arity=len(inputs),
