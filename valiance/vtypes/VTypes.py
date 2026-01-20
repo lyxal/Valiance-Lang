@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 import enum
-from typing import Tuple
+from typing import Callable, Tuple
 
 from valiance.compiler_common.Identifier import Identifier
 
@@ -163,6 +163,7 @@ class CustomType(VType):
     name: Identifier
     left_types: list[VType]
     right_types: list[VType]
+    traits: tuple[Identifier] = field(default_factory=lambda: tuple[Identifier]())
 
     def toString(self) -> str:
         if self.left_types and self.right_types:
@@ -286,39 +287,155 @@ def type_name_to_vtype(
 
 
 def type_compatible(expected: VType, actual: VType) -> bool:
-    # Placeholder for type compatibility logic
-    return expected == actual
+    return specificity_level(expected, actual) != -1
 
 
-def compatible(expected: list[VType], actual: list[VType]) -> bool:
-    if len(expected) != len(actual):
+class Specificity(enum.Enum):
+    LEFT = 1
+    RIGHT = 2
+    NEITHER = 3
+
+
+def choose_overload(overload_set: list[Overload], stack: list[VType]) -> Overload:
+    best = overload_set[0]
+    for candidate in overload_set[1:]:
+        comparison = compare_specificity(best, candidate, stack)
+        if comparison == Specificity.RIGHT:
+            best = candidate
+        elif comparison == Specificity.NEITHER:
+            raise ValueError("Ambiguous overloads found during type checking")
+    return best
+
+
+def compare_specificity(
+    overload_a: Overload, overload_b: Overload, stack: list[VType]
+) -> Specificity:
+    spec = None
+    for arg_a, arg_b, actual in zip(
+        reversed(overload_a.params),
+        reversed(overload_b.params),
+        reversed(stack[-overload_a.arity :]),
+    ):
+        level_of_a = specificity_level(arg_a, actual)
+        level_of_b = specificity_level(arg_b, actual)
+
+        assert level_of_a != -1 and level_of_b != -1  # Both must be compatible
+        # Ideally this will be ensured by the caller, but just in case
+
+        # If `spec` is None, that means it hasn't been set yet
+        # otherwise, it means there is already a specificity determined
+        # and that the new comparison must not conflict with it
+
+        # If there is a conflict, return NEITHER immediately
+        if level_of_a < level_of_b:
+            spec = Specificity.LEFT if spec is None else None
+        elif level_of_b < level_of_a:
+            spec = Specificity.RIGHT if spec is None else None
+
+        if spec is None:  # Conflict in specificity
+            return Specificity.NEITHER
+    return spec if spec is not None else Specificity.NEITHER
+
+
+# Note that in all of these functions, expected = the overload parameter type,
+# and actual = the type on the stack being compared against
+
+
+def specificity_level(expected: VType, actual: VType) -> int:
+    # Lower is more specific
+    RULES: list[Callable[[VType, VType], bool]] = [
+        exact_match,
+        lambda e, a: isinstance(e, OptionalType) and exact_match(e.base_type, a),
+        e_vectorises_over_a,
+        intersection_match,
+        trait_implementation_match,
+        rank_subsumption,
+        union_match,
+    ]
+
+    # Find index of first rule that matches
+    for index, rule in enumerate(RULES):
+        if rule(expected, actual):
+            return index
+    return -1  # No match found, so return an invalid level
+
+
+def exact_match(expected: VType, actual: VType) -> bool:
+    return type(expected) == type(actual) and expected == actual
+
+
+def e_vectorises_over_a(expected: VType, actual: VType) -> bool:
+    if not isinstance(actual, ListType):
+        # If actual isn't a list, then there's 0 way it can vectorise over expected
         return False
-    for exp, act in zip(expected, actual):
-        if not type_compatible(exp, act):
+    if isinstance(expected, ListType):
+        # First, check if the base types are even compatible
+        if not type_compatible(expected.element_type, actual.element_type):
+            return False
+        # Then check if rank(actual) > rank(expected)
+        # note that if either rank is dependent (i.e. str), no vectorisation can be
+        # assumed
+        if isinstance(expected.rank, int) and isinstance(actual.rank, int):
+            return actual.rank > expected.rank
+        return False
+    else:
+        # A list passed where a scalar expected always vectorises
+        # UNLESS expected is non-vectorising
+        return expected.non_vectorising
+
+
+def intersection_match(expected: VType, actual: VType) -> bool:
+    if not isinstance(actual, IntersectionType):
+        return False
+    return type_compatible(expected, actual.left) and type_compatible(
+        expected, actual.right
+    )
+
+
+def trait_implementation_match(expected: VType, actual: VType) -> bool:
+    if not isinstance(expected, CustomType):
+        return False
+    if not expected.traits:
+        return False
+    if not isinstance(actual, CustomType):
+        return False
+    for trait in expected.traits:
+        if trait not in actual.traits:
             return False
     return True
 
 
-def union(type1: VType, type2: VType) -> VType:
-    if type1 == type2:
-        return type1
-    return UnionType(left=type1, right=type2)
+def rank_subsumption(expected: VType, actual: VType) -> bool:
+    # First, check if both are ListTypes
+    if not isinstance(expected, ListType) or not isinstance(actual, ListType):
+        return False
+
+    # And check if their element types are compatible
+    if not type_compatible(expected.element_type, actual.element_type):
+        return False
+
+    # Check that the ranks are equal. Higher actual rank should have been caught
+    # by e_vectorises_over_a
+    if expected.rank != actual.rank:
+        return False
+
+    assert expected.rank == actual.rank  # Just for now, a little assert
+    # to catch the cases where my reasoning is wrong.
+
+    # The only case rank subsumption does not apply is when
+    # expected is Exact/Minimum and actual is Rugged.
+
+    if isinstance(expected, (ExactRankType, MinimumRankType)) and not isinstance(
+        actual, (ExactRankType, MinimumRankType)
+    ):
+        return False
+
+    return True
 
 
-def list_of(element_type: VType) -> VType:
-    if isinstance(element_type, ListType):
-        if isinstance(element_type.rank, int):
-            return ListType(
-                element_type=element_type.element_type,
-                rank=element_type.rank + 1,
-            )
-        else:
-            return ListType(
-                element_type=element_type.element_type,
-                rank=element_type.rank + "+",
-            )
-    else:
-        return ListType(
-            element_type=element_type,
-            rank=1,
-        )
+def union_match(expected: VType, actual: VType) -> bool:
+    if not isinstance(actual, UnionType):
+        return False
+    return type_compatible(expected, actual.left) or type_compatible(
+        expected, actual.right
+    )

@@ -55,25 +55,21 @@ class Scope:
             raise KeyError(f"Variable {ident.name} not found in scope")
 
     def apply(self, overload_set: list[Overload]) -> list[Scope]:
-        # Determine the list of scopes that could arise from applying an OverloadSet
-        candidates = filter(lambda o: o.fits(self.stack), overload_set)
-        scopes: list[Scope] = []
-        for candidate in candidates:
-            if len(self.stack) < candidate.arity:
-                self.inputs.extend(
-                    [
-                        InferenceTypeVariable(self.inference_variable_count + i)
-                        for i in range(candidate.arity - len(self.stack))
-                    ]
-                )
-                self.inference_variable_count += candidate.arity - len(self.stack)
-            new_scope = Scope(inputs=self.inputs.copy(), parent=self.parent)
-            new_scope.stack = self.stack[::]
-            new_scope.pop(candidate.arity)
-            for ret in candidate.returns:
-                new_scope.push(ret)
-            scopes.append(new_scope)
-        return scopes
+        if len(self.stack) > overload_set[0].arity:
+            return self.execute(overload_set)
+        else:
+            return self.infer(overload_set)
+
+    def execute(self, overload_set: list[Overload]) -> list[Scope]:
+
+        # Code to determine whether there is only one most specific overload
+        # Can return [] if no overloads match
+        return [self]
+
+    def infer(self, overload_set: list[Overload]) -> list[Scope]:
+        # Code to create new scopes based on possible inferences
+        # from the current stack and the overloads
+        return [self]
 
     def as_overload(self) -> Overload:
         return Overload(
