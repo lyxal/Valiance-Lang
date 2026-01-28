@@ -8,4 +8,6 @@
     "python.autoComplete.extraPaths": [
         "./valiance",
     ],
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": [],
 }
