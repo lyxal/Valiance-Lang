@@ -7,7 +7,8 @@ from typing import Optional, Sequence, Tuple
 from valiance.lexer.Token import Token
 from valiance.compiler_common.Location import Location
 from valiance.compiler_common.TagCategories import TagCategory
-from valiance.vtypes.VTypes import ElementTag, VType
+from valiance.types.Type import Type
+from valiance.types.Tag import ElementTag
 from valiance.compiler_common.Identifier import Identifier, StaticIndex
 
 
@@ -15,9 +16,9 @@ class Parameter:
     def __init__(
         self,
         name: Identifier,
-        type_: VType,
-        cast: VType | None = None,
-        default: ASTNode | None = None,
+        type_: Type,
+        cast: Type | None = None,
+        default: Optional["ASTNode"] = None,
     ):
         self.name = name
         self.type_ = type_
@@ -40,11 +41,11 @@ class ASTNode(ABC):
 
     location: Location
 
-    def inputs(self) -> list[VType] | None:
+    def inputs(self) -> list[Type] | None:
         """Get input types for this AST node, if applicable"""
         return None
 
-    def outputs(self) -> list[VType] | None:
+    def outputs(self) -> list[Type] | None:
         """Get output types for this AST node, if applicable"""
         return None
 
@@ -85,7 +86,7 @@ class ElementNode(ASTNode):
     """Represents a normal element"""
 
     element_name: Identifier
-    generics: list[VType]
+    generics: list[Type]
     args: list[Tuple[Identifier, ASTNode]]
     modifier_args: list[ASTNode]
 
@@ -107,10 +108,10 @@ class LiteralNode(ASTNode):
     """Represents a literal value"""
 
     value: str
-    type_: VType
+    type_: Type
 
     def __repr__(self):
-        return f"{self.value} [{self.type_.formatthis()}]"
+        return f"{self.value}"
 
 
 @dataclass(frozen=True)
@@ -132,11 +133,11 @@ class DictionaryNode(ASTNode):
 class DefineNode(ASTNode):
     """Represents a definition of an element or tuple"""
 
-    generics: list[VType]
+    generics: list[Type]
     name: Identifier
     element_tags: list[ElementTag]
     parameters: list[Parameter] | None
-    output: list[VType] | None
+    output: list[Type] | None
     body: ASTNode
     visibility: Visibility = (
         Visibility.PUBLIC
@@ -161,7 +162,7 @@ class VariantNode(ASTNode):
     - Objects automatically become subtypes of the variant
     """
 
-    generics: list[VType]
+    generics: list[Type]
     name: Identifier
 
     # Trait-like method requirements
@@ -169,7 +170,7 @@ class VariantNode(ASTNode):
     default_methods: list[DefineNode]  # With bodies - can be overridden
 
     # Sealed set of implementations
-    variant_objects: list[ObjectDefinitionNode]  # Objects defined inside
+    variant_objects: list["ObjectDefinitionNode"]  # Objects defined inside
 
     @property
     def variant_type_names(self) -> list[str]:
@@ -183,7 +184,7 @@ class FieldNode(ASTNode):
 
     visibility: Visibility
     name: Identifier
-    type_: VType
+    type_: Type
 
 
 @dataclass(frozen=True)
@@ -199,7 +200,7 @@ class MemberNode(ASTNode):
 class ObjectDefinitionNode(ASTNode):
     """Base object definition"""
 
-    generics: list[VType]
+    generics: list[Type]
     object_name: Identifier
     fields: list[
         FieldNode
@@ -213,9 +214,9 @@ class ObjectDefinitionNode(ASTNode):
 class ObjectTraitImplNode(ASTNode):
     """Trait implementation for an object"""
 
-    generics: list[VType]
+    generics: list[Type]
     object_name: Identifier
-    trait: VType
+    trait: Type
     methods: list[DefineNode]
 
 
@@ -223,7 +224,7 @@ class ObjectTraitImplNode(ASTNode):
 class TraitNode(ASTNode):
     """Represents a trait definition"""
 
-    generics: list[VType]
+    generics: list[Type]
     name: Identifier
     # Separate required and default explicitly
     required_methods: list[DefineNode]  # Empty bodies
@@ -234,9 +235,9 @@ class TraitNode(ASTNode):
 class TraitImplTraitNode(ASTNode):
     """Trait implementation for a trait (trait inheritance)"""
 
-    generics: list[VType]
+    generics: list[Type]
     name: Identifier
-    parent_trait: VType
+    parent_trait: Type
 
     required_methods: list[DefineNode]
     default_methods: list[DefineNode]
@@ -253,9 +254,9 @@ class ListNode(ASTNode):
 class FunctionNode(ASTNode):
     """Represents a function/lambda expression"""
 
-    generics: list[VType]
+    generics: list[Type]
     parameters: list[Parameter] | None
-    output: list[VType]
+    output: list[Type]
     body: ASTNode
     element_tags: Tuple[ElementTag, ...] = tuple()
 
@@ -390,12 +391,14 @@ class MatchIfBranch(MatchBranch):
 
 
 class MatchPatternBranch(MatchBranch):
-    def __init__(self, pattern: MatchPattern, predicate: ASTNode | None = None):
+    def __init__(self, pattern: "MatchPattern", predicate: ASTNode | None = None):
         self.pattern = pattern
         self.predicate = predicate
 
 
 # A pattern component class to represent the different parts of a pattern
+class MatchPattnern:
+    pass  # For now.
 
 
 @dataclass(frozen=True)
@@ -450,7 +453,7 @@ class MatchAsBranch(MatchBranch):
     def __init__(
         self,
         name: Identifier | None,
-        type_: VType | None,
+        type_: Type | None,
         predicate: ASTNode | None = None,
     ):
         if name is None and type_ is None:
@@ -542,9 +545,9 @@ class OverlayRule:
     def __init__(
         self,
         element: Identifier,
-        generics: list[VType],
-        arguments: list[VType],
-        returns: list[VType],
+        generics: list[Type],
+        arguments: list[Type],
+        returns: list[Type],
     ):
         self.element = element
         self.generics = generics
@@ -621,9 +624,9 @@ class EnumNode(ASTNode):
 class SafeTypeCastNode(ASTNode):
     """Represents a safe type cast operation"""
 
-    target_type: VType
+    target_type: Type
 
-    def outputs(self) -> list[VType]:
+    def outputs(self) -> list[Type]:
         return [self.target_type]
 
 
@@ -631,9 +634,9 @@ class SafeTypeCastNode(ASTNode):
 class UnsafeTypeCastNode(ASTNode):
     """Represents an unsafe type cast operation"""
 
-    target_type: VType
+    target_type: Type
 
-    def outputs(self) -> list[VType]:
+    def outputs(self) -> list[Type]:
         return [self.target_type]
 
 

@@ -1,5 +1,5 @@
 from valiance.compiler_common.Identifier import Identifier
-from valiance.vtypes.VTypes import NumberType, Overload, StringType, VType
+from vtypes.Type import NumberType, Overload, StringType, VType
 
 
 PRIMITIVES: dict[Identifier, list[Overload]] = {}

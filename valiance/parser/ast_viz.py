@@ -16,7 +16,7 @@ from valiance.parser.AST import (
     Parameter,
 )
 from valiance.compiler_common.Identifier import Identifier
-from valiance.vtypes.VTypes import DataTag, ElementTag, NegateElementTag
+from vtypes.Type import DataTag, ElementTag, NegateElementTag
 
 
 # ---- dark theme ----

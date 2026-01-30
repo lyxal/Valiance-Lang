@@ -4,6 +4,7 @@ import itertools
 from typing import Callable, Optional, TypeVar
 import logging
 
+from valiance.types.Tag import DataTag, ElementTag
 from valiance.compiler_common import TagCategories
 from valiance.loglib.log_block import log_block
 from valiance.parser.Errors import EndOfFileTokenError, GenericParseError, ParserError
@@ -11,8 +12,8 @@ from valiance.parser.Errors import EndOfFileTokenError, GenericParseError, Parse
 from valiance.parser.AST import *
 from valiance.lexer.Token import Token
 from valiance.lexer.TokenType import TokenType
-from valiance.vtypes import VTypes
 from valiance.compiler_common.Identifier import *
+import valiance.types.Type as Type
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ class ParserStrategy:
 
     name: str = "UnnamedStrategy"
 
-    def __init__(self, parser: Parser):
+    def __init__(self, parser: "Parser"):
         self.parser = parser
         self.lock_id = self.parser.gen_new_lock()
 
@@ -910,30 +911,30 @@ class Parser:
         return asts
 
     def make_type_operation(
-        self, left: VTypes.VType, right: VTypes.VType, operator_token: Token
-    ) -> VTypes.VType:
+        self, left: Type.Type, right: Type.Type, operator_token: Token
+    ) -> Type.Type:
         """
         Create a type operation (union or intersection) between two types.
 
         Args:
-            left (VTypes.VType): The left operand type.
-            right (VTypes.VType): The right operand type.
+            left (Type.Type): The left operand type.
+            right (Type.Type): The right operand type.
             operator_token (Token): The token representing the operator.
         Returns:
-            VTypes.VType: The resulting type after applying the operation.
+            Type.Type: The resulting type after applying the operation.
         """
         operator = operator_token.value
         match operator:
             case "&":
-                return VTypes.IntersectionType(left, right)
+                return Type.IntersectionType(left, right)
             case "|":
-                return VTypes.UnionType(left, right)
+                return Type.UnionType(left, right)
             case _:
                 self.add_error(
                     f"Unknown type operator '{operator}'.",
                     operator_token,
                 )
-                return VTypes.ErrorType()
+                return Type.Error()
 
     def parse_identifier(self, *identifier_set: TokenType) -> Identifier:
         """Parse a fully qualified identifier from the token stream.
@@ -1095,7 +1096,7 @@ class Parser:
         else:
             return ErrorIndex()
 
-    def parse_type(self, min_precedence: int = 0) -> VType:
+    def parse_type(self, min_precedence: int = 0) -> Type.Type:
         """Parse a type from the token stream.
 
         NOTE: Normal usage should not need to specify min_precedence.
@@ -1106,7 +1107,7 @@ class Parser:
             min_precedence (int, optional): The minimum precedence level for parsing. Defaults to 0.
 
         Returns:
-            VType: The parsed type.
+            Type: The parsed type.
         """
 
         left = self.parse_primary_type()
@@ -1121,7 +1122,7 @@ class Parser:
         ):
             self.eat(TokenType.PLUS)
             var_token = self.pop()
-            left = VTypes.ExactRankType(left, var_token.value)
+            left = Type.ExactList(left, Type.Rank(var_token.value))
         else:
             while self.head_in(
                 TokenType.PLUS,
@@ -1129,7 +1130,6 @@ class Parser:
                 TokenType.TILDE,
                 TokenType.QUESTION,
                 TokenType.NUMBER,
-                TokenType.EXCLAMATION,
                 care_about_eof=False,
             ):
                 if self.head_equals(TokenType.NUMBER):
@@ -1139,7 +1139,7 @@ class Parser:
                             "Rank modifier number must be preceded by a rank modifier operator (+, *, ~, ?).",
                             number,
                         )
-                        return VTypes.ErrorType()
+                        return Type.Error()
                     try:
                         rank = int(number.value)
                         modifier = postfix_modifiers.pop()
@@ -1149,7 +1149,7 @@ class Parser:
                             f"Invalid rank modifier number: '{number.value}' is not a valid integer.",
                             number,
                         )
-                        return VTypes.ErrorType()
+                        return Type.Error()
                 else:
                     modifier_token = self.pop()
                     postfix_modifiers.append(modifier_token)
@@ -1161,23 +1161,14 @@ class Parser:
                 count = len(group)
                 match modifier_token:
                     case TokenType.PLUS:
-                        left = VTypes.ExactRankType(left, count)
+                        left = Type.ExactList(left, Type.Rank(count))
                     case TokenType.STAR:
-                        left = VTypes.MinimumRankType(left, count)
+                        left = Type.MinimumList(left, Type.Rank(count))
                     case TokenType.TILDE:
-                        left = VTypes.ListType(left, count)
+                        left = Type.ListType(left, Type.Rank(count))
                     case TokenType.QUESTION:
                         for _ in range(count):
-                            left = VTypes.OptionalType(left)
-                    case TokenType.EXCLAMATION:
-                        if count > 1:
-                            self.add_error(
-                                "Non-vectorising modifier '!' can only be applied once.",
-                                group[0],
-                            )
-                            left = VTypes.ErrorType()
-                            break
-                        left.non_vectorising = True
+                            left = Type.OptionalType(left)
                     case _:
                         raise RuntimeError("Unreachable code reached.")
 
@@ -1195,7 +1186,7 @@ class Parser:
 
         return left
 
-    def parse_primary_type(self) -> VType:
+    def parse_primary_type(self) -> Type.Type:
         """Parse a primary type from the token stream.
 
         Primary types are basic types like identifiers, literals, lists, tuples, etc.
@@ -1204,10 +1195,10 @@ class Parser:
         Do not call this method directly unless you know what you're doing.
 
         Returns:
-            VType: The parsed primary type.
+            Type.Type: The parsed primary type.
         """
 
-        data_tags: list[VTypes.DataTag] = []
+        data_tags: list[DataTag] = []
 
         self.eat_whitespace()
 
@@ -1230,19 +1221,20 @@ class Parser:
                 while self.head_equals(TokenType.PLUS):
                     self.pop()
                     depth += 1
-            data_tags.append(VTypes.DataTag(name=tag_name, depth=depth))
+            data_tags.append(DataTag(name=tag_name, depth=depth))
 
         # Then, handle grouping
         if self.head_equals(TokenType.LEFT_BRACE):
             self.eat(TokenType.LEFT_BRACE)
             inner_type = self.parse_type()
             self.eat(TokenType.RIGHT_BRACE)
-            return replace(inner_type, data_tags=tuple(data_tags))
-
+            inner_type.tags = []
+            inner_type.tags.extend(data_tags)
+            return inner_type
         if self.head_equals(TokenType.WORD):
             type_name = self.parse_identifier()
-            left_type_args: list[VTypes.VType] = []
-            right_type_args: list[VTypes.VType] = []
+            left_type_args: list[Type.Type] = []
+            right_type_args: list[Type.Type] = []
 
             # Parse type arguments if present
             if self.head_equals(TokenType.LEFT_SQUARE, care_about_eof=False):
@@ -1267,7 +1259,7 @@ class Parser:
                             break
                 self.eat(TokenType.RIGHT_SQUARE)
 
-            element_tags: list[VTypes.ElementTag] = []
+            element_tags: list[ElementTag] = []
             negate_next = False
             if self.head_equals(TokenType.COLON, care_about_eof=False):
                 self.pop()  # Pop the colon
@@ -1277,23 +1269,23 @@ class Parser:
                 while self.head_equals(TokenType.WORD):
                     tag_name = self.parse_identifier()
                     if negate_next:
-                        element_tags.append(VTypes.NegateElementTag(name=tag_name))
-                    else:
-                        element_tags.append(VTypes.ElementTag(name=tag_name))
+                        tag_name.name = f"-{tag_name.name}"
+                    element_tags.append(ElementTag(name=tag_name))
                     if self.head_equals(TokenType.PLUS):
                         self.pop()  # Pop the PLUS
                         negate_next = False
                     else:
                         break
-            return VTypes.type_name_to_vtype(
-                type_name, (left_type_args, right_type_args), data_tags, element_tags
-            )
+            output = Type.SimpleType(type_name, left_type_args, right_type_args)
+            output.tags.extend(data_tags)
+            output.tags.extend(element_tags)
+            return output
         else:
             self.add_error(
                 f"Expected a primary type, got {self.head().type} ('{self.head().value}')",
                 self.head(),
             )
-            return VTypes.ErrorType()
+            return Type.Error()
 
     def parse_parameter_list(self, skip_left_paren: bool = False) -> list[Parameter]:
         """Parse a list of parameters to a `fn` or a `define`
@@ -1301,7 +1293,7 @@ class Parser:
         Note: Does NOT account for constructor syntax.
 
         Returns:
-            list[Tuple[str, VTypes.VType]]: The parsed parameters as a list of (name, type) tuples.
+            list[Tuple[str, Type.Type]]: The parsed parameters as a list of (name, type) tuples.
         """
 
         parameters: list[Parameter] = []
@@ -1320,16 +1312,16 @@ class Parser:
             # Note that name may be empty
 
             parameter_name = self.parse_identifier_fragment()
-            parameter_type: VType
+            parameter_type: Type.Type
             if self.head_equals(TokenType.COLON):
                 self.discard()
                 parameter_type = self.parse_type()
             else:
-                parameter_type = VTypes.AnonymousGeneric(anonymous_generic_id)
+                parameter_type = Type.AnonymousGenericType(anonymous_generic_id)
                 anonymous_generic_id += 1
 
             # Now, collect any cast options
-            cast_type: VType | None = None
+            cast_type: Type.Type | None = None
             if self.head_equals(TokenType.AS):
                 self.discard()
                 cast_type = self.parse_type()
@@ -1424,16 +1416,14 @@ class Parser:
 
         return (parameters, group_wrap(condition))
 
-    def parse_generics(self) -> list[VType]:
+    def parse_generics(self) -> list[Type.Type]:
         return self.parse_items(
             TokenType.LEFT_SQUARE,
             TokenType.COMMA,
             TokenType.RIGHT_SQUARE,
-            lambda: VTypes.type_name_to_vtype(
-                self.parse_identifier(), ([], []), [], []
-            ),
-            lambda t: isinstance(t, VTypes.ErrorType),
-            lambda _: VTypes.ErrorType(),
+            lambda: Type.SimpleType(self.parse_identifier(), [], []),
+            lambda t: isinstance(t, Type.Error),
+            lambda _: Type.Error(),
             singleton=True,
             validate=None,
         )
@@ -1446,7 +1436,7 @@ class Parser:
 
         def parse(self) -> ASTNode:
             token = self.parser.pop()
-            return LiteralNode(token.location, token.value, VTypes.NumberType())
+            return LiteralNode(token.location, token.value, Type.NUMBER_TYPE())
 
     class StringParser(ParserStrategy):
         name: str = "String"
@@ -1456,7 +1446,7 @@ class Parser:
 
         def parse(self) -> ASTNode:
             token = self.parser.pop()
-            return LiteralNode(token.location, token.value, VTypes.StringType())
+            return LiteralNode(token.location, token.value, Type.STRING_TYPE())
 
     class ListParser(ParserStrategy):
         name: str = "List"
@@ -1533,15 +1523,15 @@ class Parser:
                 return ErrorNode(location_token.location, location_token)
 
             # Handle potential type arguments for the element
-            args: list[VTypes.VType] = []
+            args: list[Type.Type] = []
             if self.parser.head_equals(TokenType.LEFT_SQUARE, care_about_eof=False):
                 args = self.parser.parse_items(
                     TokenType.LEFT_SQUARE,
                     TokenType.COMMA,
                     TokenType.RIGHT_SQUARE,
                     self.parser.parse_type,
-                    lambda t: isinstance(t, VTypes.ErrorType),
-                    lambda token: VTypes.ErrorType(),
+                    lambda t: isinstance(t, Type.Error),
+                    lambda token: Type.Error(),
                     singleton=True,
                     validate=None,
                 )
@@ -1797,7 +1787,7 @@ class Parser:
 
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()  # Pop the 'fn' token
-            generics: list[VTypes.VType] = []
+            generics: list[Type.Type] = []
 
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
                 generics = self.parser.parse_generics()
@@ -1810,7 +1800,7 @@ class Parser:
                 if not self.parser.eat(TokenType.RIGHT_PAREN):
                     self.parser.sync(TokenType.ARROW, TokenType.LEFT_BRACE)
 
-            element_tags: list[VTypes.ElementTag] = []
+            element_tags: list[ElementTag] = []
             if self.parser.head_equals(TokenType.COLON):
                 self.parser.pop()  # Pop the colon
                 negate_next = False
@@ -1821,9 +1811,7 @@ class Parser:
 
                     tag_name = self.parser.parse_identifier()
                     if negate_next:
-                        element_tags.append(VTypes.NegateElementTag(name=tag_name))
-                    else:
-                        element_tags.append(VTypes.ElementTag(name=tag_name))
+                        tag_name.name = f"-{tag_name.name}"
 
                     if self.parser.head_equals(TokenType.PLUS):
                         self.parser.pop()  # Pop the PLUS
@@ -1831,7 +1819,7 @@ class Parser:
                     else:
                         break
 
-            output_types: list[VTypes.VType] = []
+            output_types: list[Type.Type] = []
             if self.parser.head_equals(TokenType.ARROW):
                 self.parser.eat(TokenType.ARROW)
                 while not self.parser.head_equals(TokenType.LEFT_BRACE):
@@ -2159,7 +2147,7 @@ class Parser:
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()  # Pop the 'define' token
 
-            generics: list[VTypes.VType] = []
+            generics: list[Type.Type] = []
 
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
                 generics = self.parser.parse_generics()
@@ -2173,18 +2161,18 @@ class Parser:
                 if not self.parser.eat(TokenType.RIGHT_PAREN):
                     self.parser.sync(TokenType.EQUALS, TokenType.LEFT_BRACE)
 
-            element_tags: list[VTypes.ElementTag] = []
+            element_tags: list[ElementTag] = []
             if self.parser.head_equals(TokenType.COLON):
                 self.parser.pop()
                 while self.parser.head_equals(TokenType.WORD):
                     tag_name = self.parser.parse_identifier()
-                    element_tags.append(VTypes.ElementTag(name=tag_name))
+                    element_tags.append(ElementTag(name=tag_name))
                     if self.parser.head_equals(TokenType.PLUS):
                         self.parser.pop()
                     else:
                         break
 
-            returns: list[VTypes.VType] = []
+            returns: list[Type.Type] = []
             if self.parser.head_equals(TokenType.ARROW):
                 self.parser.eat(TokenType.ARROW)
                 while not self.parser.head_equals(TokenType.LEFT_BRACE):
@@ -2215,7 +2203,7 @@ class Parser:
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()
 
-            generics: list[VType] = []
+            generics: list[Type.Type] = []
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
                 generics = self.parser.parse_generics()
                 self.parser.eat(TokenType.RIGHT_SQUARE)
@@ -2241,7 +2229,7 @@ class Parser:
                         self.parser.sync(
                             TokenType.EQUALS, TokenType.COMMA, TokenType.RIGHT_PAREN
                         )
-                        field_type = VTypes.ErrorType()
+                        field_type = Type.Error()
                     else:
                         field_type = self.parser.parse_type()
                     field_value: ASTNode | None = None
@@ -2265,7 +2253,7 @@ class Parser:
                         break
                 self.parser.eat(TokenType.RIGHT_PAREN)
 
-            trait_implemented: VType | None = None
+            trait_implemented: Type.Type | None = None
             if self.parser.head_equals(TokenType.AS):
                 self.parser.discard()
                 trait_implemented = self.parser.parse_type()
@@ -2438,7 +2426,7 @@ class Parser:
         def parse(self) -> ASTNode:
             location_token = self.parser.pop()  # Pop the 'trait' token
 
-            generics: list[VTypes.VType] = []
+            generics: list[Type.Type] = []
 
             if self.parser.head_equals(TokenType.LEFT_SQUARE):
                 generics = self.parser.parse_generics()
@@ -2446,7 +2434,7 @@ class Parser:
 
             trait_name = self.parser.parse_identifier()
 
-            parent_trait: VType | None = None
+            parent_trait: Type.Type | None = None
             if self.parser.head_equals(TokenType.AS):
                 self.parser.discard()
                 parent_trait = self.parser.parse_type()
@@ -2578,7 +2566,7 @@ class Parser:
             if self.parser.head_in(TokenType.WORD, TokenType.UNDERSCORE):
                 name = self.parser.parse_identifier()
 
-            type_: VType | None = None
+            type_: Type.Type | None = None
             if self.parser.head_equals(TokenType.COLON):
                 self.parser.eat(TokenType.COLON)
                 type_ = self.parser.parse_type()
@@ -2764,7 +2752,7 @@ class Parser:
                             singleton=True,
                         )
                         self.parser.eat(TokenType.RIGHT_PAREN)
-                    generics: list[VType] = []
+                    generics: list[Type.Type] = []
 
                     if self.parser.head_equals(TokenType.LEFT_SQUARE):
                         generics = self.parser.parse_generics()
@@ -2774,7 +2762,7 @@ class Parser:
                         self.parser.sync(TokenType.COMMA, TokenType.RIGHT_BRACE)
 
                     # Tuple = input types -> output types
-                    rules: list[Tuple[list[VType], list[VType]]] = []
+                    rules: list[Tuple[list[Type.Type], list[Type.Type]]] = []
                     if self.parser.head_equals(TokenType.LEFT_BRACE):
                         self.parser.discard()  # Discard LEFT_BRACE
                         while not self.parser.head_equals(TokenType.RIGHT_BRACE):
@@ -2803,9 +2791,9 @@ class Parser:
                 category_token.location, tag_name, tag_category, overlays
             )
 
-        def parse_overlay_rule(self) -> Tuple[list[VType], list[VType]]:
-            input_types: list[VType] = []
-            output_types: list[VType] = []
+        def parse_overlay_rule(self) -> Tuple[list[Type.Type], list[Type.Type]]:
+            input_types: list[Type.Type] = []
+            output_types: list[Type.Type] = []
 
             self.parser.eat(TokenType.LEFT_PAREN)
             while not self.parser.head_equals(TokenType.RIGHT_PAREN):
