@@ -242,7 +242,6 @@ dict{x: 3, y: 4}
 - `value` runs until the end of the line, or until a closing indicator. Whatever is on the top of the stack at the end of the line will be used. The remaining stack items will be left on the stack. It's up to the user to not leave more things on the stack than needed
 	- You may want to have multiple values left after assignment, but be wise about how you use this.
 - All variables are local. No global variables whatsoever.
-- Writing to a variable defined in an outer scope will "shadow" that variable. That is to say, it will be treated as if there were no outer definitions. Writing to the shadowed variable will not update the variable in the outer scope.
 
 ## 3.1. Augmented Assignment
 - Instead of providing a fixed set of augmented assignment operators, Valiance allows any function to be used.
@@ -278,6 +277,26 @@ $(a, b, c) = 1 2 3
 $a = 1
 $b = 2
 $c = 3
+```
+
+## 3.4. Variable Shadowing
+
+- Attempting to write to a variable in an outer scope will not update that variable.
+- Instead, a new variable inside the current scope will be created.
+- After such an assignment, future reads will refer to the locally scoped variable.
+- Shadowing occurs at evaluation time. That is to say that something like `$x = $x 1 +` will set local `$x` to outer `$x + 1`
+- Example:
+
+```
+$x = 5
+define foo =>
+  $x = 6
+  println("foo: x = $x")
+  #? x = 6
+end
+foo
+println("main: x = $x")
+#? x = 5
 ```
 
 # 4. Elements
@@ -346,6 +365,17 @@ reduce([1, 2, 3], fn => + end) #? 6
 #? Equivalent to
 [1, 2, 3] fn => + end reduce
 ```
+
+- If arguments would pop from the stack, they do so left to right, and pop as many as needed. For example (assuming `double` pops 1 item, and `+` pops 2):
+
+```
+foo(double, +)
+#? Given stack (top) [a, b, c] (bottom), equals
+
+foo(double($a), +($b, $c))
+```
+
+- If an argument pushes more than one result, only the top of the returned results is used. The rest of the values are discarded. Note that a compile warning will be raised in such a situation. 
 
 - `_` can be used to indicate the argument is not being filled right now.
 
@@ -448,10 +478,12 @@ $n F[U] #? Use overload 2
 - `swap` takes 2 stack items, and pushes them back in reverse order. `a b -> b a`
 - `pop` discards the top stack item. `a -> `
 - 2 extra convenience words (not exactly elements):
-- `copy(prestack -> poststack)`. Given a labelling of the prestack state, copy the values in poststack to the top of the stack
-- `move(prestack -> poststack)`. Given a labelling of the prestack state, copy the values in poststack to the top of the stack.
+- `copy(prestack -> poststack)`. Given a labelling of the prestack state, copy the values in poststack to the top of the stack.
+- `move(prestack -> poststack)`. Given a labelling of the prestack state, move the values in poststack to the top of the stack.
+	- All labels in prestack will be popped, even if they aren't referenced in poststack
+- Duplicate labels are allowed in both words' post stacks, and will result in the value being pushed multiple times. Note that with `move`, the original prestack values are only ever popped once.
 - `_` can be used as a label to indicate that the item should be skipped
-- all other labels must be unique.
+- all other labels must be unique - compile error to have duplicate labels in prestack.
 - Examples:
   
 ```
@@ -530,6 +562,17 @@ $double = createMultiplier(2)
 #? A Function[Number -> Number]
 ```
 
+```
+fn =>
+  $x = 5
+  fn => $x \+ 1
+end
+$wrapped = call(top)
+$x = 10
+$wrapped() #? 6
+#? It used its stored value rather than the scope's value
+```
+
 ## 6.4. Parameters
 - Parameters can be one of:
 	- `name: Type` - explicit type, value stored in variable. 
@@ -551,29 +594,7 @@ fn => + double
 - Untyped variables are inferred from their usage. If an untyped variable is not used, a compile-time error is raised.
 - Multiple possible overloads during inference = that function has multiple possible overloads.
 
-## 6.6. Function Closures and Variable Capturing
-- Say you have the following:
-
-```
-fn =>
-  $x = 5
-  fn => $x \+ 1
-end
-$wrapped = call(top)
-```
-
-- The inner function refers to the `x` declared inside the function.
-- But `x` goes out of scope when the outer function ends
-- Therefore, the inner function is said to "capture" the value of `x` held by the outer function.
-  - Calling `$wrapped` would use its stored value of `x`. This is in contrast to using any `x` defined in the current scope
-
-```
-$x = 10
-$wrapped() #? 6
-#? It used its stored value rather than the scope's value
-```
-
-## 6.7. Call-Site Type Checking
+## 6.6. Call-Site Type Checking
 - Sometimes it may be desirable to have a function accept any function as input, rather than a fixed function.
 	- For example, `fn (f: Function)` to work for any arity/multiplicity
 - However, executing such a function isn't type safe, because it could pop and push any number of things. This would make type checking impossible.
@@ -596,7 +617,7 @@ end
 #? Note that future usages of dip may use function values that aren't `VectFunction[Number, Number -> Number]`
 ```
 
-## 6.8. Inline Parameter/Return Type-Casting
+## 6.7. Inline Parameter/Return Type-Casting
 
 _Note: Normal code will not need to make use of this feature. It exists primarily for ergonomic FFI_
 
@@ -628,7 +649,7 @@ external("math.dll") define sqrt(:Number as FFI.float) -> FFI.float as Number =>
 
 - More on FFI later.
 
-## 6.9. Quick Functions
+## 6.8. Quick Functions
 
 - `'` before an element wraps that element in a function
 - `'element` == `fn => element`
@@ -973,7 +994,7 @@ end
 
 - The branch body is given the matched arguments.
 	- Branch bodies do not pop from the outer stack. This is to ensure consistent static typing
-	- All match branches return 1 value. If multiple values are on the stack at the end of the branch, then only the top is returned. If 0 values are on the stack at the end of the branch, `None` is returned.
+	- The result of a match statement is pairwise unions of each branch. If any branch returns less than the maximum multiplicity, `None` is returned as padding.
 - Each match case much match the same number of values. This is because the match statement will pop as many items as the arity of the case. Note that this is not equivalent to the arity of the branch
 - Exhaustive pattern matching is required. If it is not practical or desirable to specify all possible cases, `_` can be used as a case
 
@@ -1062,6 +1083,7 @@ else => println("No match")
 ## 10.5. `foreach`
 - A `foreach` loop iterates over items in a list and applies code to each item.
 - A `foreach` loop returns `None` if it executed to completion, otherwise it returns whatever was included in the break value.
+	- If multiple values are returned by a `break`, `None` is returned for each value if the loop executes to completion
 - The iterable used in the foreach loop is popped from the stack. Note that it must be a list type. It is a compile error to foreach an atomic value
 
 ```
@@ -1085,7 +1107,7 @@ end
 ### 10.5.1. `break`
 - While not a control flow structure, `break` has special syntax for terminating a loop early
 - `break (<values>)` will terminate a loop and push `values` to the stack.
-
+- If there are multiple breaks in a loop with differing multiplicities, then the breaks with fewer values will be padded with `None`s
 ```
 define find(ns: Number+, number: Number) -> Number? =>
   $ns foreach (n, ind) =>
@@ -1777,7 +1799,7 @@ tag #<name> as <category>
 
 ## 17.1. Constructed Tags
 - Constructed tags represent properties of data that are a consequence of how that data is constructed. For example, an infinite list can only be infinite if it is constructed that way. In a sense, constructed tags are sticky. Performing an operation on an infinite list usually does not change its infiniteness. Thus a constructed tag sticks around unless explicitly removed.
-- If an input of rank n has constructed tag T, then the output will have tag T at depth (output rank - 1) if output rank > n. If output rank < input rank, then no tag is carried.
+- If an input of rank n has constructed tag T, then the output will have tag T at depth (output rank - 1) if output rank >= n. If output rank < input rank, then no tag is carried.
 - A value tagged with a constructed tag can be used anywhere the value's type is expected.
 
 ## 17.2. Unit Tags
@@ -2210,10 +2232,6 @@ foo #? Pushes 6, 7
 
 - Make a function return everything on its stack instead of just returning 1 item.
 - That is, this annotation makes it so that the return signature of a function is "everything on the stack after the function"
-- Using this annotation will return all the things on the stack.
-- Everything that is on the stack, all of it, returned when using `@returnAll`
-- If there is something on the stack after the end of the function, it will be returned.
-- If an element or function has the `@returnAll` annotation, everything on the stack becomes the return type.
 - If there's already return type specified, that's a compile error.
 
 ## 19.8. `@errType`
@@ -2428,17 +2446,21 @@ end
 - The `where` clause is a small stack-based program that runs at compile time. Its results are used to fill in type variables in the return type, and to constrain overload selection.
 - Static expressions are evaluated in order, left to right. The same stack rules apply as everywhere else in Valiance.
 - Variables declared in the where clause can be used in the function body
+- Executed entirely at compile tieme
 
 ## 22.1. Rank Variables
 
 - A list parameter's rank can be named using `$n` after the `+`:
   - `T+$n` in a parameter makes `$n` a read-only rank variable, bound to the rank of the list at the call site.
   - `T+$n` in a return type makes `$n` a mandatory-write rank variable - it must be assigned in the `where` clause.
+  - `T+$n` is still an exact rank type.
+  - `T*$n` allows for minimum rank list types to be used
+  - `T~$n` for rugged rank
 
 ## 22.2. Allowed Operations
 
 - **Literals** - numbers and types can be pushed directly onto the static stack.
-- **Rank variables** - `$n` from `T+$n` parameters, and any variables assigned in the `where` clause.
+- **Rank variables** - `$n` from `T+$n`/`T*$n`/`T~$n` parameters, and any variables assigned in the `where` clause.
 - **Arithmetic** - `+`, `-`, `*`, `max`, `min` on numbers.
 - **Comparison** - `<`, `>`, `<=`, `>=`, `==`, `!=` on numbers; `==`, `!=` on types (no vectorisation).
 - **Boolean operations** - `and`, `or`, `not` on numbers (following the same truthiness rules as the rest of Valiance - `0` is false, all other numbers are true).
