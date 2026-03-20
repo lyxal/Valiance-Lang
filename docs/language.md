@@ -1186,6 +1186,7 @@ end
 - The arity and multiplicity of `body` determines what values are used as state and what values are returned.
 	- If arity and multiplicity are both 1, then the value on the top of the stack is both state and what is generated each iteration.
 	- Otherwise, multiplicity must equal `arity + 1`
+		- If multiplicity > `arity + 1`, items after the (`arity + 1`)th item are discarded.
 	- The generated value will be the top of the stack. All other values will be used as state for the next iteration. Consequently, the state values must be compatible with the parameters expected by `body`
 - If a generated value is `None`, then that value will be skipped. To intentionally generate a `None`, it must be wrapped in a `Some`
 - The resulting list is tagged as `#infinite`
