@@ -858,6 +858,23 @@ range(2, 7) \union range(4, 7)
 #? The entirety of range(4, 7) is used
 ```
 
+## 8.3. The `not` Modifier
+- `<predicate> <logical negation>` is a common pattern, but it doesn't read very well.
+- `sorted? not` isn't the smoothest.
+- Therefore, `not` is actually a modifier that takes the next element and negates its result.
+- For example:
+
+```
+#? Bogosort
+import{random}
+$input = [2, 5, 1, 5, 6, 3, 2]
+$input while (not sorted) =>
+  random.shuffle
+end
+```
+
+- `0 ==` can be used for postfix logical negation.
+
 # 9. Indexing
 - `$[<index>]` will get the `index`th item from the top of the stack. 0-indexed.
 	- Valid if a type has an overload of `index`. Built-in types that support this include list types, tuple types, and `String`
