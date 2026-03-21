@@ -1422,24 +1422,24 @@ Foo(10) Foo::get #? 10
 - `self $.member = <value>` and `self.member = <value>` are both valid. But only `self.member = <value>` will update what is returned by `self`.
 - Note that returning `self` is important if you want to chain object-friendly elements.
 
+Here's a reworked version:
+
+---
+
 ## 12.5. Destructors
 
-- First, a brief overview of memory system
-- Each scope has two reference stacks: the references it "owns", and the references it "keeps alive"
-- When an object is created in a scope, it is added to the references it "owns".
-- When a scope captures a reference from an outer scope, it adds the reference to the references it "keeps alive"
-- When a scope returns, any references being returned, including those stored in any "keep alive" stacks, are kept alive
-- Any references not being returned, nor included in any sub-"keep alive" stacks are freed.
-- In this way, a destructor is called when the object is not leaving a scope in any capacity.
+- A destructor is an element called automatically when an object is no longer reachable — that is, when its reference count hits zero.
 - Syntax:
-
+  
 ```
-define ~<ObjectName> => ... end 
+define ~<ObjectName> => ... end
 ```
 
-- Massively helpful for ensuring automatic clean up of resources
+- Destructors are intended for infallible, silent cleanup — releasing handles, freeing resources that cannot fail, etc.
+- The destructor of an object must not panic. That is, the destructor cannot call any elements that have the `Panic` tag. If cleanup may fail, use `@mustcall` instead to enforce explicit handling before the object goes out of scope.
+
 - Consider:
-
+  
 ```
 import system
 object File =>
@@ -1449,12 +1449,11 @@ object File =>
   end
   define read -> String => system.readStream($handle, all = true)
   define write(:String) => system.writeStream($handle, _)
-  define ~File => system.closeStream($handle)
+  define close => system.closeStream($handle)
+  define ~File => system.releaseHandle($handle)
 end
 ```
-
-- The `~File` of a `File` object is called whenever that reference does not leave a scope in some capacity. 
-- The destructor of an object must not panic. That is to say, the destructor cannot call any elements or functions that would panic. If a runtime invariant must be enforced, use the `@mustcall` annotation instead.
+- Here, close handles the fallible cleanup — if enforcement is needed, `@mustcall` can be used to ensure it is called before the object goes out of scope. `~File` handles only the infallible release of the underlying handle.
 
 ## 12.6. Object Example - `Counter`
 
