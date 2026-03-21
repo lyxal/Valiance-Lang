@@ -1454,6 +1454,7 @@ end
 ```
 
 - The `~File` of a `File` object is called whenever that reference does not leave a scope in some capacity. 
+- The destructor of an object must not panic. That is to say, the destructor cannot call any elements or functions that would panic. If a runtime invariant must be enforced, use the `@mustcall` annotation instead.
 
 ## 12.6. Object Example - `Counter`
 
@@ -2107,7 +2108,8 @@ unfold (...) => ... end println #? Compile Error!
         - Binding Conventions
                 - These add additional bindings to the current scope. For example `@recursive` adds `this`.
         - Resolution Conventions
-                - These change how certain compile time evaluations are resolved. I do not have an example of a resolution convention annotation at this moment.
+                - These change how certain compile time evaluations are resolved.
+                - For example, `@mustcall` makes it so that an element must be called on a value before that value goes out of scope.
         - Return Conventions
                 - These change how items from an element are returned. For example `@@tupled` wraps returns in a tuple. Note that such annotations are usually for things that are otherwise impractical to do from "first principles"
         - Invocation Conventions
@@ -2252,12 +2254,52 @@ object DivisonByZeroError as Err =>
 end
 ```
 
-- Used on a Variant to automatically require that all subtypes be Err subtypes
+- Used on a Variant to automatically make all subtypes be Err subtypes
 
 ```
-@errType variant DBError => end
-@errType object ConnectionClosedError as DBError => end
+@errType variant DBError =>
+  object ConnectionClosedError => end
+end
 ```
+
+## 19.9. `@mustcall`
+
+_Note: The exact semantics of this annotation are still being determined.
+It is an open question as to whether this annotation is feasible_
+
+- On object definition, this annotation makes it so that a set of object-friendly methods must be called on an instance of the object before that instance goes out of scope.
+- This is helpful for ensuring that clean-up-time invariants are enforced before the object's destructor is called.
+- Two forms: `@mustcall(all = [<methods>])` and `@mustcall(any = [<methods>])`
+  - `all` means that all of the methods in the set must be called before the object goes out of scope. `any` means that at least one of the methods in the set must be called before the object goes out of scope.
+  - The methods in the set must be object-friendly methods defined on the object. If a method in the set is not object-friendly, or is not defined on the object, that's a compile error.
+  - Methods are specified as strings. 
+- For example:
+
+```
+@mustcall(any = ["commit", "rollback"])
+object DBTransaction =>
+  define commit => ...
+  define rollback => ...
+end
+```
+
+- When a `DBTransaction` instance goes out of scope, if neither `commit` nor `rollback` has been called on that instance, a compile error is raised.
+- Again, this requirement only applies to the scope where the object would no longer be kept alive. It is okay to return an object that has not been `@mustcall` handled.
+- Additionally, calling `@mustcall` elements in a scope where the object is returned does not impact the consideration of whether the methods have been called in the destruction scope.
+
+```
+define foo(:DBTransaction) =>
+  commit
+end
+
+define bar(:DBTransaction) =>
+  DBTransaction() foo #? mustcall not considered satisfied here
+  commit #? mustcall considered satisfied here
+end
+```
+
+- The calls to `@mustcall` elements must be provably called. This means that if a `@mustcall` element is called in a context where it may not be called, then the compiler will not consider that element as satisfying the `@mustcall` requirement.
+  - This means that if a `@mustcall` element is called in a branch of an if statement (without an else statement that also calls such an element), or in a loop, then the compiler will not consider that element as satisfying the `@mustcall` requirement, because there are execution paths where that element is not called.
 
 # 20. Multimethods
 - Standard overload resolution is static dispatch.
