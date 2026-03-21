@@ -1190,7 +1190,7 @@ end
 	- The generated value will be the top of the stack. All other values will be used as state for the next iteration. Consequently, the state values must be compatible with the parameters expected by `body`
 - If a generated value is `None`, then that value will be skipped. To intentionally generate a `None`, it must be wrapped in a `Some`
 - The resulting list is tagged as `#infinite`
-    - Although unfold can generate finite lists,  it isn't always possible to tell whether it's actually finite. Therefore, all lists are marked infinite for safety, and you can always `#-infinite` if needed.
+    - Although unfold can generate finite lists,  it isn't always possible to tell whether it's actually finite. Therefore, all lists are marked infinite for safety, and you can always `#!infinite` if needed.
  - `condition` can be omitted to unfold infinitely.
  - `parameters` is optional. If specified, they define what is used for state, even if the arity would otherwise need more or less parameters. The returns must align with parameters if parameters are provided. 
 ## 10.8. `at`
@@ -1898,7 +1898,7 @@ tag #A disjoint #B
 
 ```
 define +(:#sorted Number+, :Number vec) -> #sorted Number+ =>
-  dip: #-sorted #? To avoid infinite recursion
+  dip: #!sorted #? To avoid infinite recursion
   +
   #sorted
 end
