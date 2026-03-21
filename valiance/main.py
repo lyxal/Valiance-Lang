@@ -1,8 +1,13 @@
+import valiance.lexer as lexer
+
+
 def repl():
     while True:
         line = input(">>> ")
         if line.strip() == "exit":
             break
+        tokens = lexer.lex(line)
+        print(tokens)
 
 
 def main():

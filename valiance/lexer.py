@@ -92,8 +92,8 @@ class TokenType(Enum):
     DOUBLE_AT = auto()  # @@ annotation prefix (return / invocation convention)
 
     # === Annotations (bare names after @ / @@) ===
-    # These are represented as IDENTIFIER tokens preceded by AT_SIGN / DOUBLE_AT;
-    # listed here for documentation only – no separate token needed in practice.
+    STRUCTURE_ANNOTATION = auto()  # structural annotation (e.g. @serializable)
+    ELEMENT_ANNOTATION = auto()  # element annotation (e.g. @@tupled)
 
     # === Punctuation & delimiters ===
     L_PAREN = auto()  # (
@@ -140,6 +140,7 @@ class TokenType(Enum):
 
     # === Special ===
     NEWLINE = auto()  # significant newline (ends statements / values)
+    WHITESPACE = auto()  # non-significant whitespace (indentation, spacing)
     EOF = auto()  # end of file
     ERROR = auto()  # lexer error (e.g. unterminated string)
 
@@ -157,3 +158,124 @@ class Token:
 
     def __repr__(self):
         return f"Token(type={self.type}, value='{self.value}', line={self.line}, column={self.column})"
+
+
+WHITESPACE = " \t"
+NEWLINE = ("\n", "\r\n")
+
+KEYWORD_TO_TOKEN = {
+    "define": TokenType.DEFINE,
+    "vecdefine": TokenType.VECDEFINE,
+    "multi": TokenType.MULTI,
+    "object": TokenType.OBJECT,
+    "trait": TokenType.TRAIT,
+    "variant": TokenType.VARIANT,
+    "enum": TokenType.ENUM,
+    "tag": TokenType.TAG,
+    "external": TokenType.EXTERNAL,
+    "import": TokenType.IMPORT,
+    "public": TokenType.PUBLIC,
+    "cast": TokenType.CAST,
+    "private": TokenType.PRIVATE,
+    "readable": TokenType.READABLE,
+    "=>": TokenType.ARROW,
+    "end": TokenType.END,
+    "fn": TokenType.FN,
+    "->": TokenType.RETURN_ARROW,
+    "if": TokenType.IF,
+    "else": TokenType.ELSE,
+    "while": TokenType.WHILE,
+    "foreach": TokenType.FOREACH,
+    "unfold": TokenType.UNFOLD,
+    "at": TokenType.AT,
+    "break": TokenType.BREAK,
+    "match": TokenType.MATCH,
+    "as": TokenType.AS,
+    "as!": TokenType.AS_BANG,
+    "default": TokenType.DEFAULT,
+    "try": TokenType.TRY,
+    "handle": TokenType.HANDLE,
+    "assert": TokenType.ASSERT,
+    "panic": TokenType.PANIC,
+    "vec": TokenType.VEC,
+    "atomic": TokenType.ATOMIC,
+    "const": TokenType.CONST,
+    "extend": TokenType.EXTEND,
+    "where": TokenType.WHERE,
+    "self": TokenType.SELF,
+    "true": TokenType.TRUE,
+    "false": TokenType.FALSE,
+    "None": TokenType.NONE,
+}
+
+
+def lex(source: str) -> list[Token]:
+    tokens: list[Token] = []
+    i = 0
+    line = 1
+    column = 1
+
+    while i < len(source):
+        print(f"Lexing at index {i}, line {line}, column {column}: '{source[i:i+10]}'")
+        char = source[i]
+        if char in NEWLINE:
+            tokens.append(Token(TokenType.NEWLINE, char, i, i + 1, line, column))
+            line += 1
+            column = 1
+            i += 1
+        elif char in WHITESPACE:
+            tokens.append(Token(TokenType.WHITESPACE, char, i, i + 1, line, column))
+            column += 1
+            i += 1
+        elif char.isdigit() or (
+            char == "-" and i + 1 < len(source) and source[i + 1].isdigit()
+        ):
+            number_token, length = _lex_number(source, i)
+            tokens.append(
+                Token(TokenType.NUMBER, number_token, i, i + length, line, column)
+            )
+            i += length
+            column += length
+        else:
+            # This is the fallback case for unrecognized characters.
+            # Unrecognized characters are emitted as ERROR tokens, but the lexer continues to the next character.
+            tokens.append(Token(TokenType.ERROR, char, i, i + 1, line, column))
+            i += 1
+            column += 1
+    return tokens
+
+
+def _lex_number(source: str, start: int) -> tuple[str, int]:
+    real_part, index = _lex_real(source, start)
+    if index < len(source) and source[index] == "i":
+        index += 1
+        imag_part, index = _lex_real(source, index)
+        return f"{real_part}i{imag_part}", index - start
+    return real_part, index - start
+
+
+def _lex_real(source: str, start: int) -> tuple[str, int]:
+    number_part, index = _lex_decimal(source, start)
+    if index < len(source) and source[index] in ("e", "E"):
+        index += 1
+        exponent, exp_index = _lex_decimal(source, index)
+        return f"{number_part}e{exponent}", exp_index - start
+    return number_part, index - start
+
+
+def _lex_decimal(source: str, start: int) -> tuple[str, int]:
+    i = start
+    if i < len(source) and source[i] == "-":
+        i += 1
+    has_digits = False
+    while i < len(source) and source[i].isdigit():
+        i += 1
+        has_digits = True
+    if i < len(source) and source[i] == ".":
+        i += 1
+        while i < len(source) and source[i].isdigit():
+            i += 1
+            has_digits = True
+    if not has_digits:
+        raise ValueError(f"Invalid number literal at position {start}")
+    return source[start:i], i
