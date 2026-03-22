@@ -6,8 +6,9 @@ def repl():
         line = input(">>> ")
         if line.strip() == "exit":
             break
-        tokens = lexer.lex(line)
-        print(tokens)
+        tokens = lexer.Lexer(line).scan_tokens()
+        for token in tokens:
+            print(token)
 
 
 def main():
