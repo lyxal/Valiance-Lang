@@ -843,7 +843,8 @@ fork: (sum, length) /
 
 ## 8.2. The `\` Modifier
 
-- `\` before an element name will make it take either the next value token, or the next element, and use it as its right hand value. Note that the element must be dyadic.
+- `\` before an element name will make it take either the next value token, or the next element, and use it as its right-most  non-optional parameter.
+- Note that the element must be either monadic or dyadic.
 
 ```
 3 \+ 4
@@ -858,22 +859,12 @@ range(2, 7) \union range(4, 7)
 #? The entirety of range(4, 7) is used
 ```
 
-## 8.3. The `not` Modifier
-- `<predicate> <logical negation>` is a common pattern, but it doesn't read very well.
-- `sorted? not` isn't the smoothest.
-- Therefore, `not` is actually a modifier that takes the next element and negates its result.
-- For example:
-
 ```
-#? Bogosort
-import{random}
-$input = [2, 5, 1, 5, 6, 3, 2]
-$input while (not sorted) =>
-  random.shuffle
-end
+\not sorted?
+#? Equivalent to
+sorted? not
 ```
 
-- `0 ==` can be used for postfix logical negation.
 
 # 9. Indexing
 - `$[<index>]` will get the `index`th item from the top of the stack. 0-indexed.
@@ -1209,7 +1200,8 @@ end
 - The resulting list is tagged as `#infinite`
     - Although unfold can generate finite lists,  it isn't always possible to tell whether it's actually finite. Therefore, all lists are marked infinite for safety, and you can always `#!infinite` if needed.
  - `condition` can be omitted to unfold infinitely.
- - `parameters` is optional. If specified, they define what is used for state, even if the arity would otherwise need more or less parameters. The returns must align with parameters if parameters are provided. 
+ - `parameters` is optional. If specified, they define what is used for state, even if the arity would otherwise need more or less parameters. The returns must align with parameters if parameters are provided.
+
 ## 10.8. `at`
 
 - A way to control vectorisation, applying a function `at` certain depths
@@ -1439,20 +1431,16 @@ Foo(10) Foo::get #? 10
 - `self $.member = <value>` and `self.member = <value>` are both valid. But only `self.member = <value>` will update what is returned by `self`.
 - Note that returning `self` is important if you want to chain object-friendly elements.
 
-Here's a reworked version:
-
----
-
 ## 12.5. Destructors
 
-- A destructor is an element called automatically when an object is no longer reachable — that is, when its reference count hits zero.
+- A destructor is an element called automatically when an object is no longer reachable - that is, when its reference count hits zero.
 - Syntax:
   
 ```
 define ~<ObjectName> => ... end
 ```
 
-- Destructors are intended for infallible, silent cleanup — releasing handles, freeing resources that cannot fail, etc.
+- Destructors are intended for infallible, silent cleanup - releasing handles, freeing resources that cannot fail, etc.
 - The destructor of an object must not panic. That is, the destructor cannot call any elements that have the `Panic` tag. If cleanup may fail, use `@mustcall` instead to enforce explicit handling before the object goes out of scope.
 
 - Consider:
@@ -1470,9 +1458,46 @@ object File =>
   define ~File => system.releaseHandle($handle)
 end
 ```
-- Here, close handles the fallible cleanup — if enforcement is needed, `@mustcall` can be used to ensure it is called before the object goes out of scope. `~File` handles only the infallible release of the underlying handle.
 
-## 12.6. Object Example - `Counter`
+- Here, close handles the fallible cleanup - if enforcement is needed, `@mustcall` can be used to ensure it is called before the object goes out of scope. `~File` handles only the infallible release of the underlying handle.
+
+## 12.6. Objects, Stack Manipulation, and Memory Management
+
+- When `dup` is called on an object, it's reference count is incremented.
+- Note that `copy` calls `dup` for each reference to an item in the poststack.
+- `move` only calls `dup` if there is more than one reference to an item in the poststack.
+- If an object should not be allowed to be duplicated, then an object can define `dup` as an object friendly element with the `@error` annotation
+- For example:
+
+```
+object WriteFile =>
+  ...
+  @error("Writeable files cannot be duplicated")
+  define dup => end
+  ...
+end
+```
+
+- A compile error will be raised if an object marked as un-duplicatable is duplicated.
+- A `DuplicationFault` will be raised if an object marked as un-duplicatable ever has its reference count exceed 1. This is for cases where duplication may not be detectable by the compiler (e.g. duplication of a generic type or pushing a variable multiple times)
+
+- When `pop` is called on an object, the reference count for that object is decremented. If a `pop` would make the reference count reach 0, then the destructor is called.
+- `pop` will panic with a `CleanupFault` if an object would be destructed without any of its `@mustcall` obligations being met.
+- However, an element can define `pop` as an object friendly element with `@mustcall` elements. This element will only be called when the reference count reaches 0.
+- `pop` can be fallible, but will always call the destructor, even on panic.
+- Example:
+
+```
+@mustcall(all = ["commit"])
+object Transaction =>
+  ...
+  define pop =>
+    self commit
+  end
+end
+```
+
+## 12.7. Object Example - `Counter`
 
 ```
 object Counter =>
@@ -1724,7 +1749,7 @@ solve(U[T], V[W]) = solve(T, W)
 solve(T+n, U+m) = T := U+(m-n)
 solve(T*n, U*m) = T := U*(m-n)
 solve(T~n, U~m) = T := U~(m-n)
-solve(T*n, U+m) = T := U*(n-1)
+solve(T*n, U+m) = T := U*(m-n)
 solve(T~n, U+m) = T := U~(m-n)
 solve(T~n, U*m) = T := U~(m-n)
 solve(T?, U?) = T := U
