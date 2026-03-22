@@ -370,10 +370,12 @@ class Lexer:
                 self.add_token(TokenType.AUG_ASSIGN, ":=")
             case _ if HEAD in string.ascii_letters:
                 self.scan_element()
-            case "$" if not self._head_equals("$("):
+            case "$" if not self._head_equals("$(") and not self._head_equals("$["):
                 self.add_token(TokenType.VARIABLE, HEAD)
             case _ if self._head_equals("$("):
                 self.add_token(TokenType.MULTIPLE_ASSIGN, "$(")
+            case _ if self._head_equals("$["):
+                self.add_token(TokenType.DOLLAR_BRACKET, "$[")
             case "(":
                 self.add_token(TokenType.L_PAREN, HEAD)
             case ")":
