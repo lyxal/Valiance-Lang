@@ -4884,7 +4884,7 @@ end
     def test_inferred_return_keeps_infinite_and_plain_union(self):
         analyser = Analyser()
 
-        analyser.analyse(parse("""
+        typed = analyser.analyse(parse("""
 define Foo(x) =>
   if ($x == 1) => #infinite [1]
   else => [1]
@@ -4896,10 +4896,9 @@ Foo 1
         self.assertEqual(analyser.diagnostics, [])
         [overload] = analyser.env.overloads_for(Symbol("Foo"))
         plain = T.ExactList(T.Int)
-        self.assertEqual(
-            overload.returns,
-            (T.U(T.Tagged(plain, "infinite"), plain),),
-        )
+        expected = T.U(T.Tagged(plain, "infinite"), plain)
+        self.assertEqual(overload.returns, (expected,))
+        self.assertEqual(typed[-1].typ, expected)
 
     def test_inferred_return_union_is_independent_of_branch_order(self):
         return_types = []

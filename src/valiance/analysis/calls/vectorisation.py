@@ -746,7 +746,12 @@ def _vectorised_explicit_tags(
     tags: frozenset[T.DataTag],
 ) -> frozenset[T.DataTag]:
     """Lift declared return tags to every rank introduced by vectorisation."""
-    declared_rank = _type_rank(declared)
+    declared_ranks = _possible_type_ranks(declared)
+    declared_rank = (
+        next(iter(declared_ranks))
+        if len(declared_ranks) == 1
+        else _type_rank(declared)
+    )
     return frozenset(
         T.DataTag(tag.name, tag.depth + max(rank - declared_rank, 0), tag.absent)
         for rank in _possible_type_ranks(actual)
