@@ -50,6 +50,7 @@ from valiance.runtime.runtime_values import (
     PlannedLazyList,
     PipelineTerminal,
     RuntimeNumber,
+    FFIScalarValue,
     RecordValue,
     format_runtime_value,
 )
@@ -6998,3 +6999,89 @@ $point[0, 1] = 5
 $point[0, 1]
 """)
     assert list(stack[-1]) == [5, 5]
+
+class ConversionProtocolRuntimeTests(unittest.TestCase):
+    """Cover user-defined target-directed conversions."""
+
+    def test_to_selects_convert_overload_by_target(self) -> None:
+        source = """
+@convert(Int -> Real)
+define to(value: Int) -> Real => $value as[Real]
+@convert(Int -> Number)
+define to(value: Int) -> Number => $value as[Number]
+to[Real](7)
+"""
+        analyser = Analyser()
+        typed = analyser.analyse(parse(source))
+        self.assertEqual(analyser.diagnostics, [])
+        self.assertEqual(run(compile_program(typed)), [7])
+
+    def test_conversion_target_is_required(self) -> None:
+        source = """
+@convert(Int -> Real)
+define to(value: Int) -> Real => $value as[Real]
+1 to
+"""
+        analyser = Analyser()
+        analyser.analyse(parse(source))
+        self.assertTrue(analyser.diagnostics)
+
+    def test_convert_requires_matching_signature(self) -> None:
+        source = """
+@convert(String -> Real)
+define to(value: Int) -> Real => $value as[Real]
+"""
+        analyser = Analyser()
+        analyser.analyse(parse(source))
+        self.assertTrue(any("source must match" in str(d) for d in analyser.diagnostics))
+
+
+class FFIPhaseHRuntimeTests(unittest.TestCase):
+    """Exercise checked and unchecked compiler-owned FFI scalar boundaries."""
+
+    def _execute(self, source, *, optimize=True, round_trip=False):
+        analyser = Analyser()
+        typed = analyser.analyse(parse(source))
+        self.assertEqual(analyser.diagnostics, [])
+        program = compile_program(typed, optimize=optimize)
+        if round_trip:
+            program = loads(dumps(program))
+        return run(program)
+
+    def test_checked_integer_conversion_round_trips(self):
+        self.assertEqual(self._execute("3 to[&int] | to[Int]"), [RuntimeNumber(3)])
+        self.assertEqual(
+            self._execute("3 to[&int] | to[Int]", round_trip=True),
+            [RuntimeNumber(3)],
+        )
+
+    def test_checked_cstring_conversion_round_trips(self):
+        self.assertEqual(
+            self._execute('"hello" to[&CString] | to[String]'), ["hello"]
+        )
+
+    def test_raw_constructor_has_exact_ffi_identity(self):
+        self.assertEqual(
+            self._execute("FFI.&int(3)"), [FFIScalarValue("&int", 3)]
+        )
+
+    def test_integer_overflow_panics(self):
+        analyser = Analyser()
+        typed = analyser.analyse(parse("999999999999999999999 to[&int]"))
+        self.assertEqual(analyser.diagnostics, [])
+        with self.assertRaisesRegex(RuntimeError, "outside &int range"):
+            run(compile_program(typed))
+
+    def test_cstring_rejects_embedded_null(self):
+        analyser = Analyser()
+        typed = analyser.analyse(parse('"a\0b" to[&CString]'))
+        self.assertEqual(analyser.diagnostics, [])
+        with self.assertRaisesRegex(RuntimeError, "embedded null"):
+            run(compile_program(typed))
+
+    def test_vm_close_is_idempotent_and_rejects_reentry(self):
+        vm = VirtualMachine()
+        vm.close()
+        vm.close()
+        with self.assertRaisesRegex(RuntimeError, "closed"):
+            vm.__enter__()

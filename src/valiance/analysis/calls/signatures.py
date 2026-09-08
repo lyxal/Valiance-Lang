@@ -514,7 +514,7 @@ def _transform_type_children(
     """Compute transform type children during static analysis."""
     typ = T.normalize(typ)
     if isinstance(typ, T.NominalType):
-        return T.N(typ.name, *(transform(arg) for arg in typ.args))
+        return T.rebuild_nominal(typ, *(transform(arg) for arg in typ.args))
     if isinstance(typ, T.UnionType):
         return T.U(*(transform(item) for item in typ.items))
     if isinstance(typ, T.IntersectionType):

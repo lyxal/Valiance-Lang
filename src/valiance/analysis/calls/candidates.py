@@ -1503,8 +1503,8 @@ def _erase_overlay_owned_tag(typ: T.Type, name: str) -> T.Type:
     if isinstance(typ, T.CollectionType):
         return T.C(type(typ), _erase_overlay_owned_tag(typ.base, name), typ.rank)
     if isinstance(typ, T.NominalType):
-        return T.N(
-            typ.name,
+        return T.rebuild_nominal(
+            typ,
             *(_erase_overlay_owned_tag(arg, name) for arg in typ.args),
         )
     if isinstance(typ, T.UnionType):

@@ -103,6 +103,19 @@ class TypedWaitNode(TypedNode):
 
 
 @dataclass(frozen=True, slots=True)
+class TypedCancelNode(TypedNode):
+    """Request cooperative cancellation of one task handle."""
+
+
+@dataclass(frozen=True, slots=True)
+class TypedTimeoutNode(TypedNode):
+    """Wait for one task under a deterministic logical deadline."""
+
+    output_types: tuple[Type, ...] = ()
+    effects: frozenset[ElementTag] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True, slots=True)
 class TypedChannelNode(TypedNode):
     """A statically typed channel construction or operation."""
 
@@ -602,6 +615,36 @@ class BreakNode(ASTNode):
     """Break from a while/for loop with optional value(s)"""
 
     values: tuple[ASTNode, ...] = ()
+
+
+@dataclass(frozen=True)
+class LinkedFieldNode(ASTNode):
+    """One declaration-order storage field in a linked C struct."""
+    name: Symbol
+    typ: Type
+    fixed_size: int | None = None
+
+
+@dataclass(frozen=True)
+class LinkTypeNode(ASTNode):
+    """A named, fixed-layout C structure declaration."""
+    namespace: Symbol
+    symbol: Symbol
+    name: Symbol
+    fields: tuple[LinkedFieldNode, ...] = ()
+
+
+@dataclass(frozen=True)
+class LinkNode(ASTNode):
+    """A raw native function declaration resolved through an FFI library import."""
+
+    namespace: Symbol
+    symbol: Symbol
+    params: tuple[Type, ...] = ()
+    returns: tuple[Type, ...] = ()
+    converted_return: Type | None = None
+    alias: Symbol | None = None
+    annotations: tuple[ASTNode, ...] = ()
 
 
 @dataclass(frozen=True)

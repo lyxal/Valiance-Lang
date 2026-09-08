@@ -249,6 +249,31 @@ class _FieldExpressions:
             field_type = _functions._anonymous_type_var(branch, 1)
             return field_type, T.Row(receiver_type, T.Field(name, field_type))
 
+        if isinstance(receiver_type, T.NominalType) and T.show(receiver_type) in {
+            name[1:] for name in self._ffi_structs
+        }:
+            receiver_type = T.FFI(receiver_type.name, *receiver_type.args)
+
+        if isinstance(receiver_type, T.FFINamedType):
+            # Linked C layouts are immutable values in Valiance. Their stored
+            # fields are computed from ABI metadata and are never assignable.
+            if write:
+                return None, None
+            spec = self._ffi_structs.get(T.show(receiver_type))
+            if spec is None:
+                return None, None
+            field = next(
+                (item for item in spec.fields if item.name == name.text),
+                None,
+            )
+            if field is None:
+                return None, None
+            base = T.FFI(Symbol(field.type_name[1:]))
+            return (
+                T.ExactList(base) if field.fixed_size is not None else base,
+                None,
+            )
+
         if isinstance(receiver_type, T.NominalType):
             definition = self.env.lookup_object(receiver_type.name)
             attribute = None if definition is None else definition.attribute(name)

@@ -1,8 +1,16 @@
-# Valiance feature checklist
+# Valiance Implementation Status
 
-Current audit total: 674 / 803 items complete (83.9%).
+This document tracks the current language design and implementation. It is not
+a release schedule. Historical proposals are retained only when an explicit
+out-of-scope marker helps prevent them from being mistaken for active work.
 
-Audit refreshed against the repository implementation and full test suite on 2026-07-25. Items remain unchecked where the feature is absent, deliberately deferred, only partially implemented, or too broad to treat as complete.
+Status markers:
+
+- `[x]` implemented and covered by the current compiler or runtime
+- `[~]` partially implemented or implemented with a material limitation
+- `[ ]` accepted current design that is not implemented
+- `[—]` superseded, dropped, or explicitly outside the current design
+
 
 ## 1. Lexer, parser, and general syntax
 
@@ -33,7 +41,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Implement stack-underflow handling according to each construct’s rules.
 - [x] Implement function-local stacks.
 - [x] Implement argument cycling for explicitly declared function parameters.
-- [ ] Implement argument cycling for loop inputs where specified.
+- [x] Implement argument cycling for loop inputs where specified.
 - [x] Compile typed AST nodes to bytecode.
 - [x] Run an extensible bytecode optimisation pipeline by default.
 - [x] Fold pure constants and literal tuple/string builders.
@@ -55,8 +63,8 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Parse scientific notation with real-valued exponents.
 - [x] Reject exponent syntax without a leading coefficient.
 - [x] Provide the `Int`, `Real`, and general `Number` types.
-- [ ] Implement `Int` as the appropriate tagged `Number` type.
-- [ ] Implement `Real` as the appropriate tagged `Number` type.
+- [—] Implement `Int` as a tagged `Number` type. The current design uses the nominal hierarchy `Int <: Real <: Number`.
+- [—] Implement `Real` as a tagged `Number` type. The current design uses the nominal hierarchy `Int <: Real <: Number`.
 - [x] Treat numeric zero as false and every other number as true at runtime.
 - [x] Provide `true` as an alias for numeric `1`.
 - [x] Provide `false` as an alias for numeric `0`.
@@ -147,9 +155,9 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Support overload-set types.
 - [x] Support generic types.
 - [x] Support trait types.
-- [ ] Support object, variant, enum, record, dictionary, tuple, task, channel, result, and FFI types.
+- [~] Support object, variant, enum, record, dictionary, tuple, task, channel, result, and FFI types.
 - [x] Canonicalise union and intersection types.
-- [ ] Reject invalid or unsatisfiable type combinations where specified.
+- [~] Reject invalid or unsatisfiable type combinations where specified.
 
 ## 11. Ranked list types
 
@@ -165,10 +173,10 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Allow exact-rank lists where compatible minimum-rank lists are expected.
 - [x] Allow minimum-rank lists as exact-rank call parameters when the minimum rank is high enough, without making them assignable.
 - [x] Allow exact- or minimum-rank lists where compatible rugged lists are expected.
-- [ ] Represent rugged rank as a compile-time abstraction over recursive union structures.
+- [~] Represent rugged rank as a compile-time abstraction over recursive union structures.
 - [x] Allow explicit rugged types to vectorise only where atomic parameters are expected.
 - [x] Reject rugged-to-collection vectorisation, regardless of relative rugged rank.
-- [ ] Recognise equivalent expanded-union rugged types during vectorisation.
+- [~] Recognise equivalent expanded-union rugged types during vectorisation.
 
 ## 13. Type casting
 
@@ -184,8 +192,8 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Reject runtime refinements whose target cannot be checked.
 - [x] Reject casts whose source and target cannot overlap.
 - [x] Preserve optional-cast bytecode through serialization.
-- [ ] Support inline parameter casts.
-- [ ] Support inline return-value casts.
+- [—] Support inline parameter casts. Parameters use declared types; transformations are explicit elements.
+- [—] Support inline return-value casts. Linked returns use explicit `(Visible) &Physical` conversion metadata.
 
 
 ## 14. Variables and constants
@@ -235,21 +243,21 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Push evaluated arguments before invoking the element.
 - [x] Allow partial argument specification.
 - [x] Fill unspecified arguments from the existing stack.
-- [ ] Support `_` placeholders in any argument position.
-- [ ] Preserve normal left-to-right evaluation despite placeholders.
+- [~] Support `_` placeholders in any argument position.
+- [~] Preserve normal left-to-right evaluation despite placeholders.
 - [x] Support named arguments.
 - [x] Validate named arguments against declared parameter names.
-- [ ] Allow named placeholders that consume values from the stack.
-- [ ] Partition stack consumption right-to-left among call-syntax expressions.
-- [ ] Use only the top result of a multi-result argument expression.
-- [ ] Discard remaining results from such argument expressions.
-- [ ] Emit a warning when argument-expression results are discarded.
+- [~] Allow named placeholders that consume values from the stack.
+- [~] Partition stack consumption right-to-left among call-syntax expressions.
+- [~] Use only the top result of a multi-result argument expression.
+- [~] Discard remaining results from such argument expressions.
+- [~] Emit a warning when argument-expression results are discarded.
 
 ## 17. Stack-shuffling operations
 
 - [x] Provide `dup`.
 - [x] Provide `swap`.
-- [ ] Provide `pop`.
+- [x] Provide `pop`.
 - [x] Parse and execute `copy(prestack -> poststack)`.
 - [x] Parse and execute `move(prestack -> poststack)`.
 - [x] Support duplicate post-stack labels.
@@ -294,7 +302,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Discard overload possibilities made impossible by later operations.
 - [x] Produce overload-set function types when multiple alternatives remain.
 - [x] Infer untyped named parameters from use.
-- [ ] Reject unused untyped parameters.
+- [~] Reject unused untyped parameters.
 - [x] Support generic `Function` parameters with unknown arity and multiplicity.
 - [x] Defer stack-polymorphic function validation to call sites.
 - [x] Validate each call independently using the concrete function argument type.
@@ -329,10 +337,10 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Preserve dynamic exact target ranks for minimum-rank call adaptation in saved bytecode.
 - [x] Reify known exact list ranks on eager and lazy runtime list values.
 - [x] Apply atomic-only vectorisation for explicit rugged types.
-- [ ] Apply the same atomic-only rule to equivalent expanded unions.
+- [~] Apply the same atomic-only rule to equivalent expanded unions.
 - [x] Parse and execute `at (...) => ...`.
-- [ ] Support per-argument vectorisation-depth labels in `at`.
-- [ ] Support underscore depth inference in `at`.
+- [~] Support per-argument vectorisation-depth labels in `at`.
+- [~] Support underscore depth inference in `at`.
 
 ## 21. Vectorisation extension rules
 
@@ -353,15 +361,15 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Parse the `element: chain` modifier.
 - [x] Automatically wrap the following chain as a function argument.
 - [x] Support multiple function arguments in parenthesised comma-separated form.
-- [ ] Require all function-typed parameters to be supplied when `:` is used.
-- [ ] Integrate `:` calls with optional function arguments.
+- [~] Require all function-typed parameters to be supplied when `:` is used.
+- [~] Integrate `:` calls with optional function arguments.
 
 ## 23. Indexing and slicing
 
 - [x] Parse stack indexing using `$[index]`.
 - [x] Use zero-based indexing.
 - [x] Support negative indices from the end.
-- [ ] Dispatch indexing through the `index` overload mechanism.
+- [~] Dispatch indexing through the `index` overload mechanism.
 - [x] Support tuple, list, string, and dictionary indexing.
 - [x] Parse multiple indices and return the selected values as a list.
 - [x] Parse direct variable indexing.
@@ -399,7 +407,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Pass matched values to the selected branch body.
 - [x] Avoid popping additional values from the outer stack inside branch invocation.
 - [x] Union corresponding branch result types.
-- [ ] Pad missing branch results with `None`.
+- [x] Pad missing branch results with `None`.
 - [x] Require exhaustive matching.
 - [x] Recognise wildcard cases as exhaustive.
 - [x] Support exhaustive checking for variants and enums.
@@ -452,8 +460,8 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Support infinite unfolding when no condition is provided.
 - [x] Infer state and generated values from body arity and multiplicity.
 - [x] Support explicit unfold state parameters.
-- [ ] Skip generated `None` values.
-- [ ] Preserve explicitly generated `Some(\None)`.
+- [x] Skip generated `None` values.
+- [x] Preserve explicitly generated `Some(\None)`.
 - [x] Tag unfold results as `#infinite`.
 
 ## 27. Custom element definitions
@@ -505,7 +513,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 ## 29. Traits
 
 - [x] Parse trait declarations.
-- [ ] Support required object members in traits.
+- [x] Support required object members in traits.
 - [x] Support required element signatures in traits.
 - [x] Support default trait behavior where specified.
 - [x] Parse object-to-trait implementations.
@@ -573,7 +581,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Respect the defined rank-zero interpretations.
 - [x] Reject inconsistent generic solutions.
 - [x] Avoid positional unification across unions.
-- [ ] Avoid positional unification across intersections.
+- [x] Avoid positional unification across intersections.
 - [x] Support anonymous generics in function types.
 - [x] Support row polymorphism for extensible record-like types.
 
@@ -643,7 +651,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Parse annotations on function literals and element invocations.
 - [x] Provide an extensible Python annotation registry for built-ins and future compiler plugins.
 - [x] Implement `@recursive`.
-- [ ] Enforce recursive-call restrictions unless `@recursive` is present.
+- [x] Enforce recursive-call restrictions unless `@recursive` is present.
 - [x] Implement `@self`.
 - [x] Supply or transform the implicit object receiver as specified.
 - [x] Implement `@@tupled`.
@@ -705,7 +713,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Provide optional/result propagation using `&`.
 - [x] Provide the `?` optional/result helper.
 - [x] Provide the `?!` helper.
-- [ ] Preserve nested optional and result semantics through these helpers.
+- [~] Preserve nested optional and result semantics through these helpers.
 - [x] Provide `AssertError`.
 - [x] Provide `VectorisationFault`.
 - [x] Provide `SliceFault`.
@@ -770,7 +778,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Install per-project packages into `.vln`.
 - [ ] Support a global package location for tools.
 - [x] Install multiple versions of the same dependency simultaneously.
-- [ ] Keep types from different package versions distinct.
+- [~] Keep types from different package versions distinct.
 - [x] Support explicit dependency upgrades.
 - [x] Implement `vln install`.
 - [ ] Accept and acquire registry packages.
@@ -784,7 +792,7 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Implement `vln upgrade`.
 - [x] Update manifest, lockfile, and managed package tree transactionally during package changes.
 
-## 41. Concurrency — initial release complete
+## 41. Concurrency
 
 - [x] Implement cooperative tasks and `spawn`.
 - [x] Preserve native task output rows in `Task[...]`.
@@ -798,61 +806,101 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Integrate cooperative timers/non-blocking wake sources and deadlock reporting.
 - [x] Preserve concurrency through optimization and bytecode serialization.
 - [x] Add deterministic fuzzing, stress/leak gates, benchmarks, and executable examples.
-- [ ] Deferred: public cancellation and timeout syntax.
-- [ ] Deferred: `match channels` / select across multiple channel operations.
-- [ ] Deferred: directional channel endpoints, priorities, detached tasks, and parallel execution.
+- [x] Provide public task cancellation and logical-time timeout operations.
+- [—] Deferred: `match channels` / select across multiple channel operations.
+- [ ] Support directional channel endpoints, priorities, detached tasks, and parallel execution.
 
-## 42. Eager evaluation — deferred design area
+## 42. Eager evaluation
 
 - [x] Parse eager definitions or eager markers.
 - [x] Attach the `Eager` companion tag.
 - [x] Trigger eager execution under the specified conditions.
 - [x] Preserve eager behavior through higher-order function calls.
-- [ ] Integrate eagerness with vectorisation.
+- [~] Integrate eagerness with vectorisation.
 - [x] Integrate eagerness with effect-tag propagation.
-- [ ] Enforce restrictions associated with eager functions.
+- [~] Enforce restrictions associated with eager functions.
 - [x] Prevent direct user attachment of the `Eager` companion tag.
 
-## 43. Foreign-function interface — deferred design area
+## 43. Foreign-function interface
 
-- [ ] Parse `external` blocks.
-- [ ] Support optional external library filenames.
-- [ ] Support optional namespaces.
-- [ ] Allow external function declarations.
-- [ ] Bind declaration names to matching C function names.
-- [ ] Validate foreign parameter and return types.
-- [ ] Restrict foreign declarations to external contexts.
-- [ ] Allow ordinary Valiance code inside external blocks.
-- [ ] Return the external block’s top stack value.
-- [ ] Prevent ordinary FFI scalar types from escaping external blocks.
-- [ ] Permit opaque foreign handles to escape external blocks.
-- [ ] Provide a standard library of C-compatible FFI types.
-- [ ] Restrict creation and manipulation of FFI types to external contexts.
-- [ ] Provide built-in casts between compatible Valiance and FFI types.
-- [ ] Perform required range and representation validation.
-- [ ] Parse external object opaque bindings.
-- [ ] Prevent constructors, members, and object-friendly elements on opaque bindings.
-- [ ] Support C struct bindings with field declarations.
-- [ ] Allow foreign struct construction inside external blocks.
-- [ ] Permit public foreign-struct field reads in external blocks.
-- [ ] Reject direct foreign-struct field writes.
-- [ ] Support wrapping opaque handles in ordinary Valiance objects.
-- [ ] Support explicit foreign-resource destructors.
-- [ ] Define FFI function-object and callback behavior.
-- [ ] Parse inline external function bindings.
-- [ ] Apply inline parameter and return casts around an external call.
+- [x] Parse the open `&Type` FFI type family, including nested pointers and flat buffers.
+- [x] Preserve first-class FFI scalar values through portable bytecode serialization.
+- [x] Parse `@convert(Source -> Target)` on conversion definitions.
+- [x] Require conversion implementations to be named `to` with one declared source parameter and one declared target return.
+- [x] Select user conversions through target-directed `to[Target]` calls.
+- [x] Reject missing, mismatched, and ambiguous conversion targets through ordinary overload diagnostics.
+- [x] Parse `link` declarations and library imports.
+- [x] Resolve and invoke native symbols.
+- [x] Implement raw unchecked `FFI.&Type` constructors for primitive scalar types.
+- [x] Provide compiler-owned primitive Valiance/FFI conversions.
+- [x] Infer and propagate the `Unsafe` element tag.
+- [x] Complete computed linked fields.
+- [x] Support explicit native destructor links and lease opaque handles across in-flight native calls.
+- [x] Support plain declaration-order native structs passed and returned by value.
+- [x] Support fixed-size embedded native array fields.
+- [x] Support checked rank-one Valiance-list conversions to flat primitive FFI buffers.
+- [x] Support declared linked-return conversions.
+- [x] Support callback trampolines and scheduler handoff.
 
-## 44. User-defined cast declarations — deferred design area
+### Current FFI capability boundaries
 
-- [ ] Parse `cast Source -> Target => ... end`.
-- [ ] Support named and unnamed source parameters.
-- [ ] Restrict cast declarations to permitted atomic source and target types.
-- [ ] Require cast bodies to return the declared target type.
-- [ ] Include declared casts in safe `as` resolution.
-- [ ] Keep unsafe `as!` independent of declared cast rules.
-- [ ] Support casts involving external blocks.
-- [ ] Detect ambiguous cast rules.
-- [ ] Detect recursive or cyclic cast selection where prohibited.
+- [~] Flat primitive buffers are borrowed for one linked call; mutable output and input/output buffers are not represented.
+- [~] Owned returns cover strings and fixed-size primitive buffers; dynamic pointer-length relationships are not represented.
+- [~] Callback trampolines are call-scoped; native code cannot retain them after the linked call returns.
+- [ ] Support caller-provided mutable output buffers with explicit capacity and produced-length metadata.
+- [ ] Support input/output buffers that reconstruct immutable Valiance results after native mutation.
+- [ ] Support owned dynamic pointer-length returns with bounded copy and exactly-once cleanup.
+- [ ] Support persistent callback registrations with explicit unregister and in-flight invocation accounting.
+- [ ] Support explicitly pinned storage for pointers retained by native code.
+- [ ] Support allocator-context, arena, retain/release, and ownership-transfer contracts.
+- [ ] Add host ABI compatibility metadata and verification for platform-specific layouts and calling conventions.
+
+### Legacy external-block design
+
+The `external` block model is superseded by `ffi(...)` imports, `link` declarations, linked types, explicit ownership annotations, and `@convert`.
+
+
+- [—] Parse `external` blocks.
+- [—] Support optional external library filenames.
+- [—] Support optional namespaces.
+- [—] Allow external function declarations.
+- [—] Bind declaration names to matching C function names.
+- [—] Validate foreign parameter and return types.
+- [—] Restrict foreign declarations to external contexts.
+- [—] Allow ordinary Valiance code inside external blocks.
+- [—] Return the external block’s top stack value.
+- [—] Prevent ordinary FFI scalar types from escaping external blocks.
+- [—] Permit opaque foreign handles to escape external blocks.
+- [—] Provide a standard library of C-compatible FFI types.
+- [—] Restrict creation and manipulation of FFI types to external contexts.
+- [—] Provide built-in casts between compatible Valiance and FFI types.
+- [—] Perform required range and representation validation.
+- [—] Parse external object opaque bindings.
+- [—] Prevent constructors, members, and object-friendly elements on opaque bindings.
+- [—] Support C struct bindings with field declarations.
+- [—] Allow foreign struct construction inside external blocks.
+- [—] Permit public foreign-struct field reads in external blocks.
+- [—] Reject direct foreign-struct field writes.
+- [—] Support wrapping opaque handles in ordinary Valiance objects.
+- [—] Support explicit foreign-resource destructors.
+- [—] Define FFI function-object and callback behavior.
+- [—] Parse inline external function bindings.
+- [—] Apply inline parameter and return casts around an external call.
+
+## 44. Removed user-defined cast design
+
+User-defined cast declarations are not part of the current design. Named transformations use ordinary elements; FFI boundary conversion uses `@convert` and target-directed `to[Type]`.
+
+
+- [—] Parse `cast Source -> Target => ... end`.
+- [—] Support named and unnamed source parameters.
+- [—] Restrict cast declarations to permitted atomic source and target types.
+- [—] Require cast bodies to return the declared target type.
+- [—] Include declared casts in safe `as` resolution.
+- [—] Keep unsafe `as!` independent of declared cast rules.
+- [—] Support casts involving external blocks.
+- [—] Detect ambiguous cast rules.
+- [—] Detect recursive or cyclic cast selection where prohibited.
 
 ## 45. Diagnostics and static validation
 
@@ -877,10 +925,10 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Report tag disjoint violations.
 - [x] Report missing tag validators.
 - [x] Report effect-tag violations.
-- [ ] Report import and implementation conflicts.
+- [x] Report import and implementation conflicts.
 - [x] Report invalid package-version usage.
-- [ ] Report discarded multi-value expression results.
-- [ ] Report ignored `@mustcall` results.
+- [~] Report discarded multi-value expression results.
+- [x] Report ignored `@mustcall` results.
 - [x] Emit annotation-driven warnings and errors.
 - [x] Emit deprecation warnings.
 - [x] Include runtime stack values in call-error diagnostics.
@@ -913,10 +961,10 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Provide `call`.
 - [x] Provide indexing and immutable-update elements.
 - [x] Provide optional and result helper elements.
-- [ ] Provide `or` for extension selection.
+- [~] Provide `or` for extension selection.
 - [x] Provide tag application and removal operations.
 - [x] Provide type inspection required by matching and multimethods.
-- [ ] Provide standard fault, result, option, task, and channel types.
+- [x] Provide standard fault, result, option, task, and channel types.
 - [x] Provide the standard traits referenced by the language.
 - [x] Provide the `std` module namespace and module-resolution behavior.
 - [x] Provide Python-backed standard-library modules using `@stdlib_element`.
@@ -931,3 +979,12 @@ Audit refreshed against the repository implementation and full test suite on 202
 - [x] Provide finite-sequence helpers used by the worked examples (`first`, `last`, `drop`, `dropLast`, `overtake`, `groupConsecutive`, `removeAt`, `reshape`, and `rotate`).
 - [x] Return `Int` from `length` for finite lists and strings.
 - [x] Provide numeric exponentiation, `square`, `inc`, membership, structural equality, and half-open range checks.
+
+## FFI scheduler integration
+
+- [x] Suspend scheduled tasks around native calls without blocking the cooperative executor.
+- [x] Cache native libraries and signatures and provide deterministic VM worker shutdown.
+
+- [x] Support ownership-qualified native string and fixed-size primitive-buffer returns.
+- [x] Guarantee native cleanup after owned-return conversion failures.
+- [x] Support explicit nullable owned returns.

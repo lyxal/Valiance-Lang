@@ -1243,8 +1243,8 @@ def _substitute_branch_type(typ: T.Type, substitution: dict[T.TypeVarKey, T.Type
     if isinstance(typ, T.VarType):
         return substitution.get(T.type_var_key(typ), typ)
     if isinstance(typ, T.NominalType):
-        return T.N(
-            typ.name,
+        return T.rebuild_nominal(
+            typ,
             *(_substitute_branch_type(arg, substitution) for arg in typ.args),
         )
     if isinstance(typ, T.UnionType):

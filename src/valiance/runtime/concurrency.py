@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from collections import deque
 import heapq
+from queue import Empty, SimpleQueue
+from threading import Condition
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Generic, Iterator, TypeVar
@@ -534,6 +536,7 @@ class SuspensionRegistration:
     deadline: int | None = None
     active: bool = True
     fired: bool = False
+    waitable: bool = False
 
     def cancel(self) -> bool:
         """Unregister once; a committed wake cannot subsequently be cancelled."""
@@ -567,6 +570,8 @@ class Scheduler:
         self.root_scope = TaskScope(self)
         self.logical_time = 0
         self._next_registration_id = 1
+        self._external_completions: SimpleQueue[Callable[[], None]] = SimpleQueue()
+        self._external_condition = Condition()
         self._timer_heap: list[tuple[int, int, SuspensionRegistration]] = []
         self._external_registrations: dict[int, SuspensionRegistration] = {}
 
@@ -587,11 +592,40 @@ class Scheduler:
         )
         return registration
 
-    def register_external(self, wake: Callable[[], None]) -> SuspensionRegistration:
-        """Register a deterministic mock external wake source."""
+    def enqueue_external_completion(self, completion: Callable[[], None]) -> None:
+        """Publish host-thread completion for scheduler-thread delivery."""
+        with self._external_condition:
+            self._external_completions.put(completion)
+            self._external_condition.notify()
+
+    def _drain_external_completions(self) -> bool:
+        """Run queued completion commits on the scheduler thread."""
+        committed = False
+        while True:
+            try:
+                completion = self._external_completions.get_nowait()
+            except Empty:
+                return committed
+            completion()
+            committed = True
+
+    def _wait_for_external_completion(self) -> bool:
+        """Sleep only when every cooperative task is externally blocked."""
+        with self._external_condition:
+            if self._drain_external_completions():
+                return True
+            self._external_condition.wait()
+        return self._drain_external_completions()
+
+    def register_external(
+        self, wake: Callable[[], None], *, waitable: bool = False
+    ) -> SuspensionRegistration:
+        """Register an external wake source; workers opt into host waiting."""
         identifier = self._next_registration_id
         self._next_registration_id += 1
-        registration = SuspensionRegistration(self, "external", identifier, wake)
+        registration = SuspensionRegistration(
+            self, "external", identifier, wake, waitable=waitable
+        )
         self._external_registrations[identifier] = registration
         return registration
 
@@ -743,6 +777,13 @@ class Scheduler:
                 if self._fire_next_timer():
                     continue
                 if self.has_pending_external_wake:
+                    if any(
+                        item.active and item.waitable
+                        for item in self._external_registrations.values()
+                    ):
+                        if self._wait_for_external_completion():
+                            continue
+                        raise RuntimeError("scheduler external wake source disappeared")
                     raise RuntimeError("scheduler awaits an external wake source")
                 blocked = self._blocked_edges()
                 cycle = self._blocked_cycle()

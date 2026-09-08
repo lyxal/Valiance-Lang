@@ -576,7 +576,7 @@ def _protocol_target_generics(target: T.Type, overload: T.Overload) -> T.Type:
         if isinstance(typ, T.NominalType):
             if not typ.args and typ.name.text in variables:
                 return variables[typ.name.text]
-            return T.N(typ.name, *(rewrite(arg) for arg in typ.args))
+            return T.rebuild_nominal(typ, *(rewrite(arg) for arg in typ.args))
         return typ
 
     return T.normalize(rewrite(target))
@@ -602,9 +602,68 @@ def _protocol_overload_transform(
     return overload
 
 
+def _conversion_pair(
+    annotations: tuple[AnnotationNode, ...],
+) -> tuple[T.Type, T.Type] | None:
+    """Return the source and target declared by ``@convert``."""
+    for annotation in annotations:
+        if annotation.name.text != "convert" or len(annotation.args) != 2:
+            continue
+        source, target = annotation.args
+        if isinstance(source, TypeLiteralNode) and isinstance(target, TypeLiteralNode):
+            return source.typ, target.typ
+    return None
+
+
+def _validate_convert_annotation(
+    annotation: AnnotationNode,
+    _target: str,
+    node: ASTNode,
+) -> tuple[str, ...]:
+    """Validate the reserved conversion declaration shape."""
+    if not isinstance(node, DefineNode) or node.name.text != "to":
+        return ("@convert must annotate a define named 'to'",)
+    if len(annotation.args) != 2 or not all(
+        isinstance(argument, TypeLiteralNode) for argument in annotation.args
+    ):
+        return ("@convert requires a Source -> Target type pair",)
+    function = node.function
+    if function.params is None or len(function.params) != 1 or function.returns is None or len(function.returns) != 1:
+        return ("@convert functions must declare exactly one parameter and one return",)
+    source = annotation.args[0].typ
+    target_type = annotation.args[1].typ
+    parameter = function.params[0].typ
+    result = function.returns[0]
+    diagnostics: list[str] = []
+    if parameter is None or not T.same(parameter, source):
+        diagnostics.append("@convert source must match the function parameter type")
+    if not T.same(result, target_type):
+        diagnostics.append("@convert target must match the function return type")
+    return tuple(diagnostics)
+
+
+def _conversion_overload_transform(
+    overload: T.Overload,
+    annotations: tuple[AnnotationNode, ...],
+) -> T.Overload:
+    """Mark an overload for target-directed ``to[Type]`` selection."""
+    pair = _conversion_pair(annotations)
+    if pair is None:
+        return overload
+    return replace(overload, conversion_target=T.normalize(pair[1]))
+
+
 def _install_builtin_annotations() -> None:
     """Install builtin annotations while applying compiler annotations."""
     register_annotation(AnnotationSpec("recursive", frozenset({"define", "fn"})))
+    register_annotation(
+        AnnotationSpec(
+            "convert",
+            frozenset({"define"}),
+            validate=_validate_convert_annotation,
+            transform_overload=_conversion_overload_transform,
+        )
+    )
     for protocol_name in ("index", "update"):
         register_annotation(
             AnnotationSpec(

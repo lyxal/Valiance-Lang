@@ -146,7 +146,7 @@ class _ObjectDeclarations:
                     ):
                         return T.V(typ.name.text)
                     if isinstance(typ, T.NominalType):
-                        return T.N(typ.name, *(pattern_type(arg) for arg in typ.args))
+                        return T.rebuild_nominal(typ, *(pattern_type(arg) for arg in typ.args))
                     return typ
 
                 self.env.add_trait_impl(

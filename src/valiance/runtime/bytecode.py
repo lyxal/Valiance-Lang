@@ -7,7 +7,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Any
 
-from valiance.vtypes import DataTag, UnionDispatchBranch
+from valiance.vtypes import DataTag, FFICallbackSpec, FFIStructSpec, UnionDispatchBranch
 
 
 class OpCode(Enum):
@@ -24,6 +24,7 @@ class OpCode(Enum):
     APPLY_DISPATCH_PLAN = "apply_dispatch_plan"
     CALL = "call"
     CALL_RESOLVED_ELEMENT = "call_resolved_element"
+    CALL_NATIVE = "call_native"
     CHECK_CAST = "check_cast"
     TRY_CAST = "try_cast"
     CANONICALIZE_TAGS = "canonicalize_tags"
@@ -71,6 +72,8 @@ class OpCode(Enum):
     SPAWN_CALL = "spawn_call"
     WAIT_TASK = "wait_task"
     WAIT_TASKS_VECTORISED = "wait_tasks_vectorised"
+    CANCEL_TASK = "cancel_task"
+    TIMEOUT_TASK = "timeout_task"
     SCOPE_BEGIN = "scope_begin"
     SCOPE_END = "scope_end"
     CHANNEL_NEW = "channel_new"
@@ -157,6 +160,22 @@ def decode_stack_shuffle_spec(
         positions = {label: index for index, label in enumerate(prestack)}
         permutation = tuple(positions[label] for label in poststack)
     return mode, prestack, poststack, permutation
+
+
+@dataclass(frozen=True, slots=True)
+class NativeCallReference:
+    """Portable invocation plan for one native symbol."""
+    library: str
+    symbol: str
+    param_types: tuple[str, ...] = ()
+    return_type: str | None = None
+    structs: tuple[FFIStructSpec, ...] = ()
+    handles: tuple[str, ...] = ()
+    destroy_params: tuple[int, ...] = ()
+    owned_return_free: str | None = None
+    owned_return_count: int | None = None
+    nullable_return: bool = False
+    callbacks: tuple[FFICallbackSpec, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

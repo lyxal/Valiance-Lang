@@ -817,8 +817,8 @@ Nested nominal arguments compose polarity through
 `Context.variance_for(...)`.
 
 Concrete scalar-shaped function arguments can provide directional evidence in
-this phase. Unresolved function literals, overload sets, and collection/rank
-adapted callables remain on their established contextual or deferred paths.
+this direct-solving path. Unresolved function literals, overload sets, and collection/rank
+adapted callables use their established contextual or deferred paths.
 This distinction preserves contextual function inference and vectorisation.
 
 ### Step 4: solve lower and upper evidence
@@ -1978,3 +1978,14 @@ statically visible closure captures, and channel payloads must use the same
 transfer classification vocabulary: value-semantic, shared handle, or isolated.
 New external runtime values must declare their transfer class explicitly rather
 than relying on reference counts as a race-safety proof.
+
+### Target-directed conversions
+
+`@convert(Source -> Target)` marks a one-input, one-output definition named
+`to` as a conversion provider. The analyser retains the target on the overload
+and `to[Target]` filters ordinary overload application by that exact normalized
+target before source-type resolution. Conversion bodies remain normal typed
+Valiance functions, so effects, diagnostics, code generation, optimization, and
+runtime execution use the existing function pipeline. A conversion overload is
+not available through an unqualified `to` call because the target is part of the
+call-site contract.

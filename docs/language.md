@@ -5263,7 +5263,7 @@ For a stream of values, use a bounded channel, have the producer close it when d
 
 Cancellation is cooperative. Valiance builtins execute atomically with respect to the cooperative task scheduler: sibling tasks and pending cancellation are observed only after the builtin returns at an explicit VM scheduling or suspension boundary. Large eager builtins may therefore delay other tasks. Builtins must not perform host-blocking work, and operations over potentially unbounded sources must remain lazy, require an explicit bound, use explicit runtime suspension, or be rejected.
 
-The initial release does not expose a public cancellation function. Cancellation is currently driven by structured failure, scope cleanup, and runtime lifecycle management.
+Cancellation is cooperative. `$task cancel` consumes a task handle and requests cancellation; completed tasks are unaffected. `$task n timeout` waits under a non-negative logical-time deadline. If the task completes first, its normal outputs are returned. If the scheduler reaches the deadline first, it requests cancellation, waits for cleanup, and reports the task cancellation fault. Logical deadlines are deterministic scheduler time, not wall-clock duration.
 
 Supported non-blocking timers and integrated I/O wake the scheduler without blocking its executor. A host call that would block the executor is rejected when used from concurrent execution.
 
@@ -5307,13 +5307,11 @@ concurrent =>
 end
 ```
 
-## 25.16. Features deferred beyond the initial release
+## 25.16. Concurrency scope and limitations
 
-The initial release does not provide:
+The concurrency runtime does not provide:
 
-- public cancellation syntax;
-- public timeout syntax;
-- `select` or `match channels` across several channel operations;
+
 - directional send-only or receive-only channel types;
 - detached tasks;
 - task priorities;
@@ -5369,303 +5367,417 @@ eager define[T] println(:T) ->  => ...
 
 # 27. Foreign Function Interfaces
 
-_Note: semantics still experimental, subject to being implemented much much later. Designed and considered now to ensure that the implementation is future-proof_
+_Note: FFI is very unsafe. Valiance can help make sure you're doing it
+right, but once you call C code, you're on your own. The compiler cannot
+verify a `link` declaration against anything — a compiled library's symbol
+table maps names to raw addresses only, with no stored type information.
+A `link` that misstates a signature will still compile and still run,
+incorrectly._
 
-_Note: FFI is very unsafe. Valiance can help make sure you're doing it right, but once you call C code, you're on your own._
+- Sometimes you'll want to dip into C code to get functionality of
+  existing libraries.
+- The solution: Valiance allows you to define Valiance-safe interfaces to
+  underlying C code, via the `link` construct.
+- Everything under this section funnels through `link`. There is no other
+  boundary construct.
 
-- Sometimes, you'll want to dip into C code to get functionality of existing libraries.
-- Like for example you may want bindings to a C-implemented graphics library.
-- This sounds good, but there's a slight problem: Valiance is decidedly not C.
-- The solution: Valiance allows you to define Valiance-safe interfaces to underlying C code.
-- The first important structure is the `external` structure.
-- This structure allows for Valiance mappings to be made to underlying C code.
-- The structure is:
+## 27.1. The `link` Construct
 
 ```
-external[<namespace>] (<filename>) =>
-  <declarations>
+link <namespace>.<symbol>(<param types>) -> <return type>
+```
+
+- Binds a Valiance-side name to a raw C symbol by name.
+- Parameter types and the return type must be FFI types (§27.2), unless
+  using the inline conversion sugar described below.
+- A `link` declaration is checked for **symbol existence only** at compile
+  time, whenever the target library is locatable on the machine doing the
+  build. It confirms a symbol with the given name exists in the library —
+  never that it has the signature the `link` claims, since that
+  information does not exist in a compiled binary.
+- If the library cannot be located at compile time (cross-compilation, a
+  path only known at runtime), the compiler emits a warning that the
+  symbol's presence cannot be guaranteed, rather than silently skipping
+  the check.
+- Regardless of whether the compile-time check ran, the compiled binding
+  resolves the symbol dynamically at runtime. A library never needs to be
+  present at build time for the resulting program to run; the compile-time
+  check is a bonus diagnostic, not a hard requirement.
+- Invoking a linked function is done by naming it directly. There is no
+  implicit invocation.
+
+### 27.1.1. Renaming (`as`)
+
+```
+link libc.printf(&CString, &int) -> &int as printfInt
+link libc.printf(&CString, &CString) -> &int as printfStr
+```
+
+- `as`, placed after the complete signature, binds the raw symbol to a
+  distinct local name.
+- All overloads of a Valiance element must share one arity (§11.3). Since
+  a raw `link` is an ordinary named element, two `link`s targeting the
+  same C symbol under two different arities collide under this rule unless
+  each is given a distinct name via `as`. This is the standard pattern for
+  binding a variadic C function (`printf`, and similar): one `link` per
+  fixed-arity call shape actually used, each under its own name, all
+  targeting the same underlying symbol.
+- `as` is also used to rename a linked struct or handle type (§27.6, §27.7).
+
+### 27.1.2. Declared Return Conversion
+
+```
+link math.add(:&int, :&int) -> (Int) &int
+
+3 4 math.add   #? 7, already Int
+```
+
+- A return type of the form `(ValianceType) FFIType` applies a `to[...]`
+  conversion (§27.4) to the raw return value automatically, using
+  whichever `@convert` implementation matches.
+- This is the only place an implicit conversion is permitted. It is
+  visible at the exact point it happens — declared once, in the `link`
+  line itself — rather than inserted invisibly at an arbitrary call site.
+- Parameters never receive this sugar. Converting an input can be
+  arbitrarily expensive or dangerous (forcing a lazy or infinite list into
+  memory, for instance), so every input conversion must appear explicitly,
+  as a written `to[...]` call, at the point of use.
+
+## 27.2. FFI Types
+
+- FFI types mirror C's own keywords directly: `&int`, `&long`, `&short`,
+  `&char`, `&double`, `&float`, and so on, plus `&pointer[T]` for pointer
+  types.
+- FFI types are not sized or bit-width-named (no `&i32`, `&f64`). Valiance's
+  own numeric types (`Int`, `Real`, `Number`) deliberately abstract away
+  precision; FFI type names follow the same principle by naming the C type
+  directly rather than its bit width. A binding author copies whatever the
+  header says, verbatim.
+- FFI types cannot be constructed or interacted with in ordinary Valiance
+  code. They exist only inside `link`-adjacent code.
+- `&CString` names the `const char*` / owned-`char*` idiom specifically —
+  a pointer to a null-terminated buffer — rather than requiring every
+  binding to spell out the pointer-plus-encoding contract by hand (§27.10).
+
+## 27.3. The `Unsafe` Tag
+
+- Any element whose body contains a `link`-adjacent call is tagged
+  `Unsafe`. The tag propagates up through every caller, transitively,
+  exactly as `Eager` propagates (§26).
+- There is no discharge mechanism. No annotation removes the tag from an
+  element once inferred, for any reason. A binding author validating their
+  own inputs can never certify what the underlying C code does internally,
+  so no local diligence earns the right to make the tag disappear.
+- A fixed, closed, compiler-known set of standard library internals is
+  exempt: these never have the tag computed for them at all. This is not
+  an annotation reachable from source code — first-party or third-party —
+  it is a fact about a fixed list of files the compiler recognizes as its
+  own. No library outside that list, however widely used, can ever join
+  it. Any third-party binding that touches `link` carries `Unsafe`
+  permanently, with no path to remove it.
+
+## 27.4. Type Conversion: `to[Type]` and `@convert`
+
+```
+@convert(Int -> &int)
+define to(i: Int) -> &int =>
+  if $i inRange(-2_147_483_648, 2_147_483_648) => FFI.&int($i)
+  else => panic IntegerOverflowFault(...)
 end
 ```
 
-- `filename` is the name of the file to bind
-- `namespace` is optional, and makes it so that any bindings are available under a namespace.
-- `declarations` is a series of `define`s and `object`s.
-- A `define` inside a `external` block creates a Valiance type-checkable element that directly calls the corresponding function.
-- The name used in define must exactly match the C function name.
-- The parameter types must also match. Notably, the parameter names need not match. Only the types.
-- This element cannot be used outside of `external` blocks.
-- `object`s inside a foreign block requires its own section.
-- An `external` block always returns the top of the stack after the block
-  - Note that FFI types cannot be returned from an external block. Only Valiance types can be returned.
-- Everything else is just normal Valiance.
-- Note that the filename is also optional. If no file name is provided, then the external block is used solely to provide access to elements using FFI types.
+- `to[Type]` converts a value to `Type` by whatever construction process
+  is registered for that specific (source, target) pair. It is not sugar
+  for calling `Type`'s ordinary constructor — a conversion may do
+  anything from a trivial bounds check to full runtime reconstruction from
+  an unrelated representation (deserializing structured data into an
+  object, for instance), and is kept out of the constructor's own overload
+  set for that reason.
+- `@convert(Source -> Target)` registers a conversion under that pairing.
+  The implementing function must be named `to`; the reserved name is what
+  the compiler indexes on, alongside the declared pairing.
+- Each FFI primitive type has a corresponding raw, unchecked constructor
+  (`FFI.&int(...)` above) that a `to` implementation is expected to bottom
+  out on. This primitive performs no validation of its own; it exists
+  specifically so a `to` implementation's own checked logic is never
+  bypassed by accidental recursion into itself.
+- FFI numeric/string/buffer conversions are ordinary implementers of this
+  protocol, not a separate mechanism.
 
-## 27.1. Binding C Functions to Valiance Elements 
-
-- Say your C library contains the following function:
+## 27.5. Binding Plain Functions
 
 ```c
-// Say this is in shared library math.dll
-int add(int x, int y) {
-    return x + y;
-}
+int add(int x, int y);
 ```
 
-- The goal is to end up with a Valiance-side binding which can be used in a wrapper for that function that looks like
-
 ```
-define add(x: Number, y: Number) =>
-  #? Call the C function here
+import {ffi("math.dll") as math}
+
+link math.add(:&int, :&int) -> &int
+
+define add(x: Number, y: Number) -> Number =>
+  $x $y both: to[&int]
+  math.add
+  to[Number]
 end
 ```
 
-- There's an immediate first problem: Valiance only has one number type: `Number`. There's no meaningful distinction between integer sizes and signedness.
-- The solution is to have an `FFI` library containing a whole bunch of C types.
-  - This FFI type library contains types that cannot be created, nor interacted with, in normal Valiance code. They only exist inside `external` blocks.
-- Valiance types can be converted to FFI types inside foreign blocks, where compatible.
-  - A `Number` can be cast to `FFI.int`, and there may be some pre-C-call verification. Casting rules are implemented using the `cast` keyword introduced in section 28.
-  - A `String` cannot be cast to `FFI.i32`.
-- FFI types can also be cast back to Valiance types where compatible.
-  - A `FFI.int` can be cast to a Valiance `Number`
-- The language core will provide a whole bunch of these conversions for convenience.
-- With this in mind, the binding would become:
+- The raw `link` and the safe wrapper may share a name; overload
+  resolution disambiguates by the argument types present on the stack at
+  the call site.
 
-```
-external ("math.dll") =>
-  define add(:FFI.int, :FFI.int) -> FFI.int => end
-}
-```
-
-- That's good, but it still doesn't give anything Valiance callable.
-- It still needs to be wrapped:
-
-```
-define add(x: Number, y: Number) =>
-  external =>
-    $x $y both: as FFI.int
-    add as Number
-  end
-end
-```
-
-- This first type casts the Valiance numbers to C ints (ie ensures the actual number is in the right int range and then changes the associated type), calls the C function, and then converts the result to Number.
-
-## 27.2. FFI and Objects 
-
-- Creating bindings and wrappers for C functions is pretty simple. You just make sure that the function call checks out, and away you go.
-- Working with C types and structs, on the other hand, is not as plain cut.
-  - C is a funky little child with funky little ways to declare types and structures.
-- Valiance provides two types of bindings to C objects
-
-1. Opaque type bindings
-2. Struct bindings
-
-- Opaque type bindings can be used when you're working with forward declarations. Like `typedef struct` in a header file.
-- These are represented using the `external object` keyword. An `external object` has no members, no constructor, and no object-friendly-elements.
-- For example, say a header file has the declarations
+## 27.6. Opaque Handles
 
 ```c
-// counter.h
 typedef struct Counter Counter;
-
 Counter* counter_create(int initial);
 void counter_inc(Counter* c);
 int counter_get(Counter* c);
 void counter_destroy(Counter* c);
 ```
 
-- On the Valiance side, this would look like
+```
+import {ffi("counter.dll") as counter}
 
-```vlnc
-external[counter] ("counter.h") =>
-  #? Represent the typedef
-  external object Counter => end
+@nodup("Counter owns a unique native handle")
+link counter.Counter as &Counter =>
+  link counter_create(&int) -> &Counter
+  link counter_inc(&Counter)
+  link counter_get(&Counter) -> (Int) &int
+  link counter_destroy(&Counter)
 
-  #? Represent the functions
-  define counter_create(:FFI.int) -> Counter => end
-  define counter_inc(:Counter) -> FFI.void => end
-  define counter_get(:Counter) -> FFI.int => end
-  define counter_destroy(:Counter) -> FFI.void => end
+  link $count: Int =>
+    get => counter_get $self
+  end
+
+  define &Counter(:Int) => counter_create
+  define ~&Counter => counter_destroy $self
 end
 ```
 
-- This opaque binding can then be used as a "handle" - something that can be re-used between `external` blocks.
-- Handles are allowed to be returned from `external` blocks.
-        - Handles cannot be interacted with in Valiance-side code.
-- For example, the `counter.Counter` object could be wrapped as:
+- A `link ... as Type` block with **no declared fields** produces an
+  opaque handle: a pointer-sized value meaningful only to the functions
+  linked inside the block.
+- `@nodup` is the default for any handle wrapping a unique native
+  resource. Duplicating the wrapper via `dup` is unaffected by this
+  annotation and remains safe — it shares one identity and one refcount,
+  never producing a second independent owner (§27.14). What `@nodup`
+  forbids is field-write reconstruction (§12.3), the mechanism that
+  actually risks producing a second owner.
+- A raw `link`ed call never does more than its C signature states. A
+  `void`-returning call like `counter_inc` consumes its argument and
+  returns nothing; if the handle is needed afterward, the caller `dup`s it
+  first. Any nicer-feeling behavior (auto-returning `$self` via `@self`,
+  for instance) belongs in the hand-written wrapper, never in the raw
+  binding.
+- A **computed field** (`link $name: Type => get => ... [set => ...] end`)
+  exposes a raw accessor as ordinary field syntax (`$.count`). The
+  incoming value in a `set` body needs no explicit name — it is already on
+  the stack when the setter runs, consumed like any other argument.
+- Field mutation, generally: a field is writable from outside a `link`
+  block only if it is a plain declared field with no computed logic, or an
+  explicit `set` is defined for it. Opaque handles satisfy neither by
+  default, since they declare no fields at all.
 
-```vlnc
-object Counter =>
-  private $handle: counter.Counter
-  define Counter(value: Number) =>
-    external => counter.counter_create($value as FFI.int)
-        $self.handle = top
-  end
-
-  @self define increment() =>
-    #? Modifies `handle` in place
-    external => $self.handle counter.counter_inc
-  end
-
-  define get() -> Number => external => $handle counter.counter_get as Number
-
-  define ~Counter => external => $handle counter.counter_destroy
-end
-```
-
-- This object can be used 100% as if it were a Valiance object.
-
-### 27.2.1. FFI and C `struct`s
-
-- The above falls apart when you want to create a binding for something like:
+## 27.7. Structs by Value
 
 ```c
-// in Point.c
+typedef struct { int x; int y; } Point;
+double distance(Point a, Point b);
+```
+
+```
+link point.Point as &Point =>
+  $x: &int
+  $y: &int
+
+  link distance(&Point, &Point) -> &double
+end
+```
+
+- Fields declared inside a `link ... as Type` block are laid out in
+  declaration order, matching C exactly, with no reordering.
+- Plain field writes are legal here because no field is a pointer with
+  ownership semantics — copying a plain number during reconstruction
+  produces a genuine, independent value (§27.14).
+- A struct that owns a pointer requiring a paired free function is bound
+  as a handle (§27.6), never as a plain struct, regardless of whether C
+  exposes its fields.
+
+## 27.8. Struct-Embedded Fixed-Size Fields
+
+```c
 typedef struct {
-  public int x;
-  public int y;
-} Point
+    int values[10];
+    int checksum;
+} Packet;
 ```
 
-- Instances of `Point` will be by value, rather than something that can be neatly represented as a handle.
-- Therefore, bindings and wrappers need to consider the fields.
-- However, this is very simple. Just a normal `object` definition works.
-        - Unlike Valiance-side objects, the fields of an object inside an `external` must not be filled.
-- The `Point` struct would be bound as:
-
-```vlnc
-external[point] ("Point.c") =>
-  object Point =>
-    public $x: FFI.int
-    public $y: FFI.int
-  end
+```
+link Packet as &Packet =>
+  $values: &int+
+    size => $n * 3   #? evaluated once, at construction
+  $checksum: &int
 end
 ```
 
-- Public fields can be directly read inside `external` blocks.
-- However, they cannot be written to directly. `$p.x = 10` is not allowed inside an `external` block.
-  - This makes it safer, as direct field writes may violate invariants.
-- These kinds of objects can be instantiated directly inside `external` blocks.
+- A fixed-size array embedded in a struct is expressed as an ordinary flat
+  buffer type (`&int+`) plus a `size` fact attached to the field
+  declaration, never as a sized generic parameter on the type itself
+  (`&int[10]` does not exist as a construct).
+- `size` may be a literal or a runtime expression, evaluated exactly once,
+  at construction — it may reference constructor arguments or outer
+  constants, but never `$self` or another field's value, since neither
+  exists at the point layout must be resolved.
+- `$values`'s type, wherever it is read afterward, is ordinary `&int+`.
+  The size never appears in any type signature and is never generic.
 
-```vlnc
+## 27.9. Lists and Arrays
 
-```external =>
-  point.Point(10 as FFI.int, 20 as FFI.int)
-  #? Something else needs to be returned though
-  #? because external blocks must return Valiance types
-end
-```
+- FFI buffers are always flat and rank-1: `&int+`, pointer plus length.
+  No higher-rank FFI array type exists.
+- Multi-dimensional data is flattened by hand before crossing, with each
+  dimension passed as an ordinary integer argument alongside the buffer —
+  matching how a real C function (`matrix_sum(double* values, int rows,
+  int cols)`) already expresses shape: as data, in the argument list, not
+  as a type.
+- List rank (`+n`) describes nesting depth only, not rectangularity — a
+  `Number+2` may be ragged. Converting a possibly-ragged list to a flat
+  FFI buffer validates rectangularity as part of the conversion and raises
+  `ShapeFault` if it fails, rather than silently truncating or padding.
 
-- The wrapper need not make any reference to `external` at all:
-
-```vlnc
-object Point =>
-  $x: Number
-  $y: Number
-end
-```
-
-- It may be helpful to define some type casts between the FFI type and the Valiance-side type:
-
-```vlnc
-cast p: point.Point -> Point =>
-  external =>
-    Point($p.x as Number, $p.y as Number)
-  end
-end
-```
-
-- This means you can do stuff with a `point.Point` in an `external` block, and cast to `Point` using `as Point` on the way out.
-
-## 27.3. FFI and Lists
-
-- This section is to be written some other time.
-- C uses arrays
-- Valiance uses lists.
-- One idea is to provide a sort of `FFI.toArray(<shape>)` function which does a runtime check to see that the list is rectangular, and of the expected shape.
-
-## 27.4. FFI and Function Objects
-
-- To be determined, given that function execution in Valiance is very very different to C. 
-
-## 27.5. Inline Function Binding
-
-- Two external blocks for a function bind is kinda verbose.
-- Especially when interaction with the FFI is all just type casts
-- Reusing the C example:
+## 27.10. Strings
 
 ```c
-// Say this is in shared library math.dll
-int add(int x, int y) {
-    return x + y;
-}
+void greet(const char* name);
+char* get_greeting(void);
+void free_greeting(char* s);
 ```
 
-- Instead of needing
+- Valiance strings are UTF-8 internally, matching virtually every modern C
+  string convention; no encoding translation is required in the common
+  case.
+- Valiance strings permit embedded null bytes; C strings are
+  null-terminated and cannot represent one. Converting a string containing
+  an embedded null to `&CString` fails loudly at the point of conversion
+  rather than silently truncating.
+- A `char*` decoded back into a Valiance `String` that is not valid UTF-8
+  fails the same way, at the same point.
+- A returned, owned `char*` (as from `get_greeting`) is copied into an
+  ordinary Valiance `String` and the original C buffer freed immediately,
+  in the wrapper — never held as a persistent handle. Valiance `String` is
+  a first-class value type independent of any backing C memory; there is
+  no repeated-access pattern here that would justify a handle the way
+  `Counter` needs one.
+- The generic, reusable half of this (decode bytes, validate UTF-8) is an
+  ordinary `to[...]` conversion. The library-specific half (which free
+  function to call) lives in each binding's own wrapper.
+
+## 27.11. Error Codes
+
+```c
+int open_file(const char* path);  // fd, or -1 on failure
+```
 
 ```
-external ("math.dll") =>
-  define add(:FFI.int, :FFI.int) -> FFI.int => end
-end
-define add(:Number, :Number) =>
-  external => both: as FFI.int; add as Number
-end
-```
+link files.open_file(&CString) -> &int
 
-- You can simply write
-
-```
-external("math.dll") define add(
-  :Number as FFI.int,
-  :Number as FFI.int
-) -> FFI.int as Number => end
-```
-
-- Useful when it's all just type casts.
-
-# 28. Type Cast Definitions
-
-_Note: A feature planned in conjunction with FFI. I'm not 100% keen on the concept for normal Valiance, but it's something that is actually a life-saver for FFI._
-
-- Type casting with `as` and `as!` has so far only been defined for `subtype -> supertype`, `supertype -> subtype`, and re-ranking relationships.
-- However, it may sometimes be convenient to have type-cast rules that `as` can work with.
-        - `as!` doesn't need to know about type-cast rules because it doesn't care about validity.
-        - This is especially the case for FFI work, where a `Number` could be `FFI.int`, `FFI.i32`, etc.
-- A custom type cast rule to turn type `A` into type `B` can be defined as:
-
-```
-cast <typeA> -> <typeB> =>
-  <code>
+define open(path: String) -> Result[Int, IOError] =>
+  $path to[&CString] open_file
+  assert => != -1 else => IOError "File open returned -1"
 end
 ```
 
-- `typeA` is either `:{$type}` or `${name}: ${type}`.
-- `typeB` is just a type.
-- Note that "type" here means "atomic, no generics, no unions/intersections/whatever".
-- `code` is the process of how to turn `typeA` into `typeB`. Note that it _must_ return something of `typeB`.
-- A motiviating example is turning a `Number` into an `FFI.int`:
+- A C function's failure convention (sentinel value, inverted return,
+  positive-vs-negative meaning) varies per function and is documented by
+  that library, not standardized by Valiance. A binding wrapper checks for
+  the specific convention that function actually uses.
+- `assert...else` composes directly into this pattern: its condition peeks
+  rather than pops (§10.3), so the value under test is never consumed and
+  is simply returned on the success path. This collapses into
+  `Result[T, E]` via ordinary union simplification (§21), with no
+  FFI-specific `Result` handling required. An ordinary conditional plus a
+  panic, or any other standard control-flow idiom, is equally valid where
+  it fits the shape of a particular binding better.
 
-```
-cast n: Number -> FFI.int =>
-  assert => $n inRange(-32_767, 32_767)
-  $n as![FFI.int]
-end
-```
+## 27.12. Callbacks (Function Objects)
 
-- Note that the ultimate conversion is just an `as!`
-- But! `as FFI.int`, when given a `Number`, will now perform bounds checking.
-        - FFI may be unsafe, but at least you know it has a chance at being valid
-- Another example (from earlier):
-
-```
-cast p: point.Point -> Point =>
-  external =>
-    Point($p.x as Number, $p.y as Number)
-  end
-end
+```c
+typedef void (*Callback)(int);
+void on_tick(Callback cb);
 ```
 
-- Here, the type cast safely constructs a `Point`. There's no blind reliance on `as!`
+- Every Valiance function, capture-free or not, requires the VM to
+  interpret its body — none compile to a bare native instruction stream a
+  raw C pointer could jump into directly. Crossing into C therefore always
+  goes through one mechanism, regardless of whether the function captures
+  anything.
+- **Mechanism:** a VM-side slot table maps small integers to live,
+  VM-managed closures. Registering a closure as a callback allocates a
+  slot and generates a small, generic trampoline stub — a handful of fixed
+  instructions that load the slot index and jump to one shared dispatcher.
+  Different registrations share the same dispatcher logic; only the
+  embedded slot index differs between stub instances. The address handed
+  to C is the stub's address.
+- **The VM stack is never touched by C-originated execution, without
+  exception.** Any call arriving through the dispatcher — from any thread
+  not synchronously initiated by Valiance itself — is handed off through a
+  channel rather than executed directly. The actual closure invocation
+  happens later, when ordinary Valiance code, on its own thread, receives
+  from that channel at a point it controls. This is the same mechanism
+  that resolves blocking C calls stalling the cooperative scheduler: a
+  task `receive`-ing from a channel is already sitting at an ordinary
+  suspension point.
+- Marshaled parameter and return types must be FFI types. No `Panic` may
+  reach the boundary — unwinding into C's stack frame is undefined
+  behavior regardless of how the call arrived, so a callback must fully
+  handle its own failures and return an ordinary value.
+- Slot registration and teardown follow the `@nodup`/`@mustcall` pattern
+  (§25.7): `@mustcall` guarantees the human calls the paired unregister
+  function. Whether it is safe to reuse the freed slot **immediately** on
+  that call's return depends on whether the specific C library guarantees
+  no in-flight call remains queued — a fact about that library, not
+  something Valiance verifies. A defensive mitigation: prefer round-robin
+  slot allocation from a reasonably large pool over immediate reuse.
+
+## 27.13. Variadic Functions
+
+```c
+int printf(const char* fmt, ...);
+```
+
+- No variadic construct exists in Valiance, and none is added for this.
+  Every element, including a raw `link`, has fixed arity (§11.3).
+- Each fixed-arity call shape actually needed is bound as its own `link`,
+  aliased to a distinct name via `as` (§27.1.1), all targeting the same
+  underlying C symbol.
+
+## 27.14. Memory Safety: Sharing vs. Reconstruction
+
+- `dup` (§12.6) never produces a second, independently-owned object. It
+  establishes an additional occurrence of one shared identity, backed by
+  one refcount; the destructor fires exactly once, when the true final
+  occurrence — across every `dup` — releases. Repeated `dup`/consume
+  cycles around void-returning FFI calls (§27.6) are safe for exactly this
+  reason.
+- Field-write reconstruction (§12.3) is a different mechanism: writing to
+  a member produces a genuinely new object, copying every other field by
+  value. For an object holding a pointer it owns, this is unsafe — copying
+  a pointer's value does not duplicate what it points to, and the result
+  is two independently-refcounted objects sharing one resource, each with
+  a destructor that will eventually run.
+- **Rule:** an object wrapping a pointer it owns must declare no ordinary
+  writable field. This is not scoped to the dangerous field alone —
+  reconstruction copies every other field regardless of which one was
+  written, so a single ownership-bearing field makes writing to *any*
+  field on that object unsafe. Removing all plain writable fields removes
+  the reconstruction path entirely. `Counter` (§27.6) satisfies this by
+  construction: no declared fields, only computed accessors that call raw
+  FFI functions directly.
+- A struct with no ownership-bearing fields (`Point`, §27.7) has no such
+  restriction; reconstruction there only ever copies plain, unaliased
+  values.
+
 
 ### 5.1. Statically counted popping
 
@@ -5784,3 +5896,163 @@ Trait inheritance and trait behaviour sets remain distinct. Declaring a new
 trait with a target contributes to that trait's intrinsic hierarchy. Declaring
 `trait A as B` after `A` already exists contributes externally supplied,
 import-controlled behaviour.
+
+### 27.15. Implemented primitive boundary conversions
+
+The compiler provides checked `to[Target]` conversions for `&char`, `&short`,
+`&int`, `&long`, `&longlong`, their unsigned forms, `&float`, `&double`, and
+`&CString`. Integer ranges follow the host C ABI. Floating conversion rejects
+non-finite overflow, and CString conversion rejects embedded null bytes. The
+reverse numeric and CString conversions return ordinary Valiance values.
+
+`FFI.&Type(value)` is the unchecked constructor spelling for these primitive
+scalar types. It exists for low-level binding implementations and carries
+`Unsafe`; use `to[&Type]` in ordinary wrappers. Native links and compiler-owned
+FFI boundary operations carry `Unsafe`, which propagates through ordinary
+function effect inference and cannot be discharged by source annotations.
+
+### 27.16. Implemented flat buffers and embedded arrays
+
+Primitive rank-one lists may be converted to flat FFI buffers with forms such as
+`values to[&int+]`. Each item is checked against the host C representation, and
+the resulting contiguous storage remains valid for the duration of one native
+call. Buffer parameters are borrowed by C for that call only.
+
+A fixed C array embedded in a linked struct is declared by attaching a positive
+size to a rank-one FFI field:
+
+```valiance
+link packets.Packet as &Packet =>
+  $values: &int+ size => 4
+  $checksum: &int
+end
+```
+
+The field is laid out as an inline C array in declaration order. Returned inline
+arrays are copied back into ordinary immutable FFI buffer values. Dynamic sizes,
+output buffers, and pointers retained by C are not supported.
+
+### 27.17. Explicit native destruction and in-flight leases
+
+Mark a raw one-handle, void-returning link as a native destructor:
+
+```valiance
+@destroy link counter.counter_destroy(:&Counter) as destroyCounter
+```
+
+Calling it invokes the native function once and invalidates the shared opaque
+handle identity. All aliases observe the released state. Repeated destruction
+and later native use fail before another address is passed to C.
+
+Every native call temporarily leases each handle argument. A destruction request
+cannot invalidate the handle until all calls already using it have returned.
+This rule also applies when the calls execute on scheduler workers and the
+originating Valiance task is cancelled.
+
+### 27.18. Owned native strings and buffers
+
+Use `@owned` when a native function returns a new allocation that must be freed
+by another symbol in the same library:
+
+```valiance
+@owned("release")
+link text.make_message() -> &CString as makeMessage
+```
+
+The exposed Valiance return is `String`, not `&CString`. The runtime copies and
+strictly decodes the bytes, then calls `release` exactly once. Cleanup also runs
+if decoding fails.
+
+A fixed-length primitive buffer return supplies its copy count in the annotation:
+
+```valiance
+@owned("release", size = 16)
+link samples.make_values() -> &double+ as makeValues
+```
+
+The exposed value is an immutable flat FFI buffer containing 16 copied values.
+The original native allocation has already been released before the function
+returns to Valiance.
+
+Add `@nullable` when null is an expected result:
+
+```valiance
+@owned("release") @nullable
+link text.maybe_message() -> &CString as maybeMessage
+```
+
+Null becomes `None` and is not freed. A null result without `@nullable` is a
+runtime fault. Dynamic pointer-length pairs, custom allocator contexts, and
+borrowed pointer returns are not supported.
+
+### 27.19. Computed fields on linked structures
+
+A value returned as a linked C structure exposes its declared fields through
+ordinary field-access syntax:
+
+```valiance
+$shape = makeShape
+$shape.origin.x
+$shape.samples
+```
+
+Scalar fields retain their precise FFI type. A fixed embedded array is exposed
+as an exact rank-one FFI collection, and a nested linked structure supports
+further chained field access. These field reads are computed from the copied
+native value and its registered ABI metadata.
+
+Linked fields are read-only. Use a linked constructor or a native function to
+produce an updated structure rather than assigning through `.field`. This keeps
+C layout, nested value conversion, and embedded-array storage explicit.
+
+### 27.20. Declared conversion of linked returns
+
+A link can expose a native return as an ordinary Valiance type by placing the
+visible type in parentheses before the physical FFI return type:
+
+```valiance
+link math.add(:&int, :&int) -> (Int) &int as add
+```
+
+The C function physically returns `&int`. After the native call succeeds, the
+runtime invokes the uniquely selected `@convert(&int -> Int)` implementation and
+the link exposes `Int` to callers.
+
+Conversions may be declared in the same module before or after the link because
+complete conversion signatures are published during module setup:
+
+```valiance
+@convert(&int -> String)
+define to(value: &int) -> String => "converted" end
+
+link native.answer() -> (String) &int as answer
+```
+
+This is the only implicit conversion at an FFI boundary and it is explicit in
+the link signature. Native parameters are never converted implicitly. A missing
+or ambiguous conversion is a compile-time error. Conversion effects are included
+in the linked function's effect set, alongside `Unsafe`.
+
+### 27.21. Native callback parameters
+
+A native function-pointer parameter is written as a function type in a `link`:
+
+```valiance
+link callbacks.apply(:Function[int -> int]) -> &int as apply
+```
+
+The callback inputs and optional single return must map to primitive C ABI types.
+The runtime generates and pins a native trampoline for the duration of the call.
+A C invocation is converted into a Valiance closure call, and its result is
+converted back to the declared C representation.
+
+Callbacks may originate on threads created by C. Such threads never execute the
+Valiance closure directly. They submit a request to the cooperative scheduler,
+which invokes the closure on the VM thread and returns the result to C. This also
+works when the containing native call is running on a scheduler worker.
+
+A callback may return at most one value and may not declare element effects.
+Callback faults are contained at the ABI boundary and reported by the containing
+native call after C returns. C must not retain the callback pointer beyond the
+linked call; persistent callback registration requires a future explicit slot
+lifecycle API.

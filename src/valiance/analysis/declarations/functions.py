@@ -128,6 +128,10 @@ class _FunctionDeclarations:
             declared_overload = _functions._fully_typed_overload(variant)
             if declared_overload is None:
                 continue
+            declared_overload = annotation_hooks.DEFAULT_REGISTRY.transform_overload(
+                declared_overload,
+                node.annotations,
+            )
             # Equal signatures are deliberate redefinitions. Keep each source
             # declaration in the overload set so declaration order can break an
             # otherwise equal match in favour of the latest definition.

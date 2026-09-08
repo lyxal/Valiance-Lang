@@ -1,4 +1,6 @@
 import unittest
+
+import valiance.vtypes as T
 from itertools import permutations
 
 from valiance.vtypes.symbols import Symbol
@@ -94,6 +96,21 @@ ParseError = N(PARSE_ERROR)
 
 
 class TypeLibraryTests(unittest.TestCase):
+    def test_ffi_nominal_namespace_is_distinct_from_valiance_namespace(self):
+        ffi_int = T.FFI(Symbol("int"))
+        valiance_int = N(Symbol("int"))
+        self.assertFalse(same(ffi_int, valiance_int))
+        self.assertFalse(subtype(ffi_int, valiance_int))
+        self.assertFalse(assignable(ffi_int, valiance_int))
+        self.assertFalse(compatible(ffi_int, valiance_int))
+
+    def test_ffi_types_support_generics_and_normalization(self):
+        typ = T.FFI(Symbol("array"), V("T"))
+        self.assertIsInstance(normalize(typ), T.FFINamedType)
+        result = _substitute(typ, {"T": T.FFI(Symbol("int"))})
+        self.assertIsInstance(result, T.FFINamedType)
+        self.assertEqual(str(result), "&array[&int]")
+
     def test_atomic_marker_normalization_is_idempotent(self):
         self.assertEqual(normalize(Exact(Exact(Int))), Exact(Int))
 

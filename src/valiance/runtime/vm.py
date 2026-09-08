@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import builtins as _py_builtins
+import ctypes
+from threading import Event, Lock, get_ident
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
 from itertools import islice, zip_longest
 from typing import Any, cast
@@ -23,6 +26,7 @@ from valiance.runtime.bytecode import (
     FunctionSetCode,
     IndexOperationSpec,
     IndexSelectorSpec,
+    NativeCallReference,
     ObjectConstructorReference,
     OpCode,
     Program,
@@ -42,6 +46,10 @@ from valiance.runtime.runtime_values import (
     LazyList,
     PlannedLazyList,
     ListValue,
+    FFIBufferValue,
+    FFIScalarValue,
+    FFIHandleValue,
+    FFIStructValue,
     RuntimeNumber,
     RecordValue,
     ObjectLifecycleState,
@@ -320,7 +328,7 @@ _NO_EXTENSION_DEFAULT = object()
 _MISSING_VECTOR_ITEM = object()
 _UNINITIALIZED_OBJECT_FIELD = object()
 _MISSING_NAME = object()
-_SCALAR_RUNTIME_TYPES = (RuntimeNumber, str, int, bool, type(None))
+_SCALAR_RUNTIME_TYPES = (FFIScalarValue, FFIBufferValue, FFIStructValue, FFIHandleValue, RuntimeNumber, str, int, bool, type(None))
 
 
 @dataclass(slots=True)
@@ -543,6 +551,21 @@ class _Activation:
     pending_concurrency: object | None = None
 
 
+@dataclass(slots=True)
+class _NativeCallState:
+    """Worker outcome committed only by the scheduler thread."""
+    result: tuple[Any, ...] | None = None
+    error: BaseException | None = None
+    completed: bool = False
+    abandoned: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ActivationNativeCall:
+    state: _NativeCallState
+    registration: SuspensionRegistration
+
+
 @dataclass(frozen=True, slots=True)
 class _ActivationQuantumYield:
     """Internal marker returned when one activation budget is exhausted."""
@@ -552,6 +575,15 @@ class _ActivationQuantumYield:
 class _ActivationTaskWait:
     handle: TaskHandle
     wake: Callable[[], None]
+
+
+@dataclass(frozen=True, slots=True)
+class _ActivationTaskTimeout:
+    """Suspend a task wait until completion or a logical cancellation deadline."""
+
+    handle: TaskHandle
+    wake: Callable[[object], None]
+    timer: SuspensionRegistration
 
 
 @dataclass(frozen=True, slots=True)
@@ -637,9 +669,15 @@ class VirtualMachine:
             OptimizationStats() if collect_optimization_stats else None
         )
         self.scheduler = Scheduler()
+        self._native_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="valiance-native"
+        )
+        self._closed = False
+        self._vm_thread_id: int | None = None
         self._scope_stack: list[TaskScope] = [self.scheduler.root_scope]
         self.task_instruction_quantum = 64
         self._unwind_panics: list[PanicSignal] = []
+        self._callback_faults: list[BaseException] = []
         self._resolved_builtin_cache: dict[
             int,
             tuple[ResolvedElementReference, BuiltinValue, BuiltinOverload],
@@ -662,6 +700,23 @@ class VirtualMachine:
                 runtime_elements() | runtime_stdlib_elements()
             ).items()
         }
+
+    def close(self, *, wait: bool = False) -> None:
+        """Stop accepting native work and shut down this VM's worker executor."""
+        if self._closed:
+            return
+        self._closed = True
+        self._native_executor.shutdown(wait=wait, cancel_futures=True)
+
+    def __enter__(self) -> "VirtualMachine":
+        """Return this VM as an explicitly managed runtime resource."""
+        if self._closed:
+            raise RuntimeError("virtual machine is closed")
+        return self
+
+    def __exit__(self, _type, _value, _traceback) -> None:
+        """Release worker resources when leaving a managed VM scope."""
+        self.close()
 
     @property
     def active_unwind_panic(self) -> PanicSignal | None:
@@ -721,6 +776,7 @@ class VirtualMachine:
 
     def run(self, program: Program) -> list[Any]:
         """Execute a program, closing every structured scope on all exits."""
+        self._vm_thread_id = get_ident()
         body_error: BaseException | None = None
         try:
             self.tag_parents = _validated_tag_parent_mapping(program.tag_parents)
@@ -2213,6 +2269,19 @@ class VirtualMachine:
                 if isinstance(event, _ActivationQuantumYield):
                     yield TaskYield("instruction budget")
                     continue
+                if isinstance(event, _ActivationNativeCall):
+                    def cancel_native(event=event) -> None:
+                        """Abandon delivery of the in-flight native result and unregister its wake source."""
+                        # ctypes calls cannot be safely interrupted. Cancellation
+                        # abandons delivery while the worker finishes independently.
+                        event.state.abandoned = True
+                        event.registration.cancel()
+                    yield TaskBlocked(
+                        "native call",
+                        cancel_native,
+                        (WaitDependency("external", event.registration.identifier, "native call"),),
+                    )
+                    continue
                 if isinstance(event, _ActivationTaskWait):
                     yield TaskBlocked(
                         f"wait task {event.handle.id}",
@@ -2673,12 +2742,35 @@ class VirtualMachine:
                         scope.finalize_close()
                     raise primary
         pending = activation.pending_concurrency
-        if isinstance(pending, _ActivationTaskWait):
+        if isinstance(pending, _ActivationNativeCall):
+            if not pending.state.completed:
+                return pending
+            activation.pending_concurrency = None
+            if pending.state.error is not None:
+                raise pending.state.error
+            frame.stack.extend(pending.state.result or ())
+            ip += 1
+            activation.ip = ip
+        elif isinstance(pending, _ActivationTaskWait):
             if not pending.handle.control.state.terminal:
                 return pending
             activation.pending_concurrency = None
             consumed = _pop(frame.stack, "wait task")
             frame.stack.extend(self._retain_task_row(pending.handle.result()))
+            _release_value(consumed, self)
+            ip += 1
+            activation.ip = ip
+        elif isinstance(pending, _ActivationTaskTimeout):
+            if not pending.handle.control.state.terminal:
+                return pending
+            activation.pending_concurrency = None
+            pending.timer.cancel()
+            if pending.wake in pending.handle.control.waiters:
+                pending.handle.control.waiters.remove(pending.wake)
+            delay = _pop(frame.stack, "timeout delay")
+            consumed = _pop(frame.stack, "timeout task")
+            frame.stack.extend(self._retain_task_row(pending.handle.result()))
+            _release_value(delay, self)
             _release_value(consumed, self)
             ip += 1
             activation.ip = ip
@@ -2913,6 +3005,57 @@ class VirtualMachine:
                                     raise
                                 ip = target
                                 continue
+                        case OpCode.CALL_NATIVE:
+                            ref = instruction.arg
+                            if not isinstance(ref, NativeCallReference):
+                                raise RuntimeError("invalid CALL_NATIVE payload")
+                            args = tuple(_pop_many(frame.stack, len(ref.param_types)))
+                            if self.scheduler.current_task is not None:
+                                if self._closed:
+                                    raise RuntimeError("virtual machine is closed")
+                                state = _NativeCallState()
+                                owner = self.scheduler.current_task
+                                registration = self.scheduler.register_external(
+                                    lambda owner=owner: self.scheduler.schedule(owner),
+                                    waitable=True,
+                                )
+                                event = _ActivationNativeCall(state, registration)
+                                activation.pending_concurrency = event
+                                activation.ip = ip
+
+                                def complete(
+                                    future: Future[tuple[Any, ...]],
+                                    *,
+                                    state: _NativeCallState = state,
+                                    registration: SuspensionRegistration = registration,
+                                ) -> None:
+                                    """Publish a native worker result back to the scheduler thread."""
+                                    try:
+                                        value, error = future.result(), None
+                                    except BaseException as exc:
+                                        value, error = None, exc
+
+                                    def publish() -> None:
+                                        """Commit this foreign-thread result only on the scheduler thread."""
+                                        if state.abandoned:
+                                            return
+                                        state.result = value
+                                        state.error = error
+                                        state.completed = True
+                                        registration.fire()
+
+                                    self.scheduler.enqueue_external_completion(publish)
+
+                                self._native_executor.submit(
+                                    _invoke_native_leased, ref, args, self
+                                ).add_done_callback(complete)
+                                return event
+                            try:
+                                frame.stack.extend(_invoke_native_leased(ref, args, self))
+                            except (OSError, AttributeError, TypeError, ValueError) as exc:
+                                raise RuntimeError(
+                                    f"native call {ref.library}:{ref.symbol} failed: {exc}"
+                                ) from exc
                         case OpCode.CALL_RESOLVED_ELEMENT:
                             try:
                                 request = self._call_resolved_element(
@@ -3450,6 +3593,55 @@ class VirtualMachine:
                                     invoke_spawned, creation_site=spawn_site
                                 )
                             )
+                        case OpCode.CANCEL_TASK:
+                            handle = _pop(frame.stack, "cancel task")
+                            if not isinstance(handle, TaskHandle):
+                                raise RuntimeError("cancel requires a task handle")
+                            handle.control.request_cancel()
+                            _release_value(handle, self)
+                        case OpCode.TIMEOUT_TASK:
+                            if len(frame.stack) < 2:
+                                raise RuntimeError("timeout requires a task and delay")
+                            handle = frame.stack[-2]
+                            delay_value = unwrap_runtime_value(frame.stack[-1])
+                            if not isinstance(handle, TaskHandle):
+                                raise RuntimeError("timeout requires a task handle")
+                            if (
+                                not isinstance(delay_value, RuntimeNumber)
+                                or delay_value != delay_value.to_integral_value()
+                                or delay_value < 0
+                            ):
+                                raise RuntimeError("timeout delay must be a non-negative Int")
+                            if instruction_budget is not None and not handle.control.state.terminal:
+                                owner = self.scheduler.current_task
+                                if owner is None:
+                                    raise RuntimeError("timeout suspension requires a running task")
+                                def wake_timeout(_completed=None, owner=owner):
+                                    """Requeue the waiter when the task reaches a terminal state."""
+                                    self.scheduler.schedule(owner)
+                                handle.control.waiters.append(wake_timeout)
+                                def expire_timeout(handle=handle, owner=owner):
+                                    """Cancel the target and wake the waiter at the deadline."""
+                                    handle.control.request_cancel()
+                                    self.scheduler.schedule(owner)
+                                timer = self.scheduler.register_timer(int(delay_value), expire_timeout)
+                                event = _ActivationTaskTimeout(handle, wake_timeout, timer)
+                                activation.pending_concurrency = event
+                                activation.ip = ip
+                                return event
+                            delay = _pop(frame.stack, "timeout delay")
+                            consumed = _pop(frame.stack, "timeout task")
+                            timer = self.scheduler.register_timer(
+                                int(delay_value), handle.control.request_cancel
+                            )
+                            try:
+                                frame.stack.extend(self._retain_task_row(
+                                    self.scheduler.wait(handle)
+                                ))
+                            finally:
+                                timer.cancel()
+                                _release_value(delay, self)
+                                _release_value(consumed, self)
                         case OpCode.WAIT_TASK:
                             wait_arg = instruction.arg
                             wait_site = (
@@ -4625,10 +4817,11 @@ def run(
     list_preview_limit: int | None = None,
 ) -> list[Any]:
     """Execute a bytecode program with a fresh VM."""
-    return VirtualMachine(
+    with VirtualMachine(
         output=output,
         list_preview_limit=list_preview_limit,
-    ).run(program)
+    ) as vm:
+        return vm.run(program)
 
 
 def _require_single_resolved_slot(
@@ -6127,6 +6320,8 @@ def _runtime_argument_type_matches(value: Any, expected: str) -> bool:
 def _runtime_type_name(value: Any) -> str | None:
     """Return the canonical name for runtime type during VM execution."""
     value = unwrap_runtime_value(value)
+    if isinstance(value, (FFIScalarValue, FFIBufferValue, FFIStructValue, FFIHandleValue)):
+        return value.ffi_type
     if isinstance(value, ObjectValue):
         if not value.type_args:
             return value.type_name
@@ -7376,6 +7571,13 @@ def _matches_cast_type(
         return _is_none_result_value(value)
     if kind == "var":
         return not is_list_like(value)
+    if kind == "ffi":
+        return (
+            len(spec) == 2
+            and isinstance(spec[1], str)
+            and isinstance(unwrap_runtime_value(value), FFIScalarValue)
+            and unwrap_runtime_value(value).ffi_type == spec[1]
+        )
     if kind == "nominal":
         if not isinstance(spec[1], str):
             return False
@@ -8969,6 +9171,371 @@ def _format_instruction(instruction: object) -> str:
     return f"{name} {rendered}"
 
 
+_NATIVE_LIBRARY_CACHE: dict[str, ctypes.CDLL] = {}
+_NATIVE_FUNCTION_CACHE: dict[tuple[object, ...], Any] = {}
+_NATIVE_CACHE_LOCK = Lock()
+
+
+_NATIVE_CTYPES = {
+    "&char": ctypes.c_char, "&short": ctypes.c_short,
+    "&int": ctypes.c_int, "&long": ctypes.c_long,
+    "&longlong": ctypes.c_longlong, "&float": ctypes.c_float,
+    "&double": ctypes.c_double, "&bool": ctypes.c_bool,
+    "&unsignedchar": ctypes.c_ubyte, "&unsignedshort": ctypes.c_ushort,
+    "&unsignedint": ctypes.c_uint, "&unsignedlong": ctypes.c_ulong,
+    "&unsignedlonglong": ctypes.c_ulonglong, "&CString": ctypes.c_char_p,
+}
+
+
+def _native_struct_types(ref: NativeCallReference) -> dict[str, type[ctypes.Structure]]:
+    """Build ctypes structures in dependency order from compiled field plans."""
+    pending = {spec.name: spec for spec in ref.structs}
+    built: dict[str, type[ctypes.Structure]] = {}
+    while pending:
+        progress = False
+        for name, spec in tuple(pending.items()):
+            try:
+                fields = [
+                    (
+                        field.name,
+                        _native_ctype(field.type_name, built, ref.handles)
+                        if field.fixed_size is None
+                        else _native_ctype(field.type_name, built, ref.handles)
+                        * field.fixed_size,
+                    )
+                    for field in spec.fields
+                ]
+            except ValueError:
+                continue
+            built[name] = type(name[1:].replace(".", "_") or "FFIStruct", (ctypes.Structure,), {"_fields_": fields})
+            del pending[name]
+            progress = True
+        if not progress:
+            raise ValueError(f"incomplete or recursive native struct layouts: {tuple(pending)}")
+    return built
+
+
+def _native_ctype(
+    name: str,
+    structs: dict[str, type[ctypes.Structure]] | None = None,
+    handles: tuple[str, ...] = (),
+):
+    """Resolve a portable FFI type spelling to its ctypes representation."""
+    if name in handles:
+        return ctypes.c_void_p
+    if structs is not None and name in structs:
+        return structs[name]
+    if name.endswith("+"):
+        return ctypes.POINTER(_native_ctype(name[:-1], structs, handles))
+    if name.startswith("&pointer["):
+        return ctypes.c_void_p
+    if name not in _NATIVE_CTYPES:
+        raise ValueError(f"unsupported native ABI type {name}")
+    return _NATIVE_CTYPES[name]
+
+
+def _native_argument(name: str, value: Any, structs: dict[str, type[ctypes.Structure]]) -> Any:
+    """Convert one Valiance FFI value into a pinned ctypes argument."""
+    value = unwrap_runtime_value(value)
+    if isinstance(value, FFIBufferValue) or (name.endswith("+") and is_list_like(value)):
+        element_type = value.element_type if isinstance(value, FFIBufferValue) else name[:-1]
+        values = value.values if isinstance(value, FFIBufferValue) else tuple(value)
+        if element_type + "+" != name:
+            raise TypeError(f"expected {name} value")
+        element_ctype = _native_ctype(element_type, structs, tuple(structs.get("__handles__", ())))
+        array_type = element_ctype * len(values)
+        converted = tuple(
+            _native_argument(element_type, item, structs)
+            for item in values
+        )
+        # The ctypes array object is passed directly; ctypes pins it until the
+        # host function returns, including scheduler-worker execution.
+        return array_type(*converted)
+    if isinstance(value, FFIHandleValue):
+        if value.ffi_type != name or name not in structs.get("__handles__", ()):
+            raise TypeError(f"expected {name} value")
+        if not value.alive:
+            raise ValueError(f"{name} handle has already been released")
+        return ctypes.c_void_p(value.address)
+    if isinstance(value, (FFIStructValue, ObjectValue)):
+        ffi_type = value.ffi_type if isinstance(value, FFIStructValue) else value.type_name
+        if ffi_type != name or name not in structs:
+            raise TypeError(f"expected {name} value")
+        ctype = structs[name]
+        source_fields = value.fields if isinstance(value, FFIStructValue) else tuple(value.fields.items())
+        converted = []
+        for field_name, field_value in source_fields:
+            converted.append(_native_argument_value(dict(ctype._fields_)[field_name], field_value, structs))
+        return ctype(*converted)
+    if not isinstance(value, FFIScalarValue) or value.ffi_type != name:
+        raise TypeError(f"expected {name} value")
+    payload = value.value
+    if name == "&CString":
+        if not isinstance(payload, str) or "\0" in payload:
+            raise ValueError("CString requires text without embedded null bytes")
+        return payload.encode("utf-8")
+    if name == "&char" and isinstance(payload, str):
+        encoded = payload.encode("utf-8")
+        if len(encoded) != 1:
+            raise ValueError("&char requires one encoded byte")
+        return encoded
+    return payload
+
+
+def _native_argument_value(ctype: type, value: Any, structs: dict[str, type[ctypes.Structure]]) -> Any:
+    """Convert a nested linked-structure field into its ctypes value."""
+    if isinstance(value, (FFIScalarValue, FFIBufferValue)):
+        return _native_argument(value.ffi_type, value, structs)
+    if isinstance(value, FFIStructValue):
+        return _native_argument(value.ffi_type, value, structs)
+    if isinstance(value, ObjectValue) and value.type_name in structs:
+        return _native_argument(value.type_name, value, structs)
+    raise TypeError("native struct fields must contain FFI values")
+
+
+def _ffi_from_native(name: str, result: Any, ref: NativeCallReference) -> Any:
+    """Copy one native result into its corresponding Valiance FFI value."""
+    if name in ref.handles:
+        address = int(result or 0)
+        if address == 0:
+            raise ValueError(f"native function returned a null {name} handle")
+        return FFIHandleValue(name, address)
+    spec = next((item for item in ref.structs if item.name == name), None)
+    if spec is None:
+        if isinstance(result, bytes):
+            result = result.decode("utf-8" if name == "&CString" else "latin1")
+        return FFIScalarValue(name, result)
+    fields = tuple(
+        (
+            field.name,
+            _ffi_from_native(field.type_name, getattr(result, field.name), ref)
+            if field.fixed_size is None
+            else FFIBufferValue(
+                field.type_name,
+                tuple(
+                    _ffi_from_native(field.type_name, item, ref)
+                    for item in getattr(result, field.name)
+                ),
+            ),
+        )
+        for field in spec.fields
+    )
+    return ObjectValue(name, dict(fields))
+
+
+
+def _native_handle_arguments(args: tuple[Any, ...]) -> tuple[FFIHandleValue, ...]:
+    """Collect unique opaque handles participating in one native call."""
+    found: list[FFIHandleValue] = []
+    seen: set[int] = set()
+    for value in args:
+        value = unwrap_runtime_value(value)
+        if isinstance(value, FFIHandleValue) and id(value) not in seen:
+            seen.add(id(value))
+            found.append(value)
+    return tuple(found)
+
+
+def _invoke_native_leased(
+    ref: NativeCallReference, args: tuple[Any, ...], vm: VirtualMachine
+) -> tuple[Any, ...]:
+    """Pin all handle arguments until C has stopped using their addresses."""
+    handles = _native_handle_arguments(args)
+    acquired: list[FFIHandleValue] = []
+    try:
+        for handle in handles:
+            handle.acquire_lease()
+            acquired.append(handle)
+        result = _invoke_native(ref, args, vm)
+        for index in ref.destroy_params:
+            value = unwrap_runtime_value(args[index])
+            if not isinstance(value, FFIHandleValue):
+                raise TypeError("native destroy metadata targets a non-handle")
+            value.request_destroy()
+        return result
+    finally:
+        for handle in reversed(acquired):
+            handle.release_lease()
+
+def _copy_owned_native_return(
+    ref: NativeCallReference,
+    address: int | None,
+    structs: dict[str, type[ctypes.Structure]],
+) -> Any:
+    """Copy one owned native return and free its allocation exactly once."""
+    pointer = int(address or 0)
+    if pointer == 0:
+        if ref.nullable_return:
+            return None
+        raise ValueError(f"native function returned null owned {ref.return_type}")
+    library_key = ref.library or "<process>"
+    with _NATIVE_CACHE_LOCK:
+        library = _NATIVE_LIBRARY_CACHE.get(library_key)
+        if library is None:
+            library = ctypes.CDLL(ref.library or None)
+            _NATIVE_LIBRARY_CACHE[library_key] = library
+        free_function = getattr(library, ref.owned_return_free)
+        free_function.argtypes = (ctypes.c_void_p,)
+        free_function.restype = None
+    try:
+        if ref.return_type == "&CString":
+            raw = ctypes.string_at(pointer)
+            return raw.decode("utf-8", errors="strict")
+        if ref.return_type is not None and ref.return_type.endswith("+"):
+            count = ref.owned_return_count
+            if count is None:
+                raise ValueError("owned buffer return has no fixed size")
+            element_type = ref.return_type[:-1]
+            element_ctype = _native_ctype(element_type, structs, ref.handles)
+            array = ctypes.cast(
+                ctypes.c_void_p(pointer), ctypes.POINTER(element_ctype * count)
+            ).contents
+            return FFIBufferValue(
+                element_type,
+                tuple(
+                    _ffi_from_native(element_type, array[index], ref)
+                    for index in range(count)
+                ),
+            )
+        raise ValueError(f"unsupported owned native return {ref.return_type}")
+    finally:
+        free_function(ctypes.c_void_p(pointer))
+
+
+def _callback_ctype(spec, structs, handles):
+    """Build one C function-pointer type from portable callback metadata."""
+    result = None if spec.return_type is None else _native_ctype(
+        spec.return_type, structs, handles
+    )
+    params = tuple(_native_ctype(item, structs, handles) for item in spec.param_types)
+    return ctypes.CFUNCTYPE(result, *params)
+
+
+def _callback_default(ctype):
+    """Return a contained ABI-safe value after a callback fault."""
+    if ctype is None:
+        return None
+    try:
+        return ctype().value or 0
+    except Exception:
+        return 0
+
+
+def _make_native_callback(vm, ref, spec, function, structs):
+    """Create a pinned trampoline with scheduler-thread VM handoff."""
+    callback_type = _callback_ctype(spec, structs, ref.handles)
+    return_ctype = None if spec.return_type is None else _native_ctype(
+        spec.return_type, structs, ref.handles
+    )
+
+    def invoke(raw_args):
+        """Convert callback arguments and invoke the managed closure on the VM thread."""
+        runtime_args = [
+            _ffi_from_native(name, value, ref)
+            for name, value in zip(spec.param_types, raw_args, strict=True)
+        ]
+        outputs = vm.call(function, runtime_args)
+        expected = 0 if spec.return_type is None else 1
+        if len(outputs) != expected:
+            raise ValueError(f"FFI callback expected {expected} return values")
+        if spec.return_type is None:
+            return None
+        return _native_argument(spec.return_type, outputs[0], structs)
+
+    def trampoline(*raw_args):
+        """Contain the C callback boundary and hand foreign-thread work to the scheduler."""
+        try:
+            if vm._vm_thread_id == get_ident():
+                return invoke(raw_args)
+            done = Event()
+            outcome = {"value": None, "error": None}
+
+            def publish():
+                """Commit this foreign-thread result only on the scheduler thread."""
+                try:
+                    outcome["value"] = invoke(raw_args)
+                except BaseException as exc:
+                    outcome["error"] = exc
+                finally:
+                    done.set()
+
+            vm.scheduler.enqueue_external_completion(publish)
+            done.wait()
+            if outcome["error"] is not None:
+                vm._callback_faults.append(outcome["error"])
+                return _callback_default(return_ctype)
+            return outcome["value"]
+        except BaseException as exc:
+            vm._callback_faults.append(exc)
+            return _callback_default(return_ctype)
+
+    return callback_type(trampoline)
+
+
+def _invoke_native(
+    ref: NativeCallReference, args: tuple[Any, ...], vm: VirtualMachine
+) -> tuple[Any, ...]:
+    """Resolve and invoke one native symbol using its compiled ABI contract."""
+    structs = _native_struct_types(ref)
+    structs["__handles__"] = ref.handles
+    key = (
+        ref.library, ref.symbol, ref.param_types, ref.return_type,
+        ref.structs, ref.handles, ref.owned_return_free,
+        ref.owned_return_count, ref.nullable_return, ref.callbacks,
+    )
+    with _NATIVE_CACHE_LOCK:
+        function = _NATIVE_FUNCTION_CACHE.get(key)
+        if function is None:
+            library_key = ref.library or "<process>"
+            library = _NATIVE_LIBRARY_CACHE.get(library_key)
+            if library is None:
+                library = ctypes.CDLL(ref.library or None)
+                _NATIVE_LIBRARY_CACHE[library_key] = library
+            function = getattr(library, ref.symbol)
+            callback_map = {item.index: item for item in ref.callbacks}
+            function.argtypes = tuple(
+                _callback_ctype(callback_map[index], structs, ref.handles)
+                if index in callback_map
+                else _native_ctype(name, structs, ref.handles)
+                for index, name in enumerate(ref.param_types)
+            )
+            function.restype = (
+                None
+                if ref.return_type is None
+                else ctypes.c_void_p
+                if ref.owned_return_free is not None
+                else _native_ctype(ref.return_type, structs, ref.handles)
+            )
+            _NATIVE_FUNCTION_CACHE[key] = function
+    callback_map = {item.index: item for item in ref.callbacks}
+    pinned_callbacks = []
+    converted_args = []
+    vm._callback_faults.clear()
+    for index, (type_name, value) in enumerate(
+        zip(ref.param_types, args, strict=True)
+    ):
+        if index in callback_map:
+            value = unwrap_runtime_value(value)
+            if not isinstance(value, FunctionValue):
+                raise TypeError("native callback argument must be a function closure")
+            callback = _make_native_callback(
+                vm, ref, callback_map[index], value, structs
+            )
+            pinned_callbacks.append(callback)
+            converted_args.append(callback)
+        else:
+            converted_args.append(_native_argument(type_name, value, structs))
+    result = function(*converted_args)
+    if vm._callback_faults:
+        fault = vm._callback_faults.pop(0)
+        raise ValueError(f"native callback failed: {fault}") from fault
+    if ref.return_type is None:
+        return ()
+    if ref.owned_return_free is not None:
+        return (_copy_owned_native_return(ref, result, structs),)
+    return (_ffi_from_native(ref.return_type, result, ref),)
+
+
 def _show_overload_inputs(overloads: tuple[BuiltinOverload, ...]) -> list[str]:
     """Compute show overload inputs during VM execution."""
     return [
@@ -9033,6 +9600,8 @@ def _format_value(value: Any) -> str:
 def _runtime_type_name(value: Any) -> str:
     """Return the canonical name for runtime type during VM execution."""
     value = unwrap_runtime_value(value)
+    if isinstance(value, (FFIScalarValue, FFIBufferValue, FFIStructValue, FFIHandleValue)):
+        return value.ffi_type
     if isinstance(value, RuntimeNumber):
         return "Int" if value == value.to_integral_value() else "Real"
     if isinstance(value, str):
@@ -9123,7 +9692,7 @@ def _prepared_call_needs_return_contracts(code: FunctionCode) -> bool:
         return (
             isinstance(spec, tuple)
             and bool(spec)
-            and spec[0] in {"any", "none", "nominal"}
+            and spec[0] in {"any", "none", "nominal", "ffi"}
         )
 
     return any(not structurally_plain(spec) for spec in code.return_tag_specs)
@@ -9220,7 +9789,7 @@ def _canonicalize_runtime_value_tag_contract(
         return update_runtime_tags(payload, add=(*additions, *retained))
 
     payload = unwrap_runtime_value(value)
-    if kind in {"any", "none", "nominal"}:
+    if kind in {"any", "none", "nominal", "ffi"}:
         return payload
     if kind == "union":
         if len(spec) != 2 or not isinstance(spec[1], tuple) or not spec[1]:
@@ -9303,7 +9872,7 @@ def _canonicalize_runtime_collection_tag_contract(
     if isinstance(value, PlannedLazyList) and (
         isinstance(base_spec, tuple)
         and base_spec
-        and base_spec[0] in {"any", "none", "nominal"}
+        and base_spec[0] in {"any", "none", "nominal", "ffi"}
     ):
         return value
     if isinstance(value, LazyList):
@@ -9350,6 +9919,13 @@ def _runtime_tag_contract_matches(
         return True
     if kind == "none":
         return _is_none_result_value(payload)
+    if kind == "ffi":
+        return (
+            len(spec) == 2
+            and isinstance(spec[1], str)
+            and isinstance(payload, FFIScalarValue)
+            and payload.ffi_type == spec[1]
+        )
     if kind == "nominal":
         return (
             len(spec) == 2

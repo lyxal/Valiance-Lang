@@ -24,6 +24,7 @@ from valiance.vtypes.builders import (
     _optional_inner,
     normalize,
     optional,
+    rebuild_nominal,
     same,
     show,
 )
@@ -38,6 +39,7 @@ from valiance.vtypes.nodes import (
     ElementTag,
     NoVecType,
     FunctionType,
+    FFINamedType,
     GenericConstraint,
     IntersectionType,
     ListExactType,
@@ -203,7 +205,11 @@ def _collect_directional_bounds(
                 for expected, observed in zip(p.returns, a.returns, strict=True)
             )
         if isinstance(p, NominalType) and isinstance(a, NominalType):
-            if p.name != a.name or len(p.args) != len(a.args):
+            if (
+                not _same_nominal_family(p, a)
+                or p.name != a.name
+                or len(p.args) != len(a.args)
+            ):
                 return False
             variances = ctx.variance_for(p.name, len(p.args))
             return all(
@@ -641,6 +647,14 @@ def subtype(source: Type, target: Type, ctx: Context | None = None) -> bool:
         return _satisfies_anonymous_trait(source, target, ctx)
 
     if isinstance(source, NominalType) and isinstance(target, NominalType):
+        if not _same_nominal_family(source, target):
+            return False
+        if isinstance(source, FFINamedType):
+            return (
+                source.name == target.name
+                and len(source.args) == len(target.args)
+                and _nominal_args_subtype(source, target, ctx)
+            )
         if target.name == RESULT and len(target.args) == 2:
             return _source_subtypes_result(source, target, ctx)
         if source.name == target.name and len(source.args) == len(target.args):
@@ -1292,7 +1306,11 @@ def _is_result_injection(source: Type, target: Type, ctx: Context) -> bool:
 
 def _is_builtin_err(source: NominalType) -> bool:
     """Return whether the value is builtin err."""
-    return not source.args and source.name.text.endswith("Error")
+    return (
+        not isinstance(source, FFINamedType)
+        and not source.args
+        and source.name.text.endswith("Error")
+    )
 
 
 def _solve(
@@ -1440,6 +1458,10 @@ def _solve(
             constraints.update(matches[0])
             return True
         if isinstance(p, NominalType) and isinstance(a, NominalType):
+            if not _same_nominal_family(p, a):
+                return False
+            if isinstance(p, FFINamedType) and p.name != a.name:
+                return False
             if allow_implementation and p.name != a.name and _contains_type_var(p):
                 matching = tuple(
                     target
@@ -2153,7 +2175,7 @@ def _substitute(t: Type, subst: dict[TypeVarKey, Type]) -> Type:
             ),
         )
     if isinstance(t, NominalType):
-        return N(t.name, *(_substitute(a, subst) for a in t.args))
+        return rebuild_nominal(t, *(_substitute(a, subst) for a in t.args))
     if isinstance(t, UnionType):
         return U(*(_substitute(i, subst) for i in t.items))
     if isinstance(t, IntersectionType):
@@ -3090,7 +3112,11 @@ def _match_specificity(
     if isinstance(parameter, IntersectionType) and compatible(argument, parameter, ctx):
         return Specificity.INTERSECTION
     if isinstance(argument, NominalType) and isinstance(parameter, NominalType):
-        if ctx.implements(argument.name, parameter.name):
+        if (
+            _same_nominal_family(argument, parameter)
+            and not isinstance(argument, FFINamedType)
+            and ctx.implements(argument.name, parameter.name)
+        ):
             return Specificity.TRAIT
     if (
         isinstance(argument, CollectionType)
@@ -3123,6 +3149,20 @@ def try_apply_overload(
 ) -> OverloadAttempt:
     """Apply one overload to concrete argument types with mismatch evidence."""
     ctx = ctx or Context()
+    if overload.conversion_target is not None:
+        if (
+            len(generic_args) != 1
+            or generic_args[0] is None
+            or not same(generic_args[0], overload.conversion_target)
+        ):
+            return OverloadAttempt(
+                None,
+                OverloadMismatch(
+                    OverloadMismatchReason.GENERIC_CONSTRAINT,
+                    detail="conversion target does not match this @convert overload",
+                ),
+            )
+        generic_args = ()
     signature_types = (
         *overload.params,
         *overload.returns,
@@ -3762,6 +3802,11 @@ def _resolve_applied_overload(
         )
     )
     return winners[0] if len(winners) == 1 else None
+
+
+def _same_nominal_family(left: NominalType, right: NominalType) -> bool:
+    """Return whether two names inhabit the ordinary or FFI nominal namespace."""
+    return isinstance(left, FFINamedType) == isinstance(right, FFINamedType)
 
 
 def _contains_type_var(t: Type) -> bool:

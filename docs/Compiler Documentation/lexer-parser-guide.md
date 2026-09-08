@@ -822,24 +822,12 @@ Do not forget source locations.
 Diagnostics rely on locations. If a new node is parser-created and may be
 analysed, compiled, or shown to the user, give it a location.
 
-## Current Gaps To Notice
+## Parser support boundaries
 
-The parser is intentionally incomplete relative to `docs/language.md`. Before
-assuming syntax exists, check `docs/valiance-feature-checklist.md` and
-`tests/test_parser.py`.
-
-Known parser-facing gaps include:
-
-- `_` placeholders and parent-stack substitution.
-- Cast syntax such as `as Type` and `as![Type`.]
-- Full environment exports for object/trait/variant/enum/tag imports. The parser
-  accepts the advanced import spellings, and define overload selection/exclusion
-  plus `root`, `std`, and `dep` module resolution are implemented, but the module
-  export surface still needs to carry non-`define` environment facts.
-- `spawn`, `concurrent`, `external`, and user-defined `cast` declarations.
-
-When implementing one of these, prefer adding the parser shape first, then
-making the analyser/runtime reject it explicitly if later stages are not ready.
+The parser guide describes syntax accepted by the current implementation.
+Confirm edge cases against `tests/test_parser.py` before changing grammar or
+chain lowering. Native bindings use `link`, and value conversion uses
+`@convert` declarations with target-directed `to[Type]` calls.
 
 ### Unicode identifiers
 

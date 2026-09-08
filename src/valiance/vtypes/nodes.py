@@ -62,6 +62,16 @@ class NominalType(Type):
 
 
 @dataclass(frozen=True)
+class FFINamedType(NominalType):
+    """An atomic type in the open FFI namespace.
+
+    The leading ``&`` is syntax, not part of ``name``.  Keeping FFI names as a
+    nominal subtype lets them participate in ordinary unions, generics, and
+    collection types while retaining their distinct namespace and display form.
+    """
+
+
+@dataclass(frozen=True)
 class TaskType(Type):
     """A task whose payload is an ordered native output stack row.
 
@@ -328,6 +338,54 @@ class GenericConstraint:
     variance: Variance = Variance.COVARIANT
 
 
+@dataclass(frozen=True, slots=True)
+class FFIFieldSpec:
+    """One native struct field, optionally stored as an embedded C array."""
+    name: str
+    type_name: str
+    fixed_size: int | None = None
+
+    def __post_init__(self) -> None:
+        """Validate and normalize this FFI runtime value after construction."""
+        if not self.name or not self.type_name.startswith("&"):
+            raise ValueError("FFI fields require a name and FFI type")
+        if self.fixed_size is not None and self.fixed_size < 1:
+            raise ValueError("embedded FFI arrays require a positive size")
+
+
+@dataclass(frozen=True, slots=True)
+class FFIStructSpec:
+    """Target-independent declaration-order field plan for a plain C struct."""
+    name: str
+    fields: tuple[FFIFieldSpec, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class FFICallbackSpec:
+    """One callback parameter's C ABI signature."""
+    index: int
+    param_types: tuple[str, ...] = ()
+    return_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NativeLinkSpec:
+    """Static description of one raw dynamically loaded native symbol."""
+
+    library: str
+    symbol: str
+    param_types: tuple[str, ...] = ()
+    return_type: str | None = None
+    structs: tuple[FFIStructSpec, ...] = ()
+    handles: tuple[str, ...] = ()
+    destroy_params: tuple[int, ...] = ()
+    owned_return_free: str | None = None
+    owned_return_count: int | None = None
+    nullable_return: bool = False
+    return_conversion: tuple[str, int] | None = None
+    callbacks: tuple[FFICallbackSpec, ...] = ()
+
+
 @dataclass(frozen=True)
 class Overload:
     """Element/function overload signature before generic substitution."""
@@ -359,6 +417,8 @@ class Overload:
     generic_params: tuple[str, ...] = ()
     index_target: Type | None = field(default=None, compare=False, hash=False)
     update_target: Type | None = field(default=None, compare=False, hash=False)
+    conversion_target: Type | None = field(default=None, compare=False, hash=False)
+    native_link: object | None = field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)

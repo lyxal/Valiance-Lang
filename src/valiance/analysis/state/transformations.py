@@ -15,7 +15,9 @@ from valiance.asts import (
     TypedAtNode,
     TypedAssertNode,
     TypedCallNode,
+    TypedCancelNode,
     TypedChannelNode,
+    TypedTimeoutNode,
     TypedConcurrentNode,
     TypedElementExtension,
     TypedElementNode,
@@ -67,7 +69,7 @@ def transform_type_children(
     """Rebuild a type after transforming each direct child."""
     typ = T.normalize(typ)
     if isinstance(typ, T.NominalType):
-        return T.N(typ.name, *(transform(arg) for arg in typ.args))
+        return T.rebuild_nominal(typ, *(transform(arg) for arg in typ.args))
     if isinstance(typ, T.UnionType):
         return T.U(*(transform(item) for item in typ.items))
     if isinstance(typ, T.IntersectionType):
@@ -209,6 +211,15 @@ def _refine_typed_node(typed_node: TypedNode, old: T.Type, new: T.Type) -> Typed
             typed_node.vectorised_depths,
             typed_node.vectorised_target_ranks,
             typed_node.runtime_static_values,
+        )
+    if isinstance(typed_node, TypedCancelNode):
+        return TypedCancelNode(typed_node.node, typ)
+    if isinstance(typed_node, TypedTimeoutNode):
+        return TypedTimeoutNode(
+            typed_node.node,
+            typ,
+            tuple(_refine_type(item, old, new) for item in typed_node.output_types),
+            typed_node.effects,
         )
     if isinstance(typed_node, TypedWaitNode):
         return TypedWaitNode(

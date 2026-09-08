@@ -7800,3 +7800,39 @@ $point[0]
 """))
     assert not analyser.diagnostics
     assert T.same(typed[-1].typ, T.Int)
+
+class FFIComputedLinkedFieldAnalysisTests(unittest.TestCase):
+    def test_linked_fields_are_readable_but_not_writable(self):
+        source = '''import {ffi("/tmp/fields") as f}
+link f.Point as &Point =>
+  $x: &int
+end
+link f.make_point() -> &Point as makePoint
+$point = makePoint
+1 to[&int] $point.x =
+'''
+        analyser = Analyser()
+        analyser.analyse(parse(source))
+        self.assertTrue(any("no writable field 'x'" in item for item in analyser.diagnostics))
+
+class FFILinkedReturnConversionAnalysisTests(unittest.TestCase):
+    def test_missing_declared_conversion_is_rejected(self):
+        source = '''import {ffi("/tmp/missing") as native}
+link native.answer() -> (String) &int as answer
+'''
+        analyser = Analyser()
+        analyser.analyse(parse(source))
+        self.assertTrue(any("no declared @convert implementation" in item for item in analyser.diagnostics))
+
+class PublicTaskControlAnalysisTests(unittest.TestCase):
+    """Validate static task-control stack contracts."""
+
+    def test_cancel_requires_task(self):
+        analyser = Analyser()
+        analyser.analyse(parse("1 cancel"))
+        self.assertTrue(any("cancel requires a task" in item for item in analyser.diagnostics))
+
+    def test_timeout_requires_task_and_int(self):
+        analyser = Analyser()
+        analyser.analyse(parse('$task = fn -> Int => 1 end | spawn\n$task "soon" timeout'))
+        self.assertTrue(any("timeout requires stack" in item for item in analyser.diagnostics))

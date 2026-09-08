@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import builtins as python_builtins
+import ctypes
+import math
 import operator
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -32,6 +34,8 @@ from valiance.runtime.runtime_values import (
     runtime_collection_rank,
     unwrap_runtime_value,
     RuntimeNumber,
+    FFIBufferValue,
+    FFIScalarValue,
 )
 from valiance.vtypes.symbols import Symbol
 
@@ -838,6 +842,7 @@ def builtin(
     documentation: ElementDocumentation | None = None,
     vectorisable: bool = True,
     where_clause: tuple[object, ...] = (),
+    conversion_target: T.Type | None = None,
 ):
     """Register one overload of `name`, implemented by the decorated function."""
     normalized_param_names = tuple(
@@ -860,6 +865,7 @@ def builtin(
                 param_names=normalized_param_names,
                 call_site_body=call_site,
                 element_tags=frozenset(element_tags),
+                conversion_target=conversion_target,
             ),
             fn,
             vectorisable,
@@ -3100,6 +3106,187 @@ def _all_elements() -> tuple[BuiltinElement, ...]:
     )
 
 
+
+# Compiler-owned FFI boundary operations. These are registered before the
+# catalogue is frozen so analysis and runtime share exactly one definition set.
+_UNSAFE_TAG = T.ElementTag(Symbol("Unsafe"))
+_RANGE_PANIC_TAG = T.ElementTag(Symbol("Panic"), (T.N(Symbol("RangeFault")),))
+_VALUE_PANIC_TAG = T.ElementTag(Symbol("Panic"), (T.N(Symbol("ValueFault")),))
+_FFI_INTEGER_CTYPES = {
+    "&char": ctypes.c_byte,
+    "&short": ctypes.c_short,
+    "&int": ctypes.c_int,
+    "&long": ctypes.c_long,
+    "&longlong": ctypes.c_longlong,
+    "&unsignedchar": ctypes.c_ubyte,
+    "&unsignedshort": ctypes.c_ushort,
+    "&unsignedint": ctypes.c_uint,
+    "&unsignedlong": ctypes.c_ulong,
+    "&unsignedlonglong": ctypes.c_ulonglong,
+}
+_FFI_FLOAT_CTYPES = {"&float": ctypes.c_float, "&double": ctypes.c_double}
+
+
+def _ffi_range_fault(message: str) -> PanicSignal:
+    """Create the public checked-conversion range fault."""
+    return PanicSignal(ObjectValue("RangeFault", {"message": message}))
+
+
+def _ffi_value_fault(message: str) -> PanicSignal:
+    """Create the public checked-conversion value fault."""
+    return PanicSignal(ObjectValue("ValueFault", {"message": message}))
+
+
+def _checked_ffi_integer(value: Any, ffi_name: str) -> FFIScalarValue:
+    """Convert an integral Valiance number after checking the host C range."""
+    integer = int(value)
+    ctype = _FFI_INTEGER_CTYPES[ffi_name]
+    bits = ctypes.sizeof(ctype) * 8
+    unsigned = ffi_name.startswith("&unsigned")
+    lower = 0 if unsigned else -(1 << (bits - 1))
+    upper = (1 << bits) - 1 if unsigned else (1 << (bits - 1)) - 1
+    if integer < lower or integer > upper:
+        raise _ffi_range_fault(f"{integer} is outside {ffi_name} range [{lower}, {upper}]")
+    return FFIScalarValue(ffi_name, integer)
+
+
+def _checked_ffi_float(value: Any, ffi_name: str) -> FFIScalarValue:
+    """Convert a real Valiance number to one finite host C floating value."""
+    converted = float(value)
+    if not math.isfinite(converted):
+        raise _ffi_range_fault(f"value is not representable as finite {ffi_name}")
+    if ffi_name == "&float":
+        converted = ctypes.c_float(converted).value
+        if not math.isfinite(converted):
+            raise _ffi_range_fault("value overflows &float")
+    return FFIScalarValue(ffi_name, converted)
+
+
+def _raw_ffi_constructor(ffi_name: str, value: Any) -> FFIScalarValue:
+    """Construct an unchecked FFI scalar for checked conversion implementations."""
+    if ffi_name == "&CString":
+        if not isinstance(value, str):
+            raise _ffi_value_fault("FFI.&CString requires String")
+        return FFIScalarValue(ffi_name, value)
+    if ffi_name in _FFI_INTEGER_CTYPES:
+        return FFIScalarValue(ffi_name, int(value))
+    return FFIScalarValue(ffi_name, float(value))
+
+
+def _register_ffi_boundary_builtins() -> None:
+    """Register raw constructors and target-directed primitive conversions."""
+    for ffi_name in (*_FFI_INTEGER_CTYPES, *_FFI_FLOAT_CTYPES, "&CString"):
+        source_type = T.String if ffi_name == "&CString" else (
+            T.Int if ffi_name in _FFI_INTEGER_CTYPES else T.Real
+        )
+        raw_name = Symbol(ffi_name, ("FFI",))
+
+        def raw(args, _ctx, ffi_name=ffi_name):
+            """Execute one compiler-owned unchecked FFI constructor."""
+            return (_raw_ffi_constructor(ffi_name, args[0]),)
+
+        builtin(
+            raw_name, (source_type,), (T.FFI(Symbol(ffi_name[1:])),),
+            element_tags=(_UNSAFE_TAG,), vectorisable=False,
+            documentation=element_documentation(
+                f"Construct an unchecked `{ffi_name}` value.",
+                parameters=(("value", "Raw payload; no range validation is performed."),),
+                returns=f"An `{ffi_name}` value.", category="FFI",
+            ),
+        )(raw)
+
+        def checked(args, _ctx, ffi_name=ffi_name):
+            """Execute one compiler-owned checked Valiance-to-FFI conversion."""
+            value = args[0]
+            if ffi_name == "&CString":
+                if "\0" in value:
+                    raise _ffi_value_fault("&CString cannot contain an embedded null byte")
+                result = FFIScalarValue(ffi_name, value)
+            elif ffi_name in _FFI_INTEGER_CTYPES:
+                result = _checked_ffi_integer(value, ffi_name)
+            else:
+                result = _checked_ffi_float(value, ffi_name)
+            return (result,)
+
+        builtin(
+            "to", (source_type,), (T.FFI(Symbol(ffi_name[1:])),),
+            element_tags=(_UNSAFE_TAG, _RANGE_PANIC_TAG, _VALUE_PANIC_TAG),
+            vectorisable=False, conversion_target=T.FFI(Symbol(ffi_name[1:])),
+        )(checked)
+
+    for ffi_name in (*_FFI_INTEGER_CTYPES, *_FFI_FLOAT_CTYPES):
+        ffi_type = T.FFI(Symbol(ffi_name[1:]))
+        target = T.Int if ffi_name in _FFI_INTEGER_CTYPES else T.Real
+
+        def back(args, _ctx, ffi_name=ffi_name, target=target):
+            """Convert one primitive FFI scalar to a Valiance numeric value."""
+            value = args[0]
+            if not isinstance(value, FFIScalarValue) or value.ffi_type != ffi_name:
+                raise _ffi_value_fault(f"expected {ffi_name}")
+            return (RuntimeNumber(value.value),)
+
+        builtin(
+            "to", (ffi_type,), (target,), element_tags=(_UNSAFE_TAG,),
+            vectorisable=False, conversion_target=target,
+        )(back)
+
+    for ffi_name in (*_FFI_INTEGER_CTYPES, *_FFI_FLOAT_CTYPES):
+        ffi_scalar = T.FFI(Symbol(ffi_name[1:]))
+        source_scalar = T.Int if ffi_name in _FFI_INTEGER_CTYPES else T.Real
+        source_list = T.ExactList(source_scalar)
+        target_buffer = T.ExactList(ffi_scalar)
+
+        def buffer_checked(args, _ctx, ffi_name=ffi_name):
+            """Materialize one finite rank-one Valiance list as an FFI buffer."""
+            source = args[0]
+            values = tuple(source)
+            converted = tuple(
+                _checked_ffi_integer(value, ffi_name)
+                if ffi_name in _FFI_INTEGER_CTYPES
+                else _checked_ffi_float(value, ffi_name)
+                for value in values
+            )
+            return (FFIBufferValue(ffi_name, converted),)
+
+        builtin(
+            "to", (source_list,), (target_buffer,),
+            element_tags=(_UNSAFE_TAG, _RANGE_PANIC_TAG),
+            vectorisable=False, conversion_target=target_buffer,
+        )(buffer_checked)
+
+        def buffer_back(args, _ctx, ffi_name=ffi_name):
+            """Copy one flat FFI buffer into an ordinary Valiance list."""
+            value = args[0]
+            values = value.values if isinstance(value, FFIBufferValue) else tuple(value)
+            if any(
+                not isinstance(item, FFIScalarValue) or item.ffi_type != ffi_name
+                for item in values
+            ):
+                raise _ffi_value_fault(f"expected {ffi_name}+")
+            return ([RuntimeNumber(item.value) for item in values],)
+
+        builtin(
+            "to", (target_buffer,), (source_list,),
+            element_tags=(_UNSAFE_TAG,), vectorisable=False,
+            conversion_target=source_list,
+        )(buffer_back)
+
+    def cstring_back(args, _ctx):
+        """Convert validated CString text to an ordinary Valiance string."""
+        value = args[0]
+        if not isinstance(value, FFIScalarValue) or value.ffi_type != "&CString":
+            raise _ffi_value_fault("expected &CString")
+        return (str(value.value),)
+
+    builtin(
+        "to", (T.FFI(Symbol("CString")),), (T.String,),
+        element_tags=(_UNSAFE_TAG,), vectorisable=False,
+        conversion_target=T.String,
+    )(cstring_back)
+
+
+_register_ffi_boundary_builtins()
+
 # Public, for callers that want the full built-in catalogue directly (e.g.
 # `from valiance.elements.builtins import BUILTIN_ELEMENTS`). This is derived
 # from `_REGISTRY` once, at import time, after every `@builtin(...)` call above has run
@@ -3110,7 +3297,7 @@ BUILTIN_ELEMENTS: tuple[BuiltinElement, ...] = _all_elements()
 def default_environment() -> T.Environment:
     """Build an environment populated with Valiance's built-in elements."""
     env = T.Environment()
-    for name in ("IO", "Random", "Panic", "Memoizable"):
+    for name in ("IO", "Random", "Panic", "Memoizable", "Unsafe"):
         env.add_property_element_tag(name)
     for name in ("Eager", "Memoized"):
         env.add_companion_element_tag(name)

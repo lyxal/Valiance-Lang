@@ -57,6 +57,8 @@ from valiance.asts import (
     ImportPath,
     ImportSpec,
     ListPatternNode,
+    LinkNode,
+    LinkTypeNode,
     MatchCaseNode,
     MatchNode,
     MatchPatternNode,
@@ -72,7 +74,9 @@ from valiance.asts import (
     TryNode,
     TypePatternNode,
     TypedCallNode,
+    TypedCancelNode,
     TypedChannelNode,
+    TypedTimeoutNode,
     TypedConcurrentNode,
     TypedElementExtension,
     TypedElementNode,
@@ -348,6 +352,9 @@ class Analyser:
         self._imported_trait_impl_sources: dict[tuple[Symbol, Symbol], str] = {}
         self._scope_depth = 0
         self._failed_imports: dict[tuple[str, ...], str] = {}
+        self._ffi_libraries: dict[Symbol, str] = {}
+        self._ffi_structs: dict[str, T.FFIStructSpec] = {}
+        self._ffi_handles: set[str] = set()
         self._top_level_declared_variable_names: frozenset[Symbol] = frozenset()
         self._prescanned_definition_overloads: dict[int, list[tuple[Symbol, int]]] = {}
         self._incomplete_recursive_definitions: tuple[DefineNode, ...] = ()
@@ -429,10 +436,25 @@ class Analyser:
                 else ()
             )
         )
+        # Publish only complete conversion contracts before setup links are
+        # checked. Other definitions retain the established post-setup prescan
+        # because object and variant declarations contribute to their meaning.
+        early_definitions = tuple(
+            definition
+            for definition in definitions
+            if any(
+                isinstance(annotation, AnnotationNode)
+                and annotation.name.text == "convert"
+                for annotation in definition.annotations
+            )
+        )
+        for definition in early_definitions:
+            self.declarations.prescan_define(definition)
         current = self.analyse_block(initial, setup)
         if current:
             for definition in definitions:
-                self.declarations.prescan_define(definition)
+                if definition not in early_definitions:
+                    self.declarations.prescan_define(definition)
             for definition in self._incomplete_recursive_definitions:
                 self._diagnose(
                     f"recursive element '{definition.name}' must have complete "
@@ -469,6 +491,9 @@ class Analyser:
         """
         setup_types = (
             ImportNode,
+            LinkNode,
+            LinkTypeNode,
+    LinkTypeNode,
             ObjectNode,
             TagDeclarationNode,
             ElementTagDeclarationNode,
@@ -1214,6 +1239,26 @@ class Analyser:
                 call_plan.runtime_static_values,
             )
             return BranchSet((remaining.push(task_type).emit(typed),))
+
+        if node.name == Symbol("cancel") and not node.modifier_args and not node.call_args:
+            if not branch.stack or not isinstance(T.normalize(branch.stack[-1]), T.TaskType):
+                self._diagnose("cancel requires a task", node)
+                return BranchSet((branch.emit(TypedNode(node, None)),))
+            return BranchSet((branch.pop().emit(TypedCancelNode(node, None)),))
+
+        if node.name == Symbol("timeout") and not node.modifier_args and not node.call_args:
+            if len(branch.stack) < 2:
+                self._diagnose("timeout requires a task and an Int delay", node)
+                return BranchSet((branch.emit(TypedNode(node, None)),))
+            task_type = T.normalize(branch.stack[-2])
+            delay_type = T.normalize(branch.stack[-1])
+            if not isinstance(task_type, T.TaskType) or not T.assignable(
+                delay_type, T.Int, self.env.context
+            ):
+                self._diagnose("timeout requires stack [Task[...], Int]", node)
+                return BranchSet((branch.emit(TypedNode(node, None)),))
+            typed = TypedTimeoutNode(node, None, task_type.outputs, task_type.effects)
+            return BranchSet((branch.pop(2).push(*task_type.outputs).emit(typed),))
 
         if node.name == Symbol("wait") and not node.modifier_args and not node.call_args:
             if not branch.stack:

@@ -25,6 +25,8 @@ from valiance.asts import (
     IndexAccessNode,
     IndexSetNode,
     ListLiteralNode,
+    LinkNode,
+    LinkTypeNode,
     LintSuppressionNode,
     NumberLiteralNode,
     MinimumRankNode,
@@ -847,6 +849,273 @@ def _show_import_path_for_diagnostic(path) -> str:
     return prefix + ".".join(path.parts)
 
 
+
+def _ffi_storage_type(typ: T.Type) -> tuple[str, bool] | None:
+    """Return canonical element spelling and whether storage is a flat buffer."""
+    typ = T.normalize(typ)
+    if isinstance(typ, T.FFINamedType):
+        return T.show(typ), False
+    if (
+        isinstance(typ, T.CollectionType)
+        and typ.rank == 1
+        and isinstance(T.normalize(typ.base), T.FFINamedType)
+    ):
+        return T.show(T.normalize(typ.base)), True
+    return None
+
+@_core.register(LinkTypeNode)
+def _link_type_node(self: _core.Analyser, node: LinkTypeNode, branch: _core.AnalysisBranch) -> _core.BranchSet:
+    """Register one plain declaration-order C struct layout."""
+    if node.namespace not in self._ffi_libraries:
+        self._diagnose(f"unknown FFI library namespace '{node.namespace}'", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    if not node.fields:
+        name = f"&{node.name}"
+        if name in self._ffi_handles or name in self._ffi_structs:
+            self._diagnose(f"duplicate linked type '{name}'", node)
+        else:
+            self._ffi_handles.add(name)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    field_storage = tuple(_ffi_storage_type(field.typ) for field in node.fields)
+    if any(item is None for item in field_storage):
+        self._diagnose("linked struct fields must be scalar FFI types or flat FFI buffers", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    for field, storage in zip(node.fields, field_storage, strict=True):
+        assert storage is not None
+        _type_name, is_buffer = storage
+        if is_buffer != (field.fixed_size is not None):
+            self._diagnose(
+                "embedded FFI buffer fields require `size => positive_integer`, and scalar fields cannot declare size",
+                node,
+            )
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    name = f"&{node.name}"
+    if name in self._ffi_structs:
+        self._diagnose(f"duplicate linked struct '{name}'", node)
+    else:
+        self._ffi_structs[name] = T.FFIStructSpec(
+            name,
+            tuple(
+                T.FFIFieldSpec(
+                    field.name.text,
+                    storage[0],
+                    field.fixed_size,
+                )
+                for field, storage in zip(node.fields, field_storage, strict=True)
+                if storage is not None
+            ),
+        )
+        self.env.define_overload(
+            node.name,
+            T.Overload(
+                tuple(field.typ for field in node.fields),
+                (T.FFI(node.name),),
+                param_names=tuple(field.name for field in node.fields),
+            ),
+        )
+    return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+
+
+@_core.register(LinkNode)
+def _link_node(
+    self: _core.Analyser,
+    node: LinkNode,
+    branch: _core.AnalysisBranch,
+) -> _core.BranchSet:
+    """Register one primitive native-call overload."""
+    annotation_names = tuple(
+        annotation.name.text
+        for annotation in node.annotations
+        if isinstance(annotation, AnnotationNode)
+    )
+    unknown = tuple(
+        name for name in annotation_names if name not in {"destroy", "owned", "nullable"}
+    )
+    if unknown:
+        self._diagnose(f"annotation '@{unknown[0]}' cannot be used on link", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    library = self._ffi_libraries.get(node.namespace)
+    if library is None:
+        self._diagnose(f"unknown FFI library namespace '{node.namespace}'", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    callback_specs: list[T.FFICallbackSpec] = []
+    for index, item in enumerate(node.params):
+        normalized = T.normalize(item)
+        if isinstance(normalized, T.FunctionType):
+            if len(normalized.returns) > 1 or normalized.element_tags:
+                self._diagnose("FFI callbacks may return at most one value and cannot declare effects", node)
+                return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+            callback_types = (*normalized.params, *normalized.returns)
+            def callback_abi(value: T.Type) -> str | None:
+                """Return the canonical primitive C ABI spelling for a callback type."""
+                storage = _ffi_storage_type(value)
+                if storage is not None:
+                    return storage[0] + ("+" if storage[1] else "")
+                value = T.normalize(value)
+                if isinstance(value, T.NominalType) and not isinstance(value, T.FFINamedType):
+                    candidate = "&" + value.name.text
+                    return candidate if candidate in {
+                        "&char", "&short", "&int", "&long", "&longlong",
+                        "&unsignedchar", "&unsignedshort", "&unsignedint",
+                        "&unsignedlong", "&unsignedlonglong", "&float", "&double",
+                    } else None
+                return None
+            callback_abi_types = tuple(callback_abi(value) for value in callback_types)
+            if any(value is None for value in callback_abi_types):
+                self._diagnose("FFI callback parameters and returns must be primitive FFI-compatible types", node)
+                return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+            split = len(normalized.params)
+            callback_specs.append(T.FFICallbackSpec(
+                index,
+                tuple(value for value in callback_abi_types[:split] if value is not None),
+                callback_abi_types[split] if normalized.returns else None,
+            ))
+        elif _ffi_storage_type(item) is None:
+            self._diagnose("link parameters must be FFI storage types or FFI callbacks", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    if not all(_ffi_storage_type(item) is not None for item in node.returns):
+        self._diagnose("link returns must be scalar FFI types or flat FFI buffers", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    if len(node.returns) > 1:
+        self._diagnose("a primitive link may return at most one value", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    name = node.alias or Symbol(node.symbol.text, (node.namespace.text,))
+    retained = tuple(node.returns)
+    return_conversion: tuple[str, int] | None = None
+    conversion_tags: frozenset[T.ElementTag] = frozenset()
+    if node.converted_return is not None:
+        if len(node.returns) != 1:
+            self._diagnose("a linked-return conversion requires one native return", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        raw_return = node.returns[0]
+        matches = tuple(
+            (index, overload)
+            for index, overload in enumerate(self.env.overloads_for(Symbol("to")))
+            if len(overload.params) == 1
+            and len(overload.returns) == 1
+            and T.same(overload.params[0], raw_return)
+            and overload.conversion_target is not None
+            and T.same(overload.conversion_target, node.converted_return)
+            and T.same(overload.returns[0], node.converted_return)
+        )
+        if not matches:
+            self._diagnose(
+                "linked return has no declared @convert implementation from "
+                f"{T.show(raw_return)} to {T.show(node.converted_return)}",
+                node,
+            )
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        if len(matches) > 1:
+            self._diagnose("linked return conversion is ambiguous", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        conversion_index, conversion_overload = matches[0]
+        runtime_name = self.env.overload_runtime_name_for(
+            Symbol("to"), conversion_overload
+        ) or self.env.runtime_name_for(Symbol("to")) or Symbol("to")
+        runtime_index = self.env.overload_runtime_index_for(
+            Symbol("to"), conversion_overload
+        )
+        return_conversion = (
+            str(runtime_name),
+            conversion_index if runtime_index is None else runtime_index,
+        )
+        conversion_tags = conversion_overload.element_tags
+        retained = (node.converted_return,)
+    owned_return_free = None
+    owned_return_count = None
+    nullable_return = "nullable" in annotation_names
+    owned_annotation = next(
+        (
+            annotation
+            for annotation in node.annotations
+            if isinstance(annotation, AnnotationNode) and annotation.name.text == "owned"
+        ),
+        None,
+    )
+    if owned_annotation is not None:
+        if len(node.returns) != 1 or len(owned_annotation.args) != 1:
+            self._diagnose("@owned requires one native free-symbol string and one return", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        free_node = owned_annotation.args[0]
+        if not isinstance(free_node, StringLiteralNode):
+            self._diagnose("@owned free symbol must be a string literal", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        owned_return_free = free_node.value
+        result_name = T.show(node.returns[0])
+        if result_name == "&CString":
+            visible: T.Type = T.String
+        elif result_name.endswith("+"):
+            visible = node.returns[0]
+            count_node = next(
+                (value for key, value in owned_annotation.kwargs if key.text == "size"),
+                None,
+            )
+            if not isinstance(count_node, NumberLiteralNode) or not count_node.value.isdecimal() or int(count_node.value) < 0:
+                self._diagnose("owned buffer returns require `size = non_negative_integer`", node)
+                return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+            owned_return_count = int(count_node.value)
+        else:
+            self._diagnose("@owned currently supports &CString and flat primitive buffers", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        retained = (T.optional(visible) if nullable_return else visible,)
+    elif nullable_return:
+        self._diagnose("@nullable currently requires an @owned return", node)
+        return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+    destroy_params: tuple[int, ...] = ()
+    if "destroy" in annotation_names:
+        if node.returns or len(node.params) != 1:
+            self._diagnose("@destroy link must take one handle and return nothing", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        parameter_name = T.show(node.params[0])
+        if parameter_name not in self._ffi_handles:
+            self._diagnose("@destroy parameter must be a declared opaque handle", node)
+            return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+        destroy_params = (0,)
+    spec = T.NativeLinkSpec(
+        library,
+        node.symbol.text,
+        tuple(
+            "&callback" if isinstance(T.normalize(item), T.FunctionType) else T.show(item)
+            for item in node.params
+        ),
+        T.show(node.returns[0]) if node.returns else None,
+        tuple(self._ffi_structs.values()),
+        tuple(sorted(self._ffi_handles)),
+        destroy_params,
+        owned_return_free,
+        owned_return_count,
+        nullable_return,
+        return_conversion,
+        tuple(callback_specs),
+    )
+    def visible_parameter(item: T.Type) -> T.Type:
+        """Mirror the runtime-call analyser's erased FFI nominal spelling."""
+        normalized = T.normalize(item)
+        if isinstance(normalized, T.FFINamedType):
+            return T.N(normalized.name, *normalized.args)
+        if isinstance(normalized, T.CollectionType):
+            return T.C(
+                type(normalized), visible_parameter(normalized.base), normalized.rank
+            )
+        if isinstance(normalized, T.FunctionType):
+            return normalized
+        return normalized
+
+    overload = T.Overload(
+        tuple(visible_parameter(item) for item in node.params),
+        retained,
+        native_link=spec,
+        element_tags=frozenset(
+            (T.ElementTag(Symbol("Unsafe")), *conversion_tags)
+        ),
+    )
+    try:
+        self.env.define_overload(name, overload)
+    except ValueError as exc:
+        self._diagnose(str(exc), node)
+    return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+
+
 @_core.register(ImportNode)
 def _import_node(
     self: _core.Analyser,
@@ -855,6 +1124,13 @@ def _import_node(
 ) -> _core.BranchSet:
     """Analyse a `ImportNode` node and return the surviving branches."""
     for spec in node.specs:
+        if spec.path.root == Symbol("ffi"):
+            if spec.components:
+                self._diagnose("FFI library imports cannot select components", node)
+                return _core.BranchSet((branch.emit(TypedNode(node, None)),))
+            namespace = spec.alias or Symbol("ffi")
+            self._ffi_libraries[namespace] = spec.path.parts[0][4:]
+            continue
         try:
             exports, resolved_spec, definitions = self._load_import_definitions(spec)
             objects = import_objects(exports, resolved_spec)

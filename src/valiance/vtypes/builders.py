@@ -15,6 +15,7 @@ from valiance.vtypes.nodes import (
     ElementTag,
     NoVecType,
     FunctionType,
+    FFINamedType,
     IntersectionType,
     ListExactType,
     ListMinType,
@@ -63,6 +64,18 @@ def NoneType() -> Type:
 def N(name: Symbol, *args: Type) -> Type:
     """Create a nominal type, optionally with invariant generic arguments."""
     return NominalType(name, tuple(args))
+
+
+def FFI(name: Symbol, *args: Type) -> Type:
+    """Create an atomic named type in the open FFI namespace."""
+    return FFINamedType(name, tuple(args))
+
+
+def rebuild_nominal(typ: NominalType, *args: Type) -> Type:
+    """Rebuild a nominal type without discarding its namespace family."""
+    if isinstance(typ, FFINamedType):
+        return FFI(typ.name, *args)
+    return N(typ.name, *args)
 
 
 def V(name: str, identity: TypeVarId | None = None) -> Type:
@@ -433,9 +446,9 @@ def normalize(t: Type) -> Type:
 
     if isinstance(t, NominalType):
         args = tuple(normalize(arg) for arg in t.args)
-        if t.name == SOME and len(args) == 1 and isinstance(args[0], NeverType):
+        if not isinstance(t, FFINamedType) and t.name == SOME and len(args) == 1 and isinstance(args[0], NeverType):
             return Never()
-        return N(t.name, *args)
+        return rebuild_nominal(t, *args)
 
     if isinstance(t, TaggedType):
         inner = normalize(t.inner)
@@ -639,9 +652,9 @@ def _alpha_canonicalize(
             ),
         )
     if isinstance(t, NominalType):
-        return NominalType(
-            t.name,
-            tuple(_alpha_canonicalize(arg, scope, depth) for arg in t.args),
+        return rebuild_nominal(
+            t,
+            *(_alpha_canonicalize(arg, scope, depth) for arg in t.args),
         )
     if isinstance(t, UnionType):
         return UnionType(
@@ -816,6 +829,11 @@ def _show(
         return "Task[" + ", ".join(
             _show(output, type_variable_name, bound) for output in t.outputs
         ) + "]"
+    if isinstance(t, FFINamedType):
+        if not t.args:
+            return f"&{t.name}"
+        args = ", ".join(_show(a, type_variable_name, bound) for a in t.args)
+        return f"&{t.name}[{args}]"
     if isinstance(t, NominalType):
         if not t.args:
             return str(t.name)

@@ -3,7 +3,8 @@ import unittest
 from valiance.analysis import Analyser
 from valiance.parsing import parse
 from valiance.runtime import compile_program, dumps, loads, run
-from valiance.runtime.runtime_values import RuntimeNumber
+from valiance.runtime.runtime_values import FFIScalarValue, RuntimeNumber
+from valiance.runtime.concurrency import Scheduler
 
 
 def execute(source: str, *, optimize: bool = False, round_trip: bool = False):
@@ -18,6 +19,66 @@ def execute(source: str, *, optimize: bool = False, round_trip: bool = False):
 
 
 class ConcurrencyExecutionTests(unittest.TestCase):
+
+    def test_scheduler_external_completion_is_thread_safe(self):
+        import threading
+        scheduler = Scheduler()
+        observed = []
+        registration = scheduler.register_external(lambda: observed.append("woke"), waitable=True)
+
+        worker = threading.Thread(
+            target=lambda: scheduler.enqueue_external_completion(registration.fire)
+        )
+        worker.start()
+        scheduler.run_until(lambda: bool(observed))
+        worker.join()
+        self.assertEqual(observed, ["woke"])
+        self.assertFalse(registration.active)
+
+
+    def test_native_calls_suspend_tasks_and_overlap_on_workers(self):
+        import os
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "blocking.c")
+            library_path = os.path.join(directory, "libblocking.so")
+            with open(source_path, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "#include <unistd.h>\n"
+                    "static int active = 0;\n"
+                    "static int maximum = 0;\n"
+                    "int slow(void) {\n"
+                    "  int current = __sync_add_and_fetch(&active, 1);\n"
+                    "  int seen;\n"
+                    "  do { seen = maximum; if (seen >= current) break; }\n"
+                    "  while (!__sync_bool_compare_and_swap(&maximum, seen, current));\n"
+                    "  usleep(100000);\n"
+                    "  __sync_sub_and_fetch(&active, 1);\n"
+                    "  return current;\n"
+                    "}\n"
+                    "int max_active(void) { return maximum; }\n"
+                )
+            subprocess.run(
+                ["cc", "-shared", "-fPIC", source_path, "-o", library_path],
+                check=True,
+            )
+            source = f"""import {{ffi(\"{library_path}\") as native}}
+link native.slow() -> &int as slow
+link native.max_active() -> &int as maxActive
+$first = fn => slow end | spawn
+$second = fn => slow end | spawn
+$first wait | pop
+$second wait | pop
+maxActive
+"""
+            self.assertEqual(execute(source), [FFIScalarValue("&int", 2)])
+            self.assertEqual(
+                execute(source, optimize=True, round_trip=True),
+                [FFIScalarValue("&int", 2)],
+            )
+
     def test_spawn_wait_executes_once(self):
         self.assertEqual(
             execute("fn -> Int => 42 end | spawn | wait"),
@@ -209,3 +270,64 @@ end"""
 
 if __name__ == "__main__":
     unittest.main()
+
+class FFIForeignThreadCallbackTests(unittest.TestCase):
+    def test_foreign_thread_callback_hands_off_to_scheduler(self):
+        import os
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "callback.c")
+            library_path = os.path.join(directory, "libcallback.so")
+            with open(source_path, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "#include <pthread.h>\n"
+                    "typedef int (*Callback)(int);\n"
+                    "typedef struct { Callback cb; int result; } Args;\n"
+                    "static void* run_cb(void* raw){Args* a=(Args*)raw;"
+                    "a->result=a->cb(a->cb(9));return 0;}\n"
+                    "int apply_foreign(Callback cb){Args a={cb,0};pthread_t t;"
+                    "pthread_create(&t,0,run_cb,&a);pthread_join(t,0);"
+                    "return a.result;}\n"
+                )
+            subprocess.run(
+                ["cc", "-shared", "-fPIC", "-pthread", source_path, "-o", library_path],
+                check=True,
+            )
+            source = f'''import {{ffi("{library_path}") as cb}}
+link cb.apply_foreign(:Function[int -> int]) -> &int as applyForeign
+$task = fn -> int =>
+  fn (value: int) -> int => $value end
+  applyForeign
+end | spawn
+$task wait
+'''
+            expected = [FFIScalarValue("&int", 9)]
+            self.assertEqual(execute(source), expected)
+            self.assertEqual(execute(source, optimize=True, round_trip=True), expected)
+
+class PublicTaskControlTests(unittest.TestCase):
+    """Exercise public cancellation and logical-time timeout operations."""
+
+    def test_cancel_consumes_task_and_requests_cancellation(self):
+        self.assertEqual(execute("$task = fn -> Int => 42 end | spawn\n$task cancel"), [])
+
+    def test_timeout_returns_task_result_before_deadline(self):
+        source = "$task = fn -> Int => 42 end | spawn\n$task 10 timeout"
+        self.assertEqual(execute(source), [RuntimeNumber(42)])
+        self.assertEqual(execute(source, optimize=True, round_trip=True), [RuntimeNumber(42)])
+
+    def test_zero_timeout_cancels_blocked_task(self):
+        source = """$channel = Channel[Int]
+$task = fn -> Receive[Int] => $channel receive end | spawn
+$task 0 timeout
+"""
+        with self.assertRaisesRegex(RuntimeError, "cancelled task"):
+            execute(source)
+        with self.assertRaisesRegex(RuntimeError, "cancelled task"):
+            execute(source, optimize=True, round_trip=True)
+
+    def test_timeout_requires_non_negative_runtime_delay(self):
+        source = "$task = fn -> Int => 42 end | spawn\n$task -1 timeout"
+        with self.assertRaisesRegex(RuntimeError, "non-negative Int"):
+            execute(source)

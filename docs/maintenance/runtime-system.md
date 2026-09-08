@@ -215,12 +215,18 @@ This module converts `Program` records to and from a versioned binary format. It
 owns the byte representation, value tags, opcode numbers, validation, and the
 magic/version marker.
 
+First-class FFI scalars use a dedicated tagged value encoding. Their canonical
+`&`-prefixed type spelling and primitive payload are both serialized, so a
+round trip cannot erase FFI identity or reinterpret the payload as an ordinary
+Valiance primitive.
+
 ### `runtime_values.py`: shared value semantics
 
 This module defines values used by both the VM and built-ins:
 
 - `LazyList` and `ListValue`;
 - `TaggedValue`;
+- `FFIScalarValue`, an immutable scalar with exact `&Type` runtime identity;
 - `ObjectValue` and `ObjectRuntimeType`;
 - `PanicSignal`;
 - list/rank helpers; and
@@ -2013,3 +2019,208 @@ transfer, copy-on-write fanout, parent/child detachment, lazy prefixes, and
 scheduler overhead. Baselines are observational and deliberately do not impose
 machine-dependent timing thresholds. Checked-in Linux results document the
 initial comparison point.
+
+### Plain linked C structs
+
+A `link namespace.CName as &ValianceName => ... end` declaration registers a
+plain fixed-layout FFI structure. Field order is preserved exactly in an
+`FFIStructSpec`. Native call bytecode carries each required structure descriptor,
+and the VM builds matching ABI layouts before invocation. Plain linked structs
+have value semantics and may be accepted and returned by value. Opaque handles,
+ownership-bearing pointer fields, and construction-dependent embedded arrays are
+not included in the runtime.
+
+## Scheduler-sensitive native calls
+
+`CALL_NATIVE` remains synchronous during ordinary root execution. Inside a
+scheduled task, the VM submits the host call to a bounded worker executor and
+returns an explicit native-call suspension event. The owning task is blocked,
+so other runnable tasks continue cooperatively.
+
+Workers never mutate activation frames, VM stacks, task state, or scheduler
+queues. A worker stores only its result or exception in an isolated completion
+record, then publishes a callback to the scheduler's thread-safe external
+completion queue. The scheduler commits that callback on its own execution
+thread, marks the suspension complete, and schedules the owning task. The VM
+places returned values on the stack only when that activation resumes.
+
+The scheduler distinguishes deterministic mock wake registrations from
+waitable host-worker registrations. If every task is blocked on real external
+work, `run_until` waits on a condition variable rather than reporting deadlock
+or busy-spinning. Existing mock registrations retain the prior explicit-wake
+behavior.
+
+Cancellation cannot safely interrupt an arbitrary C function. Cancelling a
+blocked native call therefore unregisters its wake and abandons result delivery;
+the worker may finish independently, but its result can no longer reach the VM.
+This preserves prompt cooperative cancellation without allowing a host thread
+to access released activation state.
+
+### FFI boundary contracts
+
+Primitive FFI conversion is compiler-owned but uses the ordinary `to[Target]`
+conversion-selection path. The built-in catalogue registers checked conversions
+for the C integer and floating families plus `&CString`, and reverse conversions
+back to Valiance `Int`, `Real`, and `String`. Integer bounds are calculated from
+the host C ABI through `ctypes.sizeof`; narrowing never wraps silently. CString
+conversion rejects embedded null bytes. Raw `FFI.&Type(value)` constructors are
+separate, explicitly unsafe operations and deliberately skip numeric range
+validation.
+
+The parser treats the adjacent component after `FFI.` as one qualified element,
+so `FFI.&int(3)` lowers to the symbol `FFI.&int`, not two chained elements.
+Compiler-owned conversions and constructors carry `Unsafe`; primitive native
+links also contribute `Unsafe`, allowing ordinary function effect inference to
+propagate the boundary transitively. User `@convert` definitions named `to`
+continue to shadow the compiler catalogue and compile to their selected user
+overload slot.
+
+Native library handles and configured function objects are cached by canonical
+library, symbol, parameter, result, struct, and handle metadata. Signature setup
+is protected by a lock because `ctypes` function objects expose mutable
+`argtypes` and `restype`. A `VirtualMachine` is an explicit managed resource:
+`close()` is idempotent, context-manager exit shuts down its bounded worker
+executor, and the convenience `run(...)` helper always closes its fresh VM.
+
+### Flat buffers and embedded arrays
+
+A rank-one FFI collection such as `&int+` is a flat native buffer boundary.
+Compiler-owned `to[&Type+]` conversions validate every list item using the same
+host-ABI range rules as scalar conversion and produce exact FFI element
+values. At native invocation, the VM materializes contiguous `ctypes` array
+storage and passes its pointer. That array object is owned by the worker call's
+Python frame, so it remains pinned until the C function returns even when the
+Valiance task is suspended or cancelled.
+
+Linked struct fields may use `size => positive_integer` after a rank-one FFI
+collection type. Analysis lowers each field into an `FFIFieldSpec` carrying the
+native element spelling and fixed count. The VM generates an actual embedded C
+array field, not a pointer, preserving declaration order, alignment, and
+`sizeof` behavior. Returned embedded arrays are copied into immutable
+`FFIBufferValue` instances.
+
+Flat buffers are borrowed for one native call. C cannot retain the pointer.
+Pointer-length relationships and output or input-output buffers are not
+represented by the current ownership and direction metadata.
+
+### Opaque-handle destruction and leases
+
+A raw native destructor is declared with `@destroy link`. Analysis requires one
+opaque-handle parameter and no return value. The compiler records the destroyed
+parameter index in `NativeCallReference`, and bytecode version 0x26 preserves
+that metadata explicitly.
+
+`FFIHandleValue` is one shared runtime identity. Native calls acquire a lease on
+every distinct handle argument before C receives an address and release those
+leases only after C returns. A destructor request immediately prevents new calls
+but delays final invalidation until all earlier leases are released. This also
+covers scheduled native calls: task cancellation abandons result delivery, not
+the worker's lease, so the handle cannot become invalid while C is still using
+it.
+
+Destruction is explicit. `@destroy` guarantees one successful
+native free call invalidates the shared handle and a repeated destroy or later
+use fails before entering C. Automatic final-release destructor attachment and
+Computed linked fields use separate declarations and runtime metadata.
+
+### Ownership-qualified native returns
+
+`@owned("free_symbol")` marks a native pointer return whose allocation must be
+copied into Valiance-owned storage and then released by a one-pointer function
+from the same library. The physical C result is always captured as `void*`, so
+`ctypes` cannot discard the allocation address while decoding a C string.
+
+For `&CString`, the VM copies bytes through the first null terminator and decodes
+them as strict UTF-8. For a primitive flat buffer, `size = N` supplies the exact
+number of elements to copy into an immutable `FFIBufferValue`. In both cases the
+free function runs in a `finally` block. It therefore executes exactly once when
+copying succeeds, UTF-8 decoding fails, element conversion fails, or another
+conversion exception is raised.
+
+`@nullable` is permitted with `@owned`. A null address becomes `None` and is not
+passed to the free function. Without `@nullable`, a null owned return is a runtime
+fault. Returned native memory is fully copied and freed on the worker thread
+before a scheduled result becomes observable, so cancellation cannot expose or
+leak partially converted native storage.
+
+Owned-return metadata is part of `NativeLinkSpec` and `NativeCallReference` and
+is serialized in bytecode version 0x27. The free symbol, optional fixed count,
+and nullability bit are validated while loading bytecode.
+
+### Computed linked fields
+
+Linked struct field analysis consumes `FFIFieldSpec` directly. Scalar fields
+retain their exact open FFI type, fixed embedded arrays become exact rank-one FFI
+collections, and nested linked structures remain linked types for further field
+selection. Linked fields are read-only at the Valiance level, preserving native
+value-layout immutability and preventing writes that bypass C ABI reconstruction.
+
+The call-analysis compatibility path also recognizes linked layouts when an
+existing generic call transformation has temporarily preserved only the nominal
+name. It re-establishes the FFI family solely when that name is present in the
+analyser's linked-struct registry. Unrelated nominal objects are therefore not
+reclassified as foreign values.
+
+Runtime native-field conversion recursively reconstructs nested linked structs,
+and native argument conversion accepts those reconstructed linked values inside
+outer structs. Embedded arrays remain immutable `FFIBufferValue` instances.
+These properties survive optimizer lowering and bytecode serialization.
+
+### Declared linked-return conversions
+
+A native link may distinguish its physical ABI return from its visible Valiance
+return with `-> (VisibleType) &PhysicalType`. During setup analysis, the link
+selects exactly one registered `@convert(PhysicalType -> VisibleType)` overload.
+Complete same-module conversion signatures are prescanned before links, while all
+other definitions retain the established post-setup prescan order so object and
+variant semantics are unaffected.
+
+The native call itself still returns the physical FFI value. Compiler lowering
+emits `CALL_NATIVE` followed immediately by a statically resolved call to the
+selected conversion overload. No dynamic target lookup occurs at runtime. The
+conversion therefore survives optimization and bytecode serialization using
+existing portable call references, without adding host-specific callable state
+to `NativeCallReference`.
+
+The link's visible overload return is the converted type. Its effect set includes
+both `Unsafe` from the native boundary and every effect declared by the selected
+conversion. Missing and ambiguous conversion declarations are rejected during
+analysis. Parameters remain unconverted and continue to require explicit
+`to[...]` calls.
+
+### Callback trampolines and scheduler handoff
+
+Native links may declare callback parameters with ordinary `Function[...]`
+types whose inputs and optional single return are primitive C-compatible types.
+Analysis lowers each callback parameter into a portable `FFICallbackSpec`
+containing the native parameter index and canonical ABI spellings. Bytecode
+version 0x28 serializes these descriptors without serializing closure instances.
+
+At invocation the VM builds a `ctypes.CFUNCTYPE` trampoline and pins it in the
+native-call frame until C returns. Calls arriving on the VM thread invoke the
+closure directly. Calls arriving on a C-created or native-worker thread enqueue
+a request through the scheduler's external-completion queue and block only that
+originating host thread. The scheduler thread converts callback arguments,
+invokes the closure, validates its result count, converts the result to the C
+representation, and wakes the host thread.
+
+Callback exceptions and panics never unwind through C. The trampoline returns a
+zero-compatible ABI value, records the first fault, and the containing native
+call raises after C returns. Scheduled native calls retain their normal
+external-wake registration, so callback requests remain serviceable while the
+calling task is suspended. Callback trampolines are call-scoped;
+C must not retain them after the linked function returns.
+
+
+#### Public task cancellation and logical deadlines
+
+`cancel` and `timeout` are analyser-recognized concurrency primitives rather
+than ordinary built-ins. Dedicated typed nodes lower to `CANCEL_TASK` and
+`TIMEOUT_TASK`, preserving fixed stack effects in bytecode version 0x29.
+Cancellation delegates to `TaskControlBlock.request_cancel()`, including its
+blocked-operation wake and cleanup behavior. Timeout registers both a target
+completion waiter and a scheduler logical timer. The committed path cancels
+the other registration; deadline expiry requests target cancellation and the
+waiter observes the resulting terminal state. Root-frame timeouts use
+`Scheduler.wait()` under the same timer registration. No host-thread sleep or
+wall-clock time enters deterministic scheduling.

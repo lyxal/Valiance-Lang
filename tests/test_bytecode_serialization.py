@@ -18,10 +18,58 @@ from valiance.runtime.bytecode import (
     VectorExtensionReference,
 )
 
-from valiance.runtime.runtime_values import RuntimeNumber
+from valiance.runtime.runtime_values import FFIScalarValue, RuntimeNumber
 
 
 class BytecodeSerializationTests(unittest.TestCase):
+    def test_ffi_scalar_constants_round_trip_with_exact_type_identity(self):
+        values = (
+            FFIScalarValue("&i32", 42),
+            FFIScalarValue("&f64", 2.5),
+            FFIScalarValue("&bool", True),
+            FFIScalarValue("&char", "A"),
+            FFIScalarValue("&void", None),
+        )
+        for value in values:
+            with self.subTest(value=value):
+                program = Program(
+                    FunctionCode(
+                        (
+                            Instruction(OpCode.PUSH_CONST, value),
+                            Instruction(OpCode.STORE_VAR, "value"),
+                            Instruction(OpCode.LOAD_VAR, "value"),
+                            Instruction(OpCode.RETURN),
+                        ),
+                        name="<main>",
+                    )
+                )
+                decoded = loads(dumps(program))
+                restored = decoded.main.instructions[0].arg
+                self.assertEqual(restored, value)
+                self.assertIsInstance(restored, FFIScalarValue)
+                self.assertEqual(restored.ffi_type, value.ffi_type)
+                self.assertEqual(run(decoded), [value])
+
+    def test_ffi_scalar_can_be_nested_in_serialized_metadata_tuples(self):
+        value = (FFIScalarValue("&u8", 255), "payload")
+        program = Program(
+            FunctionCode((Instruction(OpCode.PUSH_CONST, value),), name="<main>")
+        )
+        self.assertEqual(
+            loads(dumps(program)).main.instructions[0].arg,
+            value,
+        )
+
+    def test_malformed_ffi_scalar_payload_is_rejected(self):
+        value = FFIScalarValue("&i32", 42)
+        program = Program(
+            FunctionCode((Instruction(OpCode.PUSH_CONST, value),), name="<main>")
+        )
+        data = dumps(program)
+        corrupted = data.replace(b"&i32", b" i32", 1)
+        with self.assertRaises(BytecodeFormatError):
+            loads(corrupted)
+
     def test_index_operation_specs_round_trip_as_named_payloads(self):
         spec = IndexOperationSpec(
             selectors=(
@@ -253,7 +301,7 @@ class BytecodeSerializationTests(unittest.TestCase):
         data = dumps(program)
         decoded = loads(data)
 
-        self.assertTrue(data.startswith(b"VLNCBC\x22"))
+        self.assertTrue(data.startswith(b"VLNCBC\x29"))
         self.assertNotIn(b"push_const", data)
         self.assertNotIn(b"valiance-bytecode", data)
         self.assertEqual(decoded, program)
@@ -487,5 +535,344 @@ class BytecodeSerializationTests(unittest.TestCase):
             dumps(program)
 
 
+class FFIPlainStructTests(unittest.TestCase):
+    def test_plain_struct_native_call_round_trip(self):
+        import tempfile
+        from valiance.runtime.bytecode import NativeCallReference
+        from valiance.runtime.runtime_values import FFIScalarValue, FFIStructValue
+        from valiance.vtypes import FFIFieldSpec, FFIStructSpec
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "point.c")
+            library = os.path.join(directory, "libpoint.so")
+            with open(source, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "typedef struct { int x; int y; } Point;\n"
+                    "Point add(Point a, Point b) { Point r = {a.x+b.x,a.y+b.y}; return r; }\n"
+                )
+            subprocess.run(["cc", "-shared", "-fPIC", source, "-o", library], check=True)
+            spec = FFIStructSpec(
+                "&Point",
+                (FFIFieldSpec("x", "&int"), FFIFieldSpec("y", "&int")),
+            )
+            left = FFIStructValue("&Point", (("x", FFIScalarValue("&int", 2)), ("y", FFIScalarValue("&int", 3))))
+            right = FFIStructValue("&Point", (("x", FFIScalarValue("&int", 5)), ("y", FFIScalarValue("&int", 7))))
+            reference = NativeCallReference(library, "add", ("&Point", "&Point"), "&Point", (spec,))
+            program = Program(FunctionCode((
+                Instruction(OpCode.PUSH_CONST, left),
+                Instruction(OpCode.PUSH_CONST, right),
+                Instruction(OpCode.CALL_NATIVE, reference),
+                Instruction(OpCode.RETURN),
+            ), name="<main>"))
+            decoded = loads(dumps(program))
+            self.assertEqual(decoded, program)
+            result = run(decoded)[0]
+            self.assertEqual(result.type_name, "&Point")
+            self.assertEqual(result.fields["x"], FFIScalarValue("&int", 7))
+            self.assertEqual(result.fields["y"], FFIScalarValue("&int", 10))
+
+
+
+class FFIOpaqueHandleTests(unittest.TestCase):
+    def test_opaque_handle_lifecycle_calls_survive_bytecode(self):
+        import tempfile
+        from valiance.runtime.bytecode import NativeCallReference
+        from valiance.runtime.runtime_values import FFIScalarValue, FFIHandleValue
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "counter.c")
+            library = os.path.join(directory, "libcounter.so")
+            with open(source, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "#include <stdlib.h>\n"
+                    "typedef struct Counter { int value; } Counter;\n"
+                    "Counter* counter_create(int n) { Counter* c=malloc(sizeof(Counter)); c->value=n; return c; }\n"
+                    "void counter_inc(Counter* c) { c->value++; }\n"
+                    "int counter_get(Counter* c) { return c->value; }\n"
+                    "void counter_destroy(Counter* c) { free(c); }\n"
+                )
+            subprocess.run(["cc", "-shared", "-fPIC", source, "-o", library], check=True)
+            handles = ("&Counter",)
+            create = NativeCallReference(library, "counter_create", ("&int",), "&Counter", (), handles)
+            get = NativeCallReference(library, "counter_get", ("&Counter",), "&int", (), handles)
+            program = Program(FunctionCode((
+                Instruction(OpCode.PUSH_CONST, FFIScalarValue("&int", 41)),
+                Instruction(OpCode.CALL_NATIVE, create),
+                Instruction(OpCode.CALL_NATIVE, get),
+                Instruction(OpCode.RETURN),
+            ), name="<main>"))
+            decoded = loads(dumps(program))
+            self.assertEqual(decoded, program)
+            self.assertEqual(run(decoded), [FFIScalarValue("&int", 41)])
+
+
+
+class FFIFlatBufferAndEmbeddedArrayTests(unittest.TestCase):
+    def test_flat_buffer_and_embedded_array_round_trip_through_native_abi(self):
+        import tempfile
+        from valiance.runtime.bytecode import NativeCallReference
+        from valiance.runtime.runtime_values import FFIBufferValue, FFIScalarValue
+        from valiance.vtypes import FFIFieldSpec, FFIStructSpec
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "buffer.c")
+            library = os.path.join(directory, "libbuffer.so")
+            with open(source, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "typedef struct { int values[4]; int checksum; } Packet;\n"
+                    "int sum_values(const int* v, int n) { int s=0; for(int i=0;i<n;i++) s+=v[i]; return s; }\n"
+                    "Packet make_packet(void) { Packet p={{1,2,3,4},10}; return p; }\n"
+                )
+            subprocess.run(["cc", "-shared", "-fPIC", source, "-o", library], check=True)
+            values = FFIBufferValue(
+                "&int", tuple(FFIScalarValue("&int", item) for item in (1,2,3,4))
+            )
+            sum_ref = NativeCallReference(
+                library, "sum_values", ("&int+", "&int"), "&int"
+            )
+            sum_program = Program(FunctionCode((
+                Instruction(OpCode.PUSH_CONST, values),
+                Instruction(OpCode.PUSH_CONST, FFIScalarValue("&int", 4)),
+                Instruction(OpCode.CALL_NATIVE, sum_ref),
+                Instruction(OpCode.RETURN),
+            ), name="<main>"))
+            self.assertEqual(
+                run(loads(dumps(sum_program))), [FFIScalarValue("&int", 10)]
+            )
+
+            packet = FFIStructSpec(
+                "&Packet",
+                (
+                    FFIFieldSpec("values", "&int", 4),
+                    FFIFieldSpec("checksum", "&int"),
+                ),
+            )
+            packet_ref = NativeCallReference(
+                library, "make_packet", (), "&Packet", (packet,)
+            )
+            packet_program = Program(FunctionCode((
+                Instruction(OpCode.CALL_NATIVE, packet_ref),
+                Instruction(OpCode.RETURN),
+            ), name="<main>"))
+            result = run(loads(dumps(packet_program)))[0]
+            self.assertEqual(
+                tuple(item.value for item in result.fields["values"].values),
+                (1,2,3,4),
+            )
+            self.assertEqual(result.fields["checksum"], FFIScalarValue("&int", 10))
+
+
+
+class FFIOwnedHandleLeaseTests(unittest.TestCase):
+    def test_destroy_metadata_and_handle_state_survive_native_execution(self):
+        import tempfile
+        from valiance.runtime.bytecode import NativeCallReference
+        from valiance.runtime.runtime_values import FFIHandleValue, FFIScalarValue
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = os.path.join(directory, "owned.c")
+            library = os.path.join(directory, "libowned.so")
+            with open(source, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "#include <stdlib.h>\n"
+                    "typedef struct H { int value; } H;\n"
+                    "static int destroyed=0;\n"
+                    "H* make_h(int n){H* h=malloc(sizeof(H));h->value=n;return h;}\n"
+                    "void free_h(H* h){destroyed++;free(h);}\n"
+                    "int destroyed_count(void){return destroyed;}\n"
+                )
+            subprocess.run(["cc", "-shared", "-fPIC", source, "-o", library], check=True)
+            handles = ("&H",)
+            make = NativeCallReference(library, "make_h", ("&int",), "&H", (), handles)
+            destroy = NativeCallReference(
+                library, "free_h", ("&H",), None, (), handles, (0,)
+            )
+            count = NativeCallReference(library, "destroyed_count", (), "&int")
+            program = Program(FunctionCode((
+                Instruction(OpCode.PUSH_CONST, FFIScalarValue("&int", 7)),
+                Instruction(OpCode.CALL_NATIVE, make),
+                Instruction(OpCode.STORE_VAR, "handle"),
+                Instruction(OpCode.LOAD_VAR, "handle"),
+                Instruction(OpCode.CALL_NATIVE, destroy),
+                Instruction(OpCode.CALL_NATIVE, count),
+                Instruction(OpCode.RETURN),
+            ), name="<main>"))
+            restored = loads(dumps(program))
+            self.assertEqual(restored, program)
+            self.assertEqual(run(restored), [FFIScalarValue("&int", 1)])
+
+    def test_handle_destroy_waits_for_active_leases(self):
+        from valiance.runtime.runtime_values import FFIHandleValue
+        handle = FFIHandleValue("&H", 1)
+        handle.acquire_lease()
+        handle.request_destroy()
+        self.assertTrue(handle.alive)
+        self.assertTrue(handle.destroy_pending)
+        with self.assertRaises(ValueError):
+            handle.acquire_lease()
+        handle.release_lease()
+        self.assertFalse(handle.alive)
+        with self.assertRaises(ValueError):
+            handle.request_destroy()
+
+
+
 if __name__ == "__main__":
     unittest.main()
+
+class FFIOwnedReturnTests(unittest.TestCase):
+    def _compile_program(self, typed):
+        from valiance.runtime import compile_program
+        return compile_program(typed)
+
+    def _compile_library(self, directory):
+        source = os.path.join(directory, "owned_returns.c")
+        library = os.path.join(directory, "libowned_returns.so")
+        with open(source, "w", encoding="utf-8") as stream:
+            stream.write(
+                "#include <stdlib.h>\n#include <string.h>\n"
+                "static int frees=0;\n"
+                "char* greeting(void){char* p=malloc(6);memcpy(p,\"hello\",6);return p;}\n"
+                "char* bad_utf8(void){char* p=malloc(2);p[0]=(char)0xff;p[1]=0;return p;}\n"
+                "char* maybe_null(void){return 0;}\n"
+                "int* numbers(void){int* p=malloc(3*sizeof(int));p[0]=2;p[1]=4;p[2]=6;return p;}\n"
+                "void release(void* p){frees++;free(p);}\n"
+                "int free_count(void){return frees;}\n"
+            )
+        subprocess.run(["cc", "-shared", "-fPIC", source, "-o", library], check=True)
+        return library
+
+    def test_owned_string_and_buffer_copy_then_free(self):
+        import tempfile
+        from valiance.analysis import Analyser
+        from valiance.parsing import parse
+        from valiance.runtime.runtime_values import FFIBufferValue
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._compile_library(directory)
+            source = (
+                f'import {{ffi("{library}") as owned}}\n'
+                '@owned("release") link owned.greeting() -> &CString as greeting\n'
+                '@owned("release", size = 3) link owned.numbers() -> &int+ as numbers\n'
+                'greeting\nnumbers\n'
+            )
+            analyser = Analyser()
+            typed = analyser.analyse(parse(source))
+            self.assertEqual(analyser.diagnostics, [])
+            result = run(loads(dumps(self._compile_program(typed))))
+            self.assertEqual(result[0], "hello")
+            self.assertIsInstance(result[1], FFIBufferValue)
+            self.assertEqual(tuple(item.value for item in result[1].values), (2, 4, 6))
+
+    def test_invalid_utf8_is_freed_before_failure(self):
+        import ctypes
+        import tempfile
+        from valiance.analysis import Analyser
+        from valiance.parsing import parse
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._compile_library(directory)
+            source = (
+                f'import {{ffi("{library}") as owned}}\n'
+                '@owned("release") link owned.bad_utf8() -> &CString as bad\n'
+                'bad\n'
+            )
+            analyser = Analyser()
+            typed = analyser.analyse(parse(source))
+            self.assertEqual(analyser.diagnostics, [])
+            with self.assertRaises(RuntimeError):
+                run(self._compile_program(typed))
+            native = ctypes.CDLL(library)
+            native.free_count.restype = ctypes.c_int
+            self.assertEqual(native.free_count(), 1)
+
+    def test_nullable_owned_return_maps_null_to_none_without_free(self):
+        import tempfile
+        from valiance.analysis import Analyser
+        from valiance.parsing import parse
+        with tempfile.TemporaryDirectory() as directory:
+            library = self._compile_library(directory)
+            source = (
+                f'import {{ffi("{library}") as owned}}\n'
+                '@owned("release") @nullable '
+                'link owned.maybe_null() -> &CString as maybe\n'
+                'maybe\n'
+            )
+            analyser = Analyser()
+            typed = analyser.analyse(parse(source))
+            self.assertEqual(analyser.diagnostics, [])
+            self.assertEqual(run(loads(dumps(self._compile_program(typed)))), [None])
+
+class FFIComputedLinkedFieldTests(unittest.TestCase):
+    def test_nested_scalar_and_embedded_array_fields_survive_bytecode(self):
+        import tempfile
+        from valiance.analysis import Analyser
+        from valiance.parsing import parse
+        from valiance.runtime import compile_program
+        from valiance.runtime.runtime_values import FFIBufferValue, FFIScalarValue
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "fields.c")
+            library = os.path.join(directory, "libfields.so")
+            with open(source_path, "w", encoding="utf-8") as stream:
+                stream.write(
+                    "typedef struct { int x; int y; } Point;\n"
+                    "typedef struct { Point origin; int samples[3]; } Shape;\n"
+                    "Shape make_shape(void){Shape s={{4,7},{2,3,5}};return s;}\n"
+                )
+            subprocess.run(["cc", "-shared", "-fPIC", source_path, "-o", library], check=True)
+            source = (
+                f'import {{ffi("{library}") as f}}\n'
+                'link f.Point as &Point =>\n  $x: &int\n  $y: &int\nend\n'
+                'link f.Shape as &Shape =>\n'
+                '  $origin: &Point\n  $samples: &int+ size => 3\nend\n'
+                'link f.make_shape() -> &Shape as makeShape\n'
+                '$shape = makeShape\n$shape.origin.x\n$shape.samples\n'
+            )
+            analyser = Analyser()
+            typed = analyser.analyse(parse(source))
+            self.assertEqual(analyser.diagnostics, [])
+            result = run(loads(dumps(compile_program(typed, optimize=True))))
+            self.assertEqual(result[0], FFIScalarValue("&int", 4))
+            self.assertIsInstance(result[1], FFIBufferValue)
+            self.assertEqual(tuple(item.value for item in result[1].values), (2, 3, 5))
+
+class FFILinkedReturnConversionTests(unittest.TestCase):
+    def test_same_module_declared_conversion_survives_optimization_and_bytecode(self):
+        import tempfile
+        from valiance.analysis import Analyser
+        from valiance.parsing import parse
+        from valiance.runtime import compile_program
+        with tempfile.TemporaryDirectory() as directory:
+            source_path = os.path.join(directory, "converted.c")
+            library = os.path.join(directory, "libconverted.so")
+            with open(source_path, "w", encoding="utf-8") as stream:
+                stream.write("int answer(void){return 42;}\n")
+            subprocess.run(["cc", "-shared", "-fPIC", source_path, "-o", library], check=True)
+            source = (
+                f'import {{ffi("{library}") as converted}}\n'
+                '@convert(&int -> String)\n'
+                'define to(value: &int) -> String => "converted" end\n'
+                'link converted.answer() -> (String) &int as answer\n'
+                'answer\n'
+            )
+            analyser = Analyser()
+            typed = analyser.analyse(parse(source))
+            self.assertEqual(analyser.diagnostics, [])
+            program = compile_program(typed, optimize=True)
+            self.assertEqual(run(program), ["converted"])
+            self.assertEqual(run(loads(dumps(program))), ["converted"])
+
+class FFICallbackMetadataTests(unittest.TestCase):
+    def test_callback_metadata_survives_bytecode(self):
+        from valiance.runtime.bytecode import NativeCallReference
+        from valiance.vtypes import FFICallbackSpec
+        reference = NativeCallReference(
+            "/tmp/callback.so",
+            "apply",
+            ("&callback",),
+            "&int",
+            callbacks=(FFICallbackSpec(0, ("&int",), "&int"),),
+        )
+        program = Program(FunctionCode((
+            Instruction(OpCode.CALL_NATIVE, reference),
+            Instruction(OpCode.RETURN),
+        ), name="<main>"))
+        self.assertEqual(loads(dumps(program)), program)

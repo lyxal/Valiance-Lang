@@ -7,7 +7,7 @@ from valiance.runtime import (
     TransferClass,
     validate_task_transfer,
 )
-from valiance.runtime.runtime_values import LazyList
+from valiance.runtime.runtime_values import FFIScalarValue, LazyList
 
 
 class Resource(IsolatedResource):
@@ -21,6 +21,12 @@ class ClosureLike:
 
 
 class TransferValidationTests(unittest.TestCase):
+    def test_plain_ffi_scalars_are_transferable_values(self):
+        value = FFIScalarValue("&i64", 123)
+        self.assertIs(value.task_transfer_class if hasattr(value, "task_transfer_class") else None, None)
+        self.assertEqual(validate_task_transfer(value), ())
+        self.assertEqual(validate_task_transfer([value, {"nested": value}]), ())
+
     def test_value_graph_is_transferable_without_deep_copy(self):
         value = {"items": [1, 2, {"name": "ok"}]}
         self.assertEqual(validate_task_transfer(value), ())

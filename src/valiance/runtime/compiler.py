@@ -38,6 +38,8 @@ from valiance.asts import (
     IndexSetNode,
     ListLiteralNode,
     ListPatternNode,
+    LinkNode,
+    LinkTypeNode,
     LiteralPatternNode,
     MatchCaseNode,
     MatchNode,
@@ -62,7 +64,9 @@ from valiance.asts import (
     TryNode,
     TupleLiteralNode,
     TypedAssertNode,
+    TypedCancelNode,
     TypedChannelNode,
+    TypedTimeoutNode,
     TypedConcurrentNode,
     TypedSpawnNode,
     TypedWaitNode,
@@ -100,6 +104,7 @@ from valiance.runtime.bytecode import (
     IndexOperationSpec,
     IndexSelectorSpec,
     Instruction,
+    NativeCallReference,
     ObjectConstructorReference,
     OpCode,
     Program,
@@ -115,11 +120,13 @@ from valiance.vtypes import (
     DataTag,
     NoVecType,
     FunctionType,
+    FFINamedType,
     IntersectionType,
     ListExactType,
     ListMinType,
     ListRuggedType,
     NominalType,
+    NativeLinkSpec,
     NoneTypeNode,
     Overload,
     RankVariable,
@@ -425,6 +432,12 @@ class _Compiler:
                 ),
             )
             return
+        if isinstance(typed_node, TypedCancelNode):
+            self.emit(OpCode.CANCEL_TASK, _source_site(typed_node.node))
+            return
+        if isinstance(typed_node, TypedTimeoutNode):
+            self.emit(OpCode.TIMEOUT_TASK, (len(typed_node.output_types), _source_site(typed_node.node)))
+            return
         if isinstance(typed_node, TypedWaitNode):
             self.emit(
                 OpCode.WAIT_TASKS_VECTORISED
@@ -550,6 +563,36 @@ class _Compiler:
                             tuple(labels[index] for index in typed_node.call_arg_order),
                         ),
                     )
+                native_link = (
+                    typed_node.overload.overload.native_link
+                    if isinstance(typed_node, TypedElementNode)
+                    and typed_node.overload is not None
+                    else None
+                )
+                if isinstance(native_link, NativeLinkSpec):
+                    self.emit(OpCode.CALL_NATIVE, NativeCallReference(
+                        native_link.library, native_link.symbol,
+                        native_link.param_types, native_link.return_type,
+                        native_link.structs,
+                        native_link.handles,
+                        native_link.destroy_params,
+                        native_link.owned_return_free,
+                        native_link.owned_return_count,
+                        native_link.nullable_return,
+                        native_link.callbacks,
+                    ))
+                    if native_link.return_conversion is not None:
+                        conversion_name, conversion_index = native_link.return_conversion
+                        self.emit(
+                            OpCode.CALL_RESOLVED_ELEMENT,
+                            ResolvedElementReference(
+                                conversion_name,
+                                conversion_index,
+                                arity_override=1,
+                                consumed_override=1,
+                            ),
+                        )
+                    return
                 resolved = _resolved_element_reference(typed_node)
                 if resolved is None:
                     self.emit(
@@ -723,6 +766,22 @@ class _Compiler:
                     ),
                 )
                 self.emit(OpCode.STORE_VAR, _symbol_runtime_name(runtime_name))
+            case LinkTypeNode(name=name, fields=fields):
+                if not fields:
+                    return
+                self.emit(
+                    OpCode.MAKE_OBJECT_CONSTRUCTOR,
+                    ObjectConstructorReference(
+                        f"&{name}",
+                        tuple(field.name.text for field in fields),
+                        tuple(field.name.text for field in fields),
+                        (),
+                    ),
+                )
+                self.emit(OpCode.STORE_VAR, _symbol_runtime_name(name))
+                return
+            case LinkNode():
+                return
             case ImportNode():
                 pass
             case ListLiteralNode(items):
@@ -2002,6 +2061,8 @@ def _runtime_supertype_template(
 def _runtime_type_template(typ: Type, indexes: dict[str, int]) -> str:
     """Render a static type with declaration generics as ``$N`` slots."""
     typ = normalize(typ)
+    if isinstance(typ, FFINamedType):
+        return show(typ)
     if isinstance(typ, NominalType):
         if not typ.args and typ.name.text in indexes:
             return f"${indexes[typ.name.text]}"
@@ -2235,6 +2296,7 @@ def _resolved_element_reference(
     )
     elements = runtime_elements()
     element = elements.get(source_runtime_name)
+    runtime_builtin_present = element is not None
     if element is not None:
         if not 0 <= node.overload_index < len(element.definitions):
             return None
@@ -2250,9 +2312,15 @@ def _resolved_element_reference(
             and node.overload.overload.call_site_body is None
             and not type_args
         ):
-            return None
+            # User conversion definitions intentionally shadow the
+            # compiler-owned conversion catalogue under the reserved `to`
+            # name. Preserve that selected user slot; unrelated built-in
+            # shadows retain the established dynamic-call fallback.
+            if source_runtime_name != "to":
+                return None
+            element = None
     if (
-        element is None
+        not runtime_builtin_present
         and Symbol(source_runtime_name) in {item.name for item in BUILTIN_ELEMENTS}
         and not type_args
     ):
@@ -2614,6 +2682,8 @@ def _runtime_tag_contract_spec(typ: Type) -> object:
         return ("none",)
     if isinstance(typ, VarType):
         return ("any",)
+    if isinstance(typ, FFINamedType):
+        return ("ffi", show(typ))
     if isinstance(typ, NominalType):
         return ("nominal", typ.name.text)
     if isinstance(typ, UnionType):
@@ -2659,6 +2729,8 @@ def _cast_type_spec(typ: Type) -> object:
             _cast_type_spec(typ.inner),
             tuple((str(tag.name), tag.depth, tag.absent) for tag in sorted(typ.tags)),
         )
+    if isinstance(typ, FFINamedType):
+        return ("ffi", show(typ))
     if isinstance(typ, NominalType):
         return (
             "nominal",

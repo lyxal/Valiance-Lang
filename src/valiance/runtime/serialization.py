@@ -13,22 +13,28 @@ from valiance.runtime.bytecode import (
     IndexOperationSpec,
     IndexSelectorSpec,
     Instruction,
+    NativeCallReference,
     ObjectConstructorReference,
     OpCode,
     Program,
     ResolvedElementReference,
     VectorExtensionReference,
 )
-from valiance.runtime.runtime_values import RuntimeNumber
+from valiance.runtime.runtime_values import (
+    FFIBufferValue, FFIScalarValue, FFIStructValue, RuntimeNumber,
+)
 from valiance.vtypes import (
     DataTag,
+    FFICallbackSpec,
+    FFIFieldSpec,
+    FFIStructSpec,
     RuntimeTypePattern,
     UnionDispatchBranch,
     Variance,
 )
 
 MAGIC_PREFIX = b"VLNCBC"
-BYTECODE_VERSION = 0x22
+BYTECODE_VERSION = 0x29
 MAGIC = MAGIC_PREFIX + bytes((BYTECODE_VERSION,))
 
 _OP_TO_BYTE = {
@@ -52,6 +58,7 @@ _OP_TO_BYTE = {
     OpCode.POP: 0x12,
     OpCode.RETURN: 0x13,
     OpCode.CALL_RESOLVED_ELEMENT: 0x14,
+    OpCode.CALL_NATIVE: 0x42,
     OpCode.JUMP_IF_MATCH: 0x15,
     OpCode.MATCH_ERROR: 0x16,
     OpCode.ASSERT_TRUE: 0x17,
@@ -88,6 +95,8 @@ _OP_TO_BYTE = {
     OpCode.SPAWN_CALL: 0x36,
     OpCode.WAIT_TASK: 0x37,
     OpCode.WAIT_TASKS_VECTORISED: 0x38,
+    OpCode.CANCEL_TASK: 0x44,
+    OpCode.TIMEOUT_TASK: 0x45,
     OpCode.SCOPE_BEGIN: 0x39,
     OpCode.SCOPE_END: 0x3A,
     OpCode.CHANNEL_NEW: 0x3B,
@@ -113,6 +122,11 @@ _VECTOR_EXTENSION_REFERENCE = 0x09
 _OBJECT_CONSTRUCTOR_REFERENCE = 0x0A
 _BOOL = 0x0B
 _INDEX_OPERATION_SPEC = 0x0C
+_FFI_SCALAR = 0x0D
+_FLOAT = 0x0E
+_NATIVE_CALL_REFERENCE = 0x0F
+_FFI_STRUCT = 0x10
+_FFI_BUFFER = 0x11
 
 
 def _validate_occurrence_effects(
@@ -241,7 +255,7 @@ def _validate_concurrency_bytecode(code: FunctionCode) -> None:
                 )
             ):
                 raise BytecodeFormatError("invalid spawn call payload")
-        elif op in {OpCode.WAIT_TASK, OpCode.WAIT_TASKS_VECTORISED}:
+        elif op in {OpCode.WAIT_TASK, OpCode.WAIT_TASKS_VECTORISED, OpCode.TIMEOUT_TASK}:
             count = argument[0] if isinstance(argument, tuple) and len(argument) == 2 else argument
             location = argument[1] if isinstance(argument, tuple) and len(argument) == 2 else None
             if (
@@ -381,12 +395,27 @@ class _Writer:
         elif isinstance(value, int):
             self.u8(_INT)
             self.i64(value)
+        elif isinstance(value, float):
+            self.u8(_FLOAT)
+            self.bytes(struct.pack(">d", value))
         elif isinstance(value, RuntimeNumber):
             self.u8(_DECIMAL)
             self.string(str(value))
         elif isinstance(value, str):
             self.u8(_STRING)
             self.string(value)
+        elif isinstance(value, FFIScalarValue):
+            self.u8(_FFI_SCALAR)
+            self.string(value.ffi_type)
+            self.value(value.value)
+        elif isinstance(value, FFIBufferValue):
+            self.u8(_FFI_BUFFER)
+            self.string(value.element_type)
+            self.value(value.values)
+        elif isinstance(value, FFIStructValue):
+            self.u8(_FFI_STRUCT)
+            self.string(value.ffi_type)
+            self.value(value.fields)
         elif isinstance(value, tuple):
             self.u8(_TUPLE)
             self.u32(len(value))
@@ -401,6 +430,33 @@ class _Writer:
         elif isinstance(value, ResolvedElementReference):
             self.u8(_RESOLVED_ELEMENT_REFERENCE)
             self.resolved_element_reference(value)
+        elif isinstance(value, NativeCallReference):
+            self.u8(_NATIVE_CALL_REFERENCE)
+            self.string(value.library)
+            self.string(value.symbol)
+            self.value(value.param_types)
+            self.optional_string(value.return_type)
+            self.value(
+                tuple(
+                    (
+                        item.name,
+                        tuple(
+                            (field.name, field.type_name, field.fixed_size)
+                            for field in item.fields
+                        ),
+                    )
+                    for item in value.structs
+                )
+            )
+            self.value(value.handles)
+            self.value(value.destroy_params)
+            self.optional_string(value.owned_return_free)
+            self.value(value.owned_return_count)
+            self.bool(value.nullable_return)
+            self.value(tuple(
+                (item.index, item.param_types, item.return_type)
+                for item in value.callbacks
+            ))
         elif isinstance(value, ExtensionRuleReference):
             self.u8(_EXTENSION_RULE_REFERENCE)
             self.extension_rule_reference(value)
@@ -641,10 +697,35 @@ class _Reader:
             return self.i64()
         if tag == _BOOL:
             return self.bool()
+        if tag == _FLOAT:
+            return struct.unpack(">d", self.take(8))[0]
         if tag == _DECIMAL:
             return RuntimeNumber(self.string())
         if tag == _STRING:
             return self.string()
+        if tag == _FFI_BUFFER:
+            element_type, values = self.string(), self.value()
+            if not isinstance(values, tuple):
+                raise BytecodeFormatError("invalid FFI buffer values")
+            try:
+                return FFIBufferValue(element_type, values)
+            except (TypeError, ValueError) as exc:
+                raise BytecodeFormatError(f"invalid FFI buffer: {exc}") from exc
+        if tag == _FFI_STRUCT:
+            ffi_type, fields = self.string(), self.value()
+            if not isinstance(fields, tuple):
+                raise BytecodeFormatError("invalid FFI struct fields")
+            try:
+                return FFIStructValue(ffi_type, fields)
+            except (TypeError, ValueError) as exc:
+                raise BytecodeFormatError(f"invalid FFI struct value: {exc}") from exc
+        if tag == _FFI_SCALAR:
+            ffi_type = self.string()
+            payload = self.value()
+            try:
+                return FFIScalarValue(ffi_type, payload)
+            except (TypeError, ValueError) as exc:
+                raise BytecodeFormatError(f"invalid FFI scalar value: {exc}") from exc
         if tag == _TUPLE:
             return tuple(self.value() for _ in range(self.u32()))
         if tag == _FUNCTION:
@@ -653,6 +734,65 @@ class _Reader:
             return self.function_set()
         if tag == _RESOLVED_ELEMENT_REFERENCE:
             return self.resolved_element_reference()
+        if tag == _NATIVE_CALL_REFERENCE:
+            library, symbol = self.string(), self.string()
+            (
+                params, result, raw_structs, handles, destroy_params,
+                owned_return_free, owned_return_count, nullable_return, raw_callbacks,
+            ) = (
+                self.value(), self.optional_string(), self.value(), self.value(),
+                self.value(), self.optional_string(), self.value(), self.bool(), self.value(),
+            )
+            if not isinstance(params, tuple) or not all(isinstance(x, str) for x in params):
+                raise BytecodeFormatError("invalid native call parameter types")
+            try:
+                structs = tuple(
+                    FFIStructSpec(
+                        name,
+                        tuple(
+                            FFIFieldSpec(field_name, type_name, fixed_size)
+                            for field_name, type_name, fixed_size in fields
+                        ),
+                    )
+                    for name, fields in raw_structs
+                )
+            except (TypeError, ValueError) as exc:
+                raise BytecodeFormatError("invalid native struct metadata") from exc
+            if not isinstance(handles, tuple) or not all(
+                isinstance(item, str) and item.startswith("&") for item in handles
+            ) or len(set(handles)) != len(handles):
+                raise BytecodeFormatError("invalid native handle metadata")
+            if not isinstance(destroy_params, tuple) or not all(
+                isinstance(item, int) and 0 <= item < len(params)
+                for item in destroy_params
+            ):
+                raise BytecodeFormatError("invalid native destroy parameter metadata")
+            if owned_return_count is not None and (
+                not isinstance(owned_return_count, int) or owned_return_count < 0
+            ):
+                raise BytecodeFormatError("invalid native owned-return size")
+            if owned_return_free is None and (
+                owned_return_count is not None or nullable_return
+            ):
+                raise BytecodeFormatError("owned-return metadata requires a free symbol")
+            try:
+                callbacks = tuple(
+                    FFICallbackSpec(index, callback_params, callback_return)
+                    for index, callback_params, callback_return in raw_callbacks
+                )
+            except (TypeError, ValueError) as exc:
+                raise BytecodeFormatError("invalid native callback metadata") from exc
+            if any(
+                item.index < 0 or item.index >= len(params)
+                or params[item.index] != "&callback"
+                or not all(isinstance(value, str) for value in item.param_types)
+                for item in callbacks
+            ):
+                raise BytecodeFormatError("invalid native callback metadata")
+            return NativeCallReference(
+                library, symbol, params, result, structs, handles, destroy_params,
+                owned_return_free, owned_return_count, nullable_return, callbacks,
+            )
         if tag == _EXTENSION_RULE_REFERENCE:
             return self.extension_rule_reference()
         if tag == _VECTOR_EXTENSION_REFERENCE:

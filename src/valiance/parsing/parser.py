@@ -44,6 +44,9 @@ from valiance.asts import (
     IndexUpdateNode,
     ListLiteralNode,
     ListPatternNode,
+    LinkNode,
+    LinkedFieldNode,
+    LinkTypeNode,
     LintSuppressionNode,
     LiteralPatternNode,
     MatchCaseNode,
@@ -95,6 +98,7 @@ from valiance.vtypes import (
     ExactTags,
     NoVecType,
     Field,
+    FFI,
     Fn,
     FunctionType,
     I,
@@ -104,6 +108,7 @@ from valiance.vtypes import (
     ListRuggedType,
     N,
     NominalType,
+    FFINamedType,
     NoneType,
     Overload,
     RankVariable,
@@ -280,6 +285,8 @@ class Parser:
             or (self._check(TokenKind.OP) and self._current.value.startswith("#"))
         ):
             self._error("overload must be followed by define or fn")
+        if self._match_ident("link"):
+            return (self._link(self._previous, annotations),)
         if self._match_ident("import"):
             return (
                 self._import(
@@ -426,6 +433,66 @@ class Parser:
             ),
         )
 
+    def _link(
+        self, start: Token, annotations: tuple[ASTNode, ...] = ()
+    ) -> LinkNode:
+        """Parse ``link namespace.symbol(:&T, ...) -> &R [as name]``."""
+        namespace = self._symbol("expected FFI namespace")
+        self._expect(TokenKind.DOT)
+        symbol = self._symbol("expected native symbol")
+        if self._match_ident("as"):
+            linked_type = self.parse_type_expression()
+            if not isinstance(linked_type, FFINamedType) or linked_type.args:
+                self._error("linked struct name must be one unparameterized FFI type")
+            self._expect(TokenKind.FAT_ARROW)
+            self._skip_newlines()
+            fields: list[LinkedFieldNode] = []
+            while not self._check_ident("end"):
+                self._expect(TokenKind.DOLLAR)
+                field_name = self._symbol("expected linked field name")
+                self._expect(TokenKind.COLON)
+                field_type = self.parse_type_expression()
+                fixed_size = None
+                if self._match_ident("size"):
+                    self._expect(TokenKind.FAT_ARROW)
+                    size_token = self._expect(TokenKind.NUMBER)
+                    if not size_token.value.isdecimal() or int(size_token.value) < 1:
+                        self._error("linked fixed field size must be a positive integer")
+                    fixed_size = int(size_token.value)
+                fields.append(
+                    LinkedFieldNode(
+                        field_name, field_type, fixed_size, location=_loc(start)
+                    )
+                )
+                self._skip_separators()
+            self._expect_ident("end")
+            return LinkTypeNode(namespace, symbol, linked_type.name, tuple(fields), location=_loc(start))
+        self._expect(TokenKind.LPAREN)
+        params: list[Type] = []
+        self._skip_newlines()
+        if not self._match(TokenKind.RPAREN):
+            while True:
+                self._match(TokenKind.COLON)
+                params.append(self.parse_type_expression())
+                if self._match(TokenKind.RPAREN):
+                    break
+                self._expect(TokenKind.COMMA)
+        returns: tuple[Type, ...] = ()
+        converted_return = None
+        if self._match(TokenKind.ARROW):
+            if self._match(TokenKind.LPAREN):
+                converted_return = self.parse_type_expression()
+                self._expect(TokenKind.RPAREN)
+            returns = (self.parse_type_expression(),)
+        alias = None
+        if self._match_ident("as"):
+            alias = self._symbol("expected link alias")
+        return LinkNode(
+            namespace, symbol, tuple(params), returns, converted_return,
+            alias, annotations,
+            location=_loc(start),
+        )
+
     def _import(self, start: Token, *, public: bool = False) -> ImportNode:
         """Parse import from the current token stream."""
         self._expect(TokenKind.LBRACE)
@@ -459,7 +526,13 @@ class Parser:
         return ImportSpec(path, alias, components)
 
     def _import_path(self) -> ImportPath:
-        """Parse an import path, stopping before a selected component."""
+        """Parse an import path, including ``ffi("library")`` sources."""
+        if self._check_ident("ffi") and self._peek(1).kind == TokenKind.LPAREN:
+            self._advance()
+            self._expect(TokenKind.LPAREN)
+            library = self._expect(TokenKind.STRING).value
+            self._expect(TokenKind.RPAREN)
+            return ImportPath((f"ffi:{library}",), Symbol("ffi"))
         root = None
         parts: list[str] = []
         if self._check(TokenKind.OP) and self._current.value == "~":
@@ -2113,7 +2186,16 @@ class Parser:
             TokenKind.OP,
         ):
             self._advance()
-            parts.append(self._advance().value)
+            component = self._advance()
+            text = component.value
+            last = component
+            while (
+                self._check(TokenKind.IDENT, TokenKind.OP)
+                and self._adjacent(last, self._current)
+            ):
+                last = self._advance()
+                text += last.value
+            parts.append(text)
         name = Symbol(parts[-1], tuple(parts[:-1]))
         if self._match(TokenKind.DOUBLE_COLON):
             if not self._match(TokenKind.IDENT, TokenKind.OP):
@@ -2853,6 +2935,19 @@ class Parser:
                     self._skip_newlines()
                     self._expect(TokenKind.RPAREN)
                     args = (TypeLiteralNode(target, location=_loc(start)),)
+                elif name.text == "convert":
+                    self._skip_newlines()
+                    source = self.parse_type_expression()
+                    self._skip_newlines()
+                    self._expect(TokenKind.ARROW)
+                    self._skip_newlines()
+                    target = self.parse_type_expression()
+                    self._skip_newlines()
+                    self._expect(TokenKind.RPAREN)
+                    args = (
+                        TypeLiteralNode(source, location=_loc(start)),
+                        TypeLiteralNode(target, location=_loc(start)),
+                    )
                 else:
                     args, kwargs = self._annotation_arguments(TokenKind.RPAREN)
             annotations.append(AnnotationNode(name, args, kwargs, location=_loc(start)))
@@ -3150,6 +3245,8 @@ class Parser:
 
     def _type_primary(self) -> Type:
         """Parse type primary from the current token stream."""
+        if self._check_op("&"):
+            return self._ffi_type_primary()
         if self._check_ident("trait"):
             return self._anonymous_trait_type()
         if self._match(TokenKind.AT):
@@ -3237,6 +3334,26 @@ class Parser:
             self._expect(TokenKind.RPAREN)
             return typ
         self._error("expected type")
+
+    def _ffi_type_primary(self) -> Type:
+        """Parse one atomic type from the open ``&`` FFI namespace."""
+        self._advance()  # '&'
+        if not self._check(TokenKind.IDENT):
+            self._error("expected FFI type name after '&'")
+        parts = [self._advance().value]
+        while self._check(TokenKind.DOT) and self._peek(1).kind == TokenKind.IDENT:
+            self._advance()
+            parts.append(self._advance().value)
+        args: list[Type] = []
+        if self._match(TokenKind.LBRACKET):
+            if self._match(TokenKind.RBRACKET):
+                self._error("FFI type arguments cannot be empty")
+            while True:
+                args.append(self.parse_type_expression())
+                if self._match(TokenKind.RBRACKET):
+                    break
+                self._expect(TokenKind.COMMA)
+        return FFI(Symbol(parts[-1], tuple(parts[:-1])), *args)
 
     def _anonymous_trait_type(self) -> Type:
         """Parse anonymous trait type from the current token stream."""

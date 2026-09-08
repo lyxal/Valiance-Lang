@@ -511,6 +511,172 @@ class ObjectRuntimeType:
     field_order: tuple[str, ...] = ()
 
 
+@dataclass(slots=True)
+class FFIHandleValue:
+    """Shared identity for one opaque native pointer."""
+    ffi_type: str
+    address: int
+    alive: bool = True
+    active_leases: int = 0
+    destroy_pending: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate and normalize this FFI runtime value after construction."""
+        if not self.ffi_type.startswith("&") or self.address == 0:
+            raise ValueError("opaque FFI handles require a non-null native address")
+
+    @property
+    def type_name(self) -> str:
+        """Return the exact runtime type name for this FFI value."""
+        return self.ffi_type
+
+    def acquire_lease(self) -> None:
+        """Pin the native allocation while one host call may access it."""
+        if not self.alive or self.destroy_pending:
+            raise ValueError(f"{self.ffi_type} handle is not live")
+        self.active_leases += 1
+
+    def release_lease(self) -> None:
+        """Release one completed host-call lease."""
+        if self.active_leases < 1:
+            raise ValueError("native handle lease underflow")
+        self.active_leases -= 1
+        if self.active_leases == 0 and self.destroy_pending:
+            self.alive = False
+
+    def request_destroy(self) -> None:
+        """Prevent future calls and invalidate after the final active lease."""
+        if not self.alive or self.destroy_pending:
+            raise ValueError(f"{self.ffi_type} handle has already been released")
+        self.destroy_pending = True
+        if self.active_leases == 0:
+            self.alive = False
+
+    def invalidate(self) -> None:
+        """Mark this shared native handle identity as no longer usable."""
+        self.request_destroy()
+
+    def __str__(self) -> str:
+        """Return the user-facing representation of this FFI value."""
+        state = "live" if self.alive else "released"
+        return f"{self.ffi_type}<opaque {state}>"
+
+
+@dataclass(frozen=True, slots=True)
+class FFIBufferValue:
+    """Flat rank-one FFI buffer whose backing storage is pinned per native call."""
+    element_type: str
+    values: tuple["FFIScalarValue", ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize this FFI runtime value after construction."""
+        if not self.element_type.startswith("&"):
+            raise ValueError("FFI buffer element type must begin with '&'")
+        if any(value.ffi_type != self.element_type for value in self.values):
+            raise TypeError("FFI buffer items must match the declared element type")
+
+    @property
+    def ffi_type(self) -> str:
+        """Return the rank-one FFI buffer type spelling."""
+        return self.element_type + "+"
+
+    @property
+    def type_name(self) -> str:
+        """Return the exact runtime type name for this FFI value."""
+        return self.ffi_type
+
+    def __iter__(self):
+        """Iterate over the immutable FFI buffer values."""
+        return iter(self.values)
+
+    def __len__(self) -> int:
+        """Return the number of values in this FFI buffer."""
+        return len(self.values)
+
+    def __str__(self) -> str:
+        """Return the user-facing representation of this FFI value."""
+        return f"{self.ffi_type}[" + ", ".join(str(item.value) for item in self.values) + "]"
+
+
+@dataclass(frozen=True, slots=True)
+class FFIStructValue:
+    """Immutable first-class value for one plain declaration-order C struct."""
+    ffi_type: str
+    fields: tuple[tuple[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize this FFI runtime value after construction."""
+        if not self.ffi_type.startswith("&"):
+            raise ValueError("FFI struct type must begin with '&'")
+        names = tuple(name for name, _ in self.fields)
+        if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
+            raise ValueError("FFI struct fields require unique non-empty names")
+
+    @property
+    def type_name(self) -> str:
+        """Return the exact runtime type name for this FFI value."""
+        return self.ffi_type
+
+    def field(self, name: str) -> Any:
+        """Return a named field from this copied native structure."""
+        for field_name, value in self.fields:
+            if field_name == name:
+                return value
+        raise KeyError(name)
+
+    def with_field(self, name: str, value: Any) -> "FFIStructValue":
+        """Return a reconstructed native structure with one field replaced."""
+        if name not in {field_name for field_name, _ in self.fields}:
+            raise KeyError(name)
+        return FFIStructValue(self.ffi_type, tuple((field_name, value if field_name == name else current) for field_name, current in self.fields))
+
+    def __str__(self) -> str:
+        """Return the user-facing representation of this FFI value."""
+        return self.ffi_type + "{" + ", ".join(f"{name}: {format_runtime_value(value)}" for name, value in self.fields) + "}"
+
+
+@dataclass(frozen=True, slots=True)
+class FFIScalarValue:
+    """An immutable first-class scalar carrying exact FFI type identity.
+
+    The payload is deliberately opaque to ordinary Valiance operations.  Phase C
+    conversions and later native-call lowering are the only facilities expected
+    to inspect or construct these values in language code.  Keeping the value
+    immutable gives it ordinary copy, storage, collection, closure, and task
+    transfer semantics without introducing native-resource ownership.
+    """
+
+    ffi_type: str
+    value: None | bool | int | float | str
+
+    def __post_init__(self) -> None:
+        """Validate the canonical type spelling and portable scalar payload."""
+        if (
+            not isinstance(self.ffi_type, str)
+            or not self.ffi_type.startswith("&")
+            or len(self.ffi_type) == 1
+            or any(character.isspace() for character in self.ffi_type)
+        ):
+            raise ValueError("FFI scalar type must be a canonical '&'-prefixed name")
+        if self.ffi_type.endswith(("+", "*", "~", "?")):
+            raise ValueError("FFI scalar type cannot be a Valiance collection or optional")
+        if self.value is not None and not isinstance(
+            self.value, (bool, int, float, str)
+        ):
+            raise TypeError(
+                "FFI scalar payload must be None, bool, int, float, or str"
+            )
+
+    @property
+    def type_name(self) -> str:
+        """Return the exact runtime type spelling used by casts and dispatch."""
+        return self.ffi_type
+
+    def __str__(self) -> str:
+        """Render a typed scalar without pretending it is a Valiance primitive."""
+        return f"{self.ffi_type}({self.value!r})"
+
+
 @dataclass
 class ObjectLifecycleState:
     """Mutable protocol state propagated across versions of a logical object."""
@@ -1084,6 +1250,8 @@ def format_runtime_value(
         "tuple_single_comma": tuple_single_comma,
         "lazy_preview_limit": lazy_preview_limit,
     }
+    if isinstance(value, (FFIScalarValue, FFIBufferValue, FFIStructValue, FFIHandleValue)):
+        return str(value)
     if isinstance(value, (RuntimeNumber, int, float, Decimal)):
         rendered = format(value, "f")
         return rendered.rstrip("0").rstrip(".") if "." in rendered else rendered

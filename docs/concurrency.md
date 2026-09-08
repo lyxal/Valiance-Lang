@@ -27,8 +27,17 @@ Ordinary value graphs cross task and channel boundaries without eager deep copyi
 
 Integrated timers and external wake sources suspend cooperatively. Unsupported host-blocking calls are rejected in concurrent execution. Long-running runtime loops poll cancellation at bounded intervals. Deadlock reports include task, spawn, scope, blocked-operation, and channel creation information where available.
 
-## Deferred beyond the initial release
+## Scope and limitations
 
-The initial release does not expose public cancellation or timeout syntax, channel `select`/`match channels`, directional endpoints, detached tasks, priorities, work stealing, parallel execution, or general blocking host I/O.
+`cancel` requests cooperative task cancellation. `timeout` waits under a deterministic logical-time deadline and requests cancellation if the deadline expires first. The runtime uses shared bidirectional channel handles and structured task ownership. It does not provide detached tasks, priorities, work stealing, CPU-parallel bytecode execution, or unrestricted blocking host I/O.
 
 See `samples/concurrency/` for executable examples and `docs/maintenance/runtime-system.md` for implementation, bytecode, optimizer, fuzz, leak, and benchmark details.
+
+### Native calls
+
+A native FFI call made by a scheduled task is executed on a bounded host worker
+pool. The task suspends at the call and other tasks may run. Completion is
+published through the scheduler's external-wakeup queue, and only the scheduler
+thread resumes the task or mutates its Valiance stack. Root, non-concurrent
+native calls remain synchronous. Cancellation abandons delivery of an in-flight
+native result because arbitrary C functions cannot be interrupted safely.

@@ -32,6 +32,7 @@ from valiance.asts import (
     IndexUpdateNode,
     ListLiteralNode,
     ListPatternNode,
+    LinkTypeNode,
     MatchNode,
     MinimumRankNode,
     NumberLiteralNode,
@@ -1841,6 +1842,33 @@ end
 
 
 
+    def test_parses_open_ffi_type_family(self):
+        self.assertEqual(parse_type("&int"), T.FFI(Symbol("int")))
+        self.assertEqual(
+            parse_type("&array[&int]"),
+            T.FFI(Symbol("array"), T.FFI(Symbol("int"))),
+        )
+        self.assertEqual(
+            str(parse_type("&windows.Handle[&int]")),
+            "&windows.Handle[&int]",
+        )
+
+    def test_ffi_type_is_one_primary_before_ordinary_postfixes(self):
+        typ = parse_type("&array[&int]+")
+        self.assertIsInstance(typ, ListExactType)
+        self.assertEqual(typ.base, T.FFI(Symbol("array"), T.FFI(Symbol("int"))))
+        self.assertEqual(str(typ), "&array[&int]+")
+
+    def test_ffi_and_valiance_types_nest_without_abi_validation(self):
+        self.assertEqual(str(parse_type("Box[&int]")), "Box[&int]")
+        self.assertEqual(str(parse_type("&array[&int+]")), "&array[&int+]")
+
+    def test_rejects_malformed_ffi_type_primary(self):
+        for source in ("&", "&array[]"):
+            with self.subTest(source=source), self.assertRaises(ParseError):
+                parse_type(source)
+
+
 class TraitElementTagParserTests(unittest.TestCase):
     def test_named_and_inline_trait_requirements_preserve_element_tags(self):
         [named] = parse(
@@ -1863,5 +1891,101 @@ class TraitElementTagParserTests(unittest.TestCase):
         )
 
 
+class LinkedStructParserTests(unittest.TestCase):
+    def test_parses_linked_struct_fields_in_declaration_order(self):
+        [node] = parse("""link geometry.Point as &Point =>
+  $x: &int
+  $y: &int
+end
+""")
+        self.assertIsInstance(node, LinkTypeNode)
+        self.assertEqual(node.name, Symbol("Point"))
+        self.assertEqual(tuple(field.name.text for field in node.fields), ("x", "y"))
+        self.assertEqual(tuple(str(field.typ) for field in node.fields), ("&int", "&int"))
+
+
+
+class OpaqueHandleParserTests(unittest.TestCase):
+    def test_parses_zero_field_link_type_as_opaque_handle(self):
+        [node] = parse("link counter.Counter as &Counter =>\nend")
+        self.assertIsInstance(node, LinkTypeNode)
+        self.assertEqual(node.name, Symbol("Counter"))
+        self.assertEqual(node.fields, ())
+
+
+
+class FFIEmbeddedArrayParserTests(unittest.TestCase):
+    def test_parses_fixed_embedded_array_size(self):
+        [node] = parse("""link packets.Packet as &Packet =>
+  $values: &int+ size => 4
+  $checksum: &int
+end
+""")
+        self.assertEqual(node.fields[0].fixed_size, 4)
+        self.assertEqual(str(node.fields[0].typ), "&int+")
+        self.assertIsNone(node.fields[1].fixed_size)
+
+    def test_rejects_non_positive_embedded_array_size(self):
+        with self.assertRaises(ParseError):
+            parse("link p.P as &P =>\n  $x: &int+ size => 0\nend")
+
+
+
+class FFIDestroyLinkParserTests(unittest.TestCase):
+    def test_destroy_annotation_is_retained_on_link(self):
+        [node] = parse("@destroy link native.free(:&Handle) as destroy")
+        self.assertEqual(node.annotations[0].name, Symbol("destroy"))
+        self.assertEqual(node.alias, Symbol("destroy"))
+
+
+
 if __name__ == "__main__":
     unittest.main()
+
+class ConvertAnnotationParserTests(unittest.TestCase):
+    """Cover target-directed conversion declaration syntax."""
+
+    def test_convert_annotation_parses_type_pair(self) -> None:
+        nodes = parse("@convert(Int -> Real)\ndefine to(value: Int) -> Real => $value as[Real]")
+        definition = nodes[0]
+        self.assertIsInstance(definition, DefineNode)
+        annotation = definition.annotations[0]
+        self.assertIsInstance(annotation, AnnotationNode)
+        self.assertEqual(annotation.name, Symbol("convert"))
+        self.assertEqual(tuple(arg.typ for arg in annotation.args), (T.Int, T.Real))
+
+
+class FFIPhaseHParserTests(unittest.TestCase):
+    """Protect compiler-owned raw FFI constructor spelling."""
+
+    def test_raw_ffi_constructor_is_one_qualified_element(self):
+        nodes = parse("FFI.&int(3)")
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0].name, Symbol("&int", ("FFI",)))
+        self.assertEqual(len(nodes[0].call_args), 1)
+
+class FFIOwnedReturnParserTests(unittest.TestCase):
+    def test_owned_and_nullable_annotations_are_retained(self):
+        [node] = parse(
+            '@owned("release", size = 3) @nullable '
+            'link native.values() -> &int+ as values'
+        )
+        self.assertEqual(
+            tuple(annotation.name.text for annotation in node.annotations),
+            ("owned", "nullable"),
+        )
+        self.assertEqual(node.annotations[0].args[0].value, "release")
+        self.assertEqual(node.annotations[0].kwargs[0][0], Symbol("size"))
+
+class FFILinkedReturnConversionParserTests(unittest.TestCase):
+    def test_parses_visible_and_physical_return_types(self):
+        [node] = parse("link math.add(:&int, :&int) -> (Int) &int as add")
+        self.assertEqual(str(node.converted_return), "Int")
+        self.assertEqual(str(node.returns[0]), "&int")
+
+class FFICallbackLinkParserTests(unittest.TestCase):
+    def test_parses_callback_function_parameter(self):
+        [node] = parse(
+            "link native.apply(:Function[int -> int]) -> &int as apply"
+        )
+        self.assertEqual(str(node.params[0]), "Function[int -> int]")

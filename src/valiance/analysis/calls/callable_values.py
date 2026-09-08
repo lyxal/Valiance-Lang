@@ -110,8 +110,8 @@ def _parameter_value_type(typ: T.Type) -> T.Type:
     if isinstance(typ, (T.NoVecType, T.ExactType)):
         return _parameter_value_type(typ.inner)
     if isinstance(typ, T.NominalType):
-        return T.N(
-            typ.name,
+        return T.rebuild_nominal(
+            typ,
             *(_parameter_value_type(arg) for arg in typ.args),
         )
     if isinstance(typ, T.UnionType):
@@ -176,8 +176,8 @@ def _restore_type_markers(declared: T.Type, inferred: T.Type) -> T.Type:
         return T.Exact(_restore_type_markers(declared.inner, inferred))
     if isinstance(declared, T.NominalType) and isinstance(inferred, T.NominalType):
         if declared.name == inferred.name and len(declared.args) == len(inferred.args):
-            return T.N(
-                inferred.name,
+            return T.rebuild_nominal(
+                inferred,
                 *(
                     _restore_type_markers(expected, actual)
                     for expected, actual in zip(
