@@ -1591,6 +1591,7 @@ class _ReplSession:
         self.output.did_print = False
         try:
             program = Parser(lex(source)).parse_program()
+            prelude_start = len(self.analyser.runtime_prelude)
             final = self.analyser.analyse_block(
                 BranchSet((replace(self.branch, typed_body=()),)),
                 tuple(program),
@@ -1613,7 +1614,10 @@ class _ReplSession:
                 _print_diagnostic(from_message("Lint warning", lint), source)
             for warning in self.analyser.warnings:
                 _print_diagnostic(from_message("Type warning", warning), source)
-            bytecode = compile_program(list(next_branch.typed_body))
+            new_runtime_prelude = self.analyser.runtime_prelude[prelude_start:]
+            bytecode = compile_program(
+                [*new_runtime_prelude, *next_branch.typed_body]
+            )
             stack = self.vm.execute(
                 bytecode.main,
                 {},

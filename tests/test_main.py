@@ -1479,6 +1479,22 @@ class MainTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stack of depth 0"):
             session.escape_to_parent(1)
 
+    def test_repl_executes_new_namespaced_native_import_prelude_once(self):
+        session = _ReplSession()
+        output = io.StringIO()
+
+        with (
+            patch("valiance.std.random.random.randint", return_value=42) as randint,
+            contextlib.redirect_stdout(output),
+        ):
+            self.assertTrue(
+                session.run("import {std.random}\nrandom.between(1, 100)")
+            )
+            self.assertTrue(session.run("random.between(1, 100)"))
+
+        self.assertEqual(session.runtime_stack, [42, 42])
+        self.assertEqual(randint.call_count, 2)
+
     def test_repl_prompt_displays_branch_depth(self):
         self.assertEqual(_repl_prompt(4, color=False, branch_depth=2), "vln[2]:4> ")
 

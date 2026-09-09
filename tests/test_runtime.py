@@ -1717,6 +1717,18 @@ ParseError
         self.assertIn("stack types: [Unknown+]", message)
         self.assertIn("<main> ip 2: call", message)
 
+    def test_namespaced_native_stdlib_call_uses_import_runtime_binding(self):
+        with patch(
+            "valiance.std.random.random.randint",
+            return_value=42,
+        ) as randint:
+            self.assertEqual(
+                execute("import {std.random}\nrandom.between(1, 100)"),
+                [RuntimeNumber("42")],
+            )
+
+        randint.assert_called_once_with(1, 100)
+
     def test_randbit_supports_niladic_and_mapping_calls(self):
         with patch(
             "valiance.std.random.random.getrandbits",
